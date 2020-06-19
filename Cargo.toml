@@ -1,0 +1,32 @@
+[package]
+name = "hidamari"
+version = "0.1.0"
+authors = ["zuntan"]
+edition = "2018"
+
+description = "HIDAMARI mdp controler"
+readme = "README.md"
+homepage = "https://github.com/zuntan/hidamari"
+repository = "https://github.com/zuntan/hidamari"
+license = "MIT OR Apache-2.0"
+keywords = [ "mpd", "music" ]
+
+# categories = [ "command-line-interface" ]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-rt = "1.0.0"
+actix-web = "2.0.0"
+actix-files = "0.2.1"
+actix-utils = "1.0.3"
+env_logger = "0.7.1"
+log = "0.4.8"
+bytes = "0.5"
+
+lazy_static = "1.4.0"
+regex = "1"
+toml = "0.5"
+serde = "1.0"
+serde_json = "1.0"
+json = "0.12"
