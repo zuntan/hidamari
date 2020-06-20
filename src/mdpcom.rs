@@ -37,6 +37,27 @@ impl fmt::Display for MpdComErr
     }
 }
 
+impl MpdComOk
+{
+	fn new() -> MpdComOk
+	{
+		MpdComOk { flds : Vec::new(), bin : None }
+	}
+}
+
+impl MpdComErr
+{
+	fn new( err_code : i32 ) -> MpdComErr
+	{
+		MpdComErr{
+	        err_code
+	    ,   cmd_index   : 0
+	    ,   cur_cmd     : String::new()
+	    ,   msg_text    : String::new()
+		}
+	}
+}
+
 type MpdComResult = Result< MpdComOk, MpdComErr >;
 
 struct MpdComRequest
@@ -70,13 +91,8 @@ async fn modComExec( cmd : String, conn : &mut TcpStream, protolog : bool )
 	conn.flush().await?;
 
 	let mut is_ok = false;
-	let mut ret_ok = MpdComOk { flds : Vec::new(), bin : None };
-	let mut ret_err = MpdComErr{
-        err_code    : -1
-    ,   cmd_index   : 0
-    ,   cur_cmd     : String::new()
-    ,   msg_text    : String::new()
-	};
+	let mut ret_ok = MpdComOk::new();
+	let mut ret_err = MpdComErr::new( -1 );
 
     let mut reader = BufReader::new( conn );
     let mut buf = String::new();
@@ -170,8 +186,7 @@ async fn modComExec( cmd : String, conn : &mut TcpStream, protolog : bool )
 		log::error!( "< {:?}", ret_err );
 	}
 
-//	Ok( if is_ok { Ok( ret_ok ) } else { Err( ret_err ) } )
-	Ok( Err( ret_err ) )
+	Ok( if is_ok { Ok( ret_ok ) } else { Err( ret_err ) } )
 }
 
 async fn modComTask(
@@ -243,27 +258,76 @@ async fn modComTask(
 			||	status_try_time.unwrap().elapsed() > status_time_out
 			)
 		{
-			match modComExec( String::from( "status" ), &mut conn.unwrap(), false ).await?
+			let mut conn_i = conn.as_mut().unwrap();
+
+			match modComExec( String::from( "status" ), conn_i, false ).await
 			{
 				Ok(x) =>
 				{
-					let ctx = &mut ctx.lock().unwrap();
+					match x
+					{
+						Ok(x) =>
+						{
+							let ctx = &mut ctx.lock().unwrap();
 
-					ctx.mpd_status.clear();
-					ctx.mpd_status.extend_from_slice( &x.flds );
-					ctx.mpd_status_time = Some( Instant::now() );
+							ctx.mpd_status.clear();
+							ctx.mpd_status.extend_from_slice( &x.flds );
+							ctx.mpd_status_time = Some( Instant::now() );
+						}
+					,	Err(_) => {}
+					}
 				}
 			,	Err(x) =>
 				{
-					log::error!( "tcp error : [{:?}]", &x )
+					log::warn!( "connection error [{:?}]", x );
+					conn_i.shutdown();
+					conn = None;
+					conn_try_time = Some( Instant::now() );
 				}
 			}
 		}
 
+		if let Some(recv) = timeout( rx_time_out, rx.recv() ).await?
+		{
+			if recv.cmd == "close"
+			{
+				if conn.is_some()
+				{
+					let mut conn_i = conn.as_mut().unwrap();
 
-		let recv =  timeout( rx_time_out, rx.recv() );
+					log::info!( "connection close" );
+					conn_i.shutdown();
+				}
 
-		break;
+				recv.tx.send( Ok( MpdComOk::new() ) );
+				break;
+			}
+			else if conn.is_some()
+			{
+				let mut conn_i = conn.as_mut().unwrap();
+
+				match modComExec( String::from( &recv.cmd ), &mut conn_i, mpd_protolog ).await
+				{
+					Ok(x) =>
+					{
+						recv.tx.send( x );
+					}
+				,	Err(x) =>
+					{
+						log::warn!( "connection error [{:?}]", x );
+						conn_i.shutdown();
+						conn = None;
+						conn_try_time = Some( Instant::now() );
+
+						recv.tx.send( Err( MpdComErr::new( -2 ) ) );
+					}
+				}
+			}
+			else
+			{
+				recv.tx.send( Err( MpdComErr::new( -2 ) ) );
+			}
+		}
 	}
 
     Ok(())
