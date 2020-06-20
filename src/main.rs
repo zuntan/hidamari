@@ -1,5 +1,12 @@
 #[macro_use]
 extern crate actix_web;
+extern crate actix_utils;
+extern crate actix_rt;
+extern crate tokio;
+#[macro_use]
+extern crate lazy_static;
+extern crate chrono;
+use chrono::prelude::*;
 
 use std::io;
 use std::io::prelude::*;
@@ -8,6 +15,7 @@ use std::fs;
 use log::{error, warn, info, debug};
 
 use std::sync::{ Arc, Mutex };
+use std::sync::mpsc;
 use std::rc::Rc;
 use std::cell::{ RefCell };
 
@@ -15,6 +23,8 @@ use actix_web::http::{ header, Method, StatusCode };
 use actix_web::{ error, guard, middleware, web };
 use actix_web::{ App, Error, HttpRequest, HttpResponse, HttpServer, Result };
 use actix_files as afs;
+
+use tokio::time::{ Duration, Instant };
 
 use json::JsonValue;
 use serde::{ Serialize, Deserialize };
@@ -28,38 +38,69 @@ struct Config
 {
 	bind_addr 	: String
 ,	mpd_addr  	: String
+,	mpd_protolog: bool
 ,	log_level 	: String
 ,	theme_dir	: String
 ,	theme    	: String
 }
 
-impl Config
+struct ThreadResult
+{
+	msg	: String
+}
+
+struct ThreadCommand
+{
+
+	cmd	: String
+,	tx	: mpsc::Sender<ThreadResult>
+}
+
+struct Context
+{
+	config			: Config
+,	thread_tx		: mpsc::Sender<ThreadCommand>
+,	mpd_status_time : Option< Instant >
+,	mpd_status		: Vec<(String, String)>
+}
+
+impl Context
 {
 	fn get_theme_path( &self ) -> path::PathBuf
 	{
 		let mut path = path::PathBuf::new();
 
-		if self.theme_dir != ""
+		if self.config.theme_dir != ""
 		{
-			path.push( &self.theme_dir );
+			path.push( &self.config.theme_dir );
 		}
 		else
 		{
 			path.push( "_theme" );
 		}
 
-		if self.theme != ""
+		if self.config.theme != ""
 		{
-			path.push( &self.theme );
+			path.push( &self.config.theme );
 		}
 
 		path
 	}
 }
 
-struct Context
+fn command_impl( ctx : web::Data< Mutex< Context > >, param : &CommandParam ) -> Result<HttpResponse>
 {
-	config : Config
+	debug!("{:?}", &param );
+
+	let ( tx, rx ) = mpsc::channel::<ThreadResult>();
+
+	let cmd = ThreadCommand{ cmd : String::from( &param.cmd ), tx };
+
+	ctx.lock().unwrap().thread_tx.send( cmd ).unwrap();
+
+	let ret = rx.recv().unwrap();
+
+	Ok( HttpResponse::Ok().json( &ret.msg ) )
 }
 
 ///
@@ -103,7 +144,7 @@ fn get_config() -> Option< Config >
 ///
 fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) -> Result< afs::NamedFile >
 {
-	let mut path = ctx.lock().unwrap().config.get_theme_path();
+	let mut path = ctx.lock().unwrap().get_theme_path();
 
 	path.push( p );
 
@@ -119,32 +160,28 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
 	}
 }
 
-
 #[derive(Debug, Deserialize, Clone)]
 struct CommandParam
 {
-	arg1 : Option<String>
+	cmd  : String
+,	arg1 : Option<String>
 ,	arg2 : Option<String>
 }
 
 ///
-async fn command_get( ctx : web::Data< Mutex< Context > >, cmd: web::Path<String>, param: web::Query<CommandParam> ) -> Result<HttpResponse>
+async fn command_get( ctx : web::Data< Mutex< Context > >, param: web::Query<CommandParam> ) -> Result<HttpResponse>
 {
 	debug!("command_get" );
-	debug!("{:?}", &cmd );
-	debug!("{:?}", &param );
 
-	Ok( HttpResponse::Ok().json( "" ) )
+	command_impl( ctx, &*param )
 }
 
 ///
-async fn command_post( ctx : web::Data< Mutex< Context > >, cmd: web::Path<String>, param: web::Form<CommandParam> ) -> Result<HttpResponse>
+async fn command_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CommandParam> ) -> Result<HttpResponse>
 {
 	debug!("command_post" );
-	debug!("{:?}", &cmd );
-	debug!("{:?}", &param );
 
-	Ok( HttpResponse::Ok().json( "" ) )
+	command_impl( ctx, &*param )
 }
 
 
@@ -208,29 +245,45 @@ async fn main() -> io::Result<()>
 		return Err( std::io::Error::new( std::io::ErrorKind::Other, "stop!" ) );
 	}
 
+	let ( tx, rx ) = mpsc::channel::<ThreadCommand>();
+
 	let ctx = web::Data::new( Mutex::new(
 		Context
 		{
-			config : config.unwrap()
+			config			: config.unwrap()
+		,	thread_tx		: tx
+		,	mpd_status_time : None
+		,	mpd_status		: Vec::new()
 		}
 	) ) ;
-
-	{
-		let config = &ctx.lock().unwrap().config;
-	}
 
 	let bind_addr = {
 		String::from( &ctx.lock().unwrap().config.bind_addr )
 	};
 
-	let ctxc = ctx.clone();
+	let ctx_t = ctx.clone();
+
+    std::thread::spawn( move ||
+    	{
+			let mut i : u32 = 0;
+
+			loop
+			{
+				i += 1;
+		        let req = rx.recv().unwrap();
+				let path = ctx_t.lock().unwrap().get_theme_path();
+				let ret = ThreadResult { msg : String::from( format!( "{};{}:{:?}", i, &req.cmd, path.to_str() ) ) };
+				req.tx.send( ret ).unwrap();
+		    }
+    	}
+    );
 
     HttpServer::new( move || {
         App::new()
         	.app_data( ctx.clone() )
             .wrap( middleware::Logger::default() )
             .service(
-            	web::resource( "/cmd/{command}" )
+            	web::resource( "/cmd" )
             		.route( web::get().to( command_get ) )
             		.route( web::post().to( command_post ) )
             )
