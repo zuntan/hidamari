@@ -1,33 +1,32 @@
-#[macro_use]
 extern crate actix_web;
 extern crate actix_utils;
 extern crate actix_rt;
+
 extern crate tokio;
+
+extern crate chrono;
+
 #[macro_use]
 extern crate lazy_static;
-extern crate chrono;
-use chrono::prelude::*;
 
 use std::io;
 use std::io::prelude::*;
 use std::path;
 use std::fs;
-use log::{error, warn, info, debug};
+use std::net::ToSocketAddrs;
+use std::sync::Mutex;
 
-use std::sync::{ Arc, Mutex };
-use std::sync::mpsc;
-use std::rc::Rc;
-use std::cell::{ RefCell };
+// use actix_web::http::{ header, Method, StatusCode };
 
-use actix_web::http::{ header, Method, StatusCode };
-use actix_web::{ error, guard, middleware, web };
-use actix_web::{ App, Error, HttpRequest, HttpResponse, HttpServer, Result };
+use actix_web::{ error, /* guard, */ middleware, web };
+use actix_web::{ App, HttpRequest, HttpResponse, HttpServer, Result };
 use actix_files as afs;
 
-use tokio::time::{ Duration, Instant };
+use tokio::sync::{ oneshot, mpsc };
 
-use json::JsonValue;
-use serde::{ Serialize, Deserialize };
+use chrono::prelude::*;
+
+use serde::{ /* Serialize, */ Deserialize };
 
 mod dispatch;
 mod mdpcom;
@@ -44,29 +43,19 @@ struct Config
 ,	theme    	: String
 }
 
-struct ThreadResult
-{
-	msg	: String
-}
-
-struct ThreadCommand
-{
-
-	cmd	: String
-,	tx	: mpsc::Sender<ThreadResult>
-}
-
-struct Context
+///
+pub struct Context
 {
 	config			: Config
-,	thread_tx		: mpsc::Sender<ThreadCommand>
-,	mpd_status_time : Option< Instant >
+,	mpdcom_tx		: mpsc::Sender< mdpcom::MpdComRequest >
+,	mpd_status_time : Option< chrono::DateTime<Local> >
 ,	mpd_status		: Vec<(String, String)>
 }
 
+///
 impl Context
 {
-	fn get_theme_path( &self ) -> path::PathBuf
+	pub fn get_theme_path( &self ) -> path::PathBuf
 	{
 		let mut path = path::PathBuf::new();
 
@@ -88,21 +77,6 @@ impl Context
 	}
 }
 
-fn command_impl( ctx : web::Data< Mutex< Context > >, param : &CommandParam ) -> Result<HttpResponse>
-{
-	debug!("{:?}", &param );
-
-	let ( tx, rx ) = mpsc::channel::<ThreadResult>();
-
-	let cmd = ThreadCommand{ cmd : String::from( &param.cmd ), tx };
-
-	ctx.lock().unwrap().thread_tx.send( cmd ).unwrap();
-
-	let ret = rx.recv().unwrap();
-
-	Ok( HttpResponse::Ok().json( &ret.msg ) )
-}
-
 ///
 fn get_config() -> Option< Config >
 {
@@ -118,26 +92,47 @@ fn get_config() -> Option< Config >
     	targets.insert( 0, args[1].clone() );
     }
 
+	let mut conts : Option< String > = None;
+
     for t in targets
     {
-		debug!( "config try loading [{:?}]", &t );
+		log::debug!( "config try loading [{:?}]", &t );
 
 		if let Ok( mut f ) = fs::File::open( &t ).map( |f| io::BufReader::new( f ) )
 		{
-		    let mut conts = String::new();
+			log::info!( "config loading [{}]", &t );
 
-			if let Ok( _ ) = f.read_to_string( &mut conts )
+		    let mut tmp_conts = String::new();
+
+			if let Ok( _ ) = f.read_to_string( &mut tmp_conts )
 			{
-				if let Ok( x ) = toml::de::from_str::<Config>( &conts )
-				{
-					info!( "config load [{}]", &t );
-					return Some( x );
-				}
+				conts = Some( tmp_conts );
+			}
+
+			break;
+		}
+	}
+
+	if conts.is_some()
+	{
+		if let Ok( x ) = toml::de::from_str::<Config>( &conts.unwrap() )
+		{
+			if x.bind_addr.to_socket_addrs().is_err()
+			{
+				log::error!( "invalid value `bind_addr`" );
+			}
+			else if x.mpd_addr.to_socket_addrs().is_err()
+			{
+				log::error!( "invalid value `mpd_addr`" );
+			}
+			else
+			{
+				return Some( x );
 			}
 		}
 	}
 
-	error!( "config load error." );
+	log::error!( "config load error." );
     None
 }
 
@@ -148,7 +143,7 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
 
 	path.push( p );
 
-	debug!("{:?}", &path );
+	log::debug!("{:?}", &path );
 
 	if path.is_file()
 	{
@@ -160,28 +155,90 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
 	}
 }
 
+///
+async fn status( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
+{
+	let ctx = ctx.lock().unwrap();
+
+	if ctx.mpd_status_time.is_some()
+	{
+		HttpResponse::Ok().json( Result::<_,()>::Ok( &ctx.mpd_status ) )
+	}
+	else
+	{
+		HttpResponse::Ok().json( Result::<(),_>::Err( "" ) )
+	}
+}
+
+///
 #[derive(Debug, Deserialize, Clone)]
-struct CommandParam
+struct CmdParam
 {
 	cmd  : String
 ,	arg1 : Option<String>
 ,	arg2 : Option<String>
+,	arg3 : Option<String>
 }
 
 ///
-async fn command_get( ctx : web::Data< Mutex< Context > >, param: web::Query<CommandParam> ) -> Result<HttpResponse>
+impl CmdParam
 {
-	debug!("command_get" );
+	fn to_request( &self ) -> ( mdpcom::MpdComRequest, oneshot::Receiver< mdpcom::MpdComResult > )
+	{
+		let ( mut req, rx ) = mdpcom::MpdComRequest::new();
 
-	command_impl( ctx, &*param )
+		req.req += &self.cmd;
+
+		if self.arg1.is_some()
+		{
+			req.req += " ";
+			req.req += &mdpcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+		}
+
+		if self.arg2.is_some()
+		{
+			req.req += " ";
+			req.req += &mdpcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+		}
+
+		if self.arg3.is_some()
+		{
+			req.req += " ";
+			req.req += &mdpcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+		}
+
+		( req, rx )
+	}
 }
 
 ///
-async fn command_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CommandParam> ) -> Result<HttpResponse>
+async fn cmd_impl( ctx : web::Data< Mutex< Context > >, param : &CmdParam ) -> HttpResponse
 {
-	debug!("command_post" );
+	log::debug!("{:?}", &param );
 
-	command_impl( ctx, &*param )
+	let ( req, rx ) = param.to_request();
+
+	&ctx.lock().unwrap().mpdcom_tx.send( req ).await;
+
+	match rx.await
+	{
+		Ok(x) => 	{ HttpResponse::Ok().json( x ) }
+	,	Err(x) => 	{ HttpResponse::InternalServerError().body( format!( "{:?}", x ) ) }
+	}
+}
+
+///
+async fn cmd_get( ctx : web::Data< Mutex< Context > >, param: web::Query<CmdParam> ) -> HttpResponse
+{
+	log::debug!("command_get" );
+	cmd_impl( ctx, &*param ).await
+}
+
+///
+async fn cmd_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CmdParam> ) -> HttpResponse
+{
+	log::debug!("command_post" );
+	cmd_impl( ctx, &*param ).await
 }
 
 
@@ -194,7 +251,7 @@ async fn favicon( ctx : web::Data< Mutex< Context > > ) -> Result< afs::NamedFil
 ///
 async fn theme( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Result< afs::NamedFile >
 {
-	debug!("{}", req.path() );
+	log::debug!("{}", req.path() );
 
 	let mut p : Vec<String> = Vec::new();
 
@@ -245,13 +302,13 @@ async fn main() -> io::Result<()>
 		return Err( std::io::Error::new( std::io::ErrorKind::Other, "stop!" ) );
 	}
 
-	let ( tx, rx ) = mpsc::channel::<ThreadCommand>();
+	let ( tx, rx ) = mpsc::channel::< mdpcom::MpdComRequest >( 128 );
 
 	let ctx = web::Data::new( Mutex::new(
 		Context
 		{
 			config			: config.unwrap()
-		,	thread_tx		: tx
+		,	mpdcom_tx		: tx
 		,	mpd_status_time : None
 		,	mpd_status		: Vec::new()
 		}
@@ -263,16 +320,38 @@ async fn main() -> io::Result<()>
 
 	let ctx_t = ctx.clone();
 
-	actix_rt::spawn( mpdcom::modComTask( ctx.clone(), rx ) );
+	actix_rt::spawn(
+		async
+		{
+			log::debug!( "mpdcom starting." );
 
-    HttpServer::new( move || {
+			mdpcom::mpdcom_task( ctx_t, rx ).await.ok();
+
+			log::debug!( "mpdcom stop." );
+		}
+	);
+
+	log::debug!( "httpserver stating." );
+
+	let ctx_t = ctx.clone();
+
+    let server = HttpServer::new( move || {
         App::new()
-        	.app_data( ctx.clone() )
+        	.app_data( ctx_t.clone() )
             .wrap( middleware::Logger::default() )
             .service(
+            	web::resource( "/status" )
+            		.route( web::get().to( status ) )
+            		.route( web::post().to( status ) )
+            )
+            .service(
             	web::resource( "/cmd" )
-            		.route( web::get().to( command_get ) )
-            		.route( web::post().to( command_post ) )
+            		.route( web::get().to( cmd_get ) )
+            		.route( web::post().to( cmd_post ) )
+            )
+            .service(
+            	web::resource( "/favicon.ico/*" )
+            		.to( favicon )
             )
             .service(
             	web::resource( "/theme/*" )
@@ -286,5 +365,20 @@ async fn main() -> io::Result<()>
     )
 	.bind( bind_addr )?
     .run()
-    .await
+    .await;
+
+    {
+		let ( mut req, rx ) = mdpcom::MpdComRequest::new();
+
+		req.req = String::from( "close" );
+
+		&ctx.lock().unwrap().mpdcom_tx.send( req ).await;
+
+		rx.await.ok();
+
+		log::debug!( "mpdcom shutdown." );
+	}
+
+    server
 }
+
