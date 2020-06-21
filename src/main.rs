@@ -263,20 +263,7 @@ async fn main() -> io::Result<()>
 
 	let ctx_t = ctx.clone();
 
-    std::thread::spawn( move ||
-    	{
-			let mut i : u32 = 0;
-
-			loop
-			{
-				i += 1;
-		        let req = rx.recv().unwrap();
-				let path = ctx_t.lock().unwrap().get_theme_path();
-				let ret = ThreadResult { msg : String::from( format!( "{};{}:{:?}", i, &req.cmd, path.to_str() ) ) };
-				req.tx.send( ret ).unwrap();
-		    }
-    	}
-    );
+	actix_rt::spawn( mpdcom::modComTask( ctx.clone(), rx ) );
 
     HttpServer::new( move || {
         App::new()
