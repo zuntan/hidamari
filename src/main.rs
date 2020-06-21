@@ -1,3 +1,14 @@
+//	vim:set ts=4 sw=4 sts=0 fileencoding=utf-8:
+//	----------------------------------------------------------------------------
+/*
+	@file		main.rs
+	@author		zuntan
+*/
+//	----------------------------------------------------------------------------
+
+///
+///
+
 extern crate actix_web;
 extern crate actix_utils;
 extern crate actix_rt;
