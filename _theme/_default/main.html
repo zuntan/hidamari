@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+
     <style type="text/css"><!--
 
 div.carousel-indicators
@@ -41,13 +42,28 @@ a.carousel-control-prev, a.carousel-control-next
     width:85vw;
 }
 
+.x_controler
+{
+    width:85vw;
+}
+
+.x_liblist
+{
+    max-height:74vh!important;
+}
+
+.x_playlist
+{
+    max-height:78vh!important;
+}
+
 .x_slider
 {
 }
 
 .x_overflow-hidden
 {
-    height:1.3em;
+    height:1.4em;
 }
 
 .x_volbadge
@@ -60,13 +76,13 @@ a.carousel-control-prev, a.carousel-control-next
     min-height:1.5em!important;
 }
 
-.x_title_1, .x_title_2, .x_title_3
+.x_player_title_1, .x_player_title_2, .x_player_title_3
 {
 }
 
 .x_liblist_folder_item,
-.x_liblist_file_item,
-.x_playlist_item
+.x_liblist_file_item_desc,
+.x_playlist_item_desc
 {
     cursor : pointer;
 }
@@ -76,6 +92,22 @@ a.carousel-control-prev, a.carousel-control-next
   left: .4rem;
   content: '✓';
   font-weight: 600;
+}
+
+.x_flush
+{
+    filter : contrast(1.3) brightness(1.3);
+}
+
+.x_select
+{
+    filter : contrast(1.2) brightness(1.2);
+}
+
+.x_position
+{
+    height : 0.5rem;
+    cursor : pointer;
 }
 
 --></style>
@@ -110,6 +142,14 @@ a.carousel-control-prev, a.carousel-control-next
                 </li>
             </ul>
 
+            <div class="mr-4 text-danger x_ajax_state_err ">
+<svg class="bi bi-emoji-dizzy" height="32" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+  <path fill-rule="evenodd" d="M9.146 5.146a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708.708l-.647.646.647.646a.5.5 0 0 1-.708.708l-.646-.647-.646.647a.5.5 0 1 1-.708-.708l.647-.646-.647-.646a.5.5 0 0 1 0-.708zm-5 0a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 1 1 .708.708l-.647.646.647.646a.5.5 0 1 1-.708.708L5.5 7.207l-.646.647a.5.5 0 1 1-.708-.708l.647-.646-.647-.646a.5.5 0 0 1 0-.708z"/>
+  <path d="M10 11a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/>
+</svg>
+            </div>
+
             <div class="mr-4 spinner-border text-light x_ajax_state ">
                 <span class="sr-only">Loading...</span>
             </div>
@@ -138,7 +178,7 @@ a.carousel-control-prev, a.carousel-control-next
 
                         <div class="p-1 mt-1 bg-white rounded d-flex align-items-center justify-content-end x_controler">
 
-                            <div class="dropdown">
+                            <div class="dropdown x_playlist_dropdown">
                                 <button class="btn btn-sm btn-primary dropdown-toggle shadow rounded-pill ml-2" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" >
 
 <svg class="bi bi-three-dots" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -152,36 +192,34 @@ a.carousel-control-prev, a.carousel-control-next
   <path fill-rule="evenodd" d="M2.854 7.146a.5.5 0 0 0-.708 0l-2 2a.5.5 0 1 0 .708.708L2.5 8.207l1.646 1.647a.5.5 0 0 0 .708-.708l-2-2zm13-1a.5.5 0 0 0-.708 0L13.5 7.793l-1.646-1.647a.5.5 0 0 0-.708.708l2 2a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0 0-.708z"/>
   <path fill-rule="evenodd" d="M8 3a4.995 4.995 0 0 0-4.192 2.273.5.5 0 0 1-.837-.546A6 6 0 0 1 14 8a.5.5 0 0 1-1.001 0 5 5 0 0 0-5-5zM2.5 7.5A.5.5 0 0 1 3 8a5 5 0 0 0 9.192 2.727.5.5 0 1 1 .837.546A6 6 0 0 1 2 8a.5.5 0 0 1 .501-.5z"/>
 </svg>
-                                Repeat
+                                    Repeat
                                 </a>
-                                <a class="dropdown-item" href="#">
+                                <a class="dropdown-item x_single" href="#">
 <svg class="bi bi-arrow-clockwise" width="20" height="20"  viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path fill-rule="evenodd" d="M3.17 6.706a5 5 0 0 1 7.103-3.16.5.5 0 1 0 .454-.892A6 6 0 1 0 13.455 5.5a.5.5 0 0 0-.91.417 5 5 0 1 1-9.375.789z"/>
   <path fill-rule="evenodd" d="M8.147.146a.5.5 0 0 1 .707 0l2.5 2.5a.5.5 0 0 1 0 .708l-2.5 2.5a.5.5 0 1 1-.707-.708L10.293 3 8.147.854a.5.5 0 0 1 0-.708z"/>
 </svg>
-                                Single
+                                    Single
                                 </a>
-                                <a class="dropdown-item" href="#">
+                                <a class="dropdown-item x_random" href="#">
 <svg class="bi bi-shuffle" width="20" height="20"  viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path fill-rule="evenodd" d="M12.646 1.146a.5.5 0 0 1 .708 0l2.5 2.5a.5.5 0 0 1 0 .708l-2.5 2.5a.5.5 0 0 1-.708-.708L14.793 4l-2.147-2.146a.5.5 0 0 1 0-.708zm0 8a.5.5 0 0 1 .708 0l2.5 2.5a.5.5 0 0 1 0 .708l-2.5 2.5a.5.5 0 0 1-.708-.708L14.793 12l-2.147-2.146a.5.5 0 0 1 0-.708z"/>
   <path fill-rule="evenodd" d="M0 4a.5.5 0 0 1 .5-.5h2c3.053 0 4.564 2.258 5.856 4.226l.08.123c.636.97 1.224 1.865 1.932 2.539.718.682 1.538 1.112 2.632 1.112h2a.5.5 0 0 1 0 1h-2c-1.406 0-2.461-.57-3.321-1.388-.795-.755-1.441-1.742-2.055-2.679l-.105-.159C6.186 6.242 4.947 4.5 2.5 4.5h-2A.5.5 0 0 1 0 4z"/>
   <path fill-rule="evenodd" d="M0 12a.5.5 0 0 0 .5.5h2c3.053 0 4.564-2.258 5.856-4.226l.08-.123c.636-.97 1.224-1.865 1.932-2.539C11.086 4.93 11.906 4.5 13 4.5h2a.5.5 0 0 0 0-1h-2c-1.406 0-2.461.57-3.321 1.388-.795.755-1.441 1.742-2.055 2.679l-.105.159C6.186 9.758 4.947 11.5 2.5 11.5h-2a.5.5 0 0 0-.5.5z"/>
 </svg>
-                                Shuffle
+                                    Shuffle
                                 </a>
 
-                                <a class="dropdown-item dropdown-item-checked" href="#">
+                                <a class="dropdown-item x_consume" href="#">
 <svg class="bi bi-box-arrow-down" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path fill-rule="evenodd" d="M4.646 11.646a.5.5 0 0 1 .708 0L8 14.293l2.646-2.647a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 0 1 0-.708z"/>
   <path fill-rule="evenodd" d="M8 4.5a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5z"/>
   <path fill-rule="evenodd" d="M2.5 2A1.5 1.5 0 0 1 4 .5h8A1.5 1.5 0 0 1 13.5 2v7a1.5 1.5 0 0 1-1.5 1.5h-1.5a.5.5 0 0 1 0-1H12a.5.5 0 0 0 .5-.5V2a.5.5 0 0 0-.5-.5H4a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h1.5a.5.5 0 0 1 0 1H4A1.5 1.5 0 0 1 2.5 9V2z"/>
 </svg>
-                                Consume
+                                    Consume
                                 </a>
                               </div>
                             </div>
-
-
 
                             <button class="btn btn-sm btn-primary shadow rounded-pill ml-auto x_playlist_check_all" >
 <svg class="bi bi-check2-all" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -215,11 +253,11 @@ a.carousel-control-prev, a.carousel-control-next
                             <hr class="x_hr mb-5" />
 
                             <div class="m-1 d-flex border border-info bg-info text-white rounded-lg align-items-center x_playlist_item" >
-                                <div class="h5 mx-2 x_playlist_item_pos">
+                                <div class="h5 mx-2 x_playlist_item_pos x_playlist_item_desc">
                                     0.
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_playlist_item_title_1">Title</div>
+                                    <div class="h6 m-0 x_playlist_item_title_1 x_playlist_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
                                         <div class="flex-grow-1 font-weight-light x_playlist_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_playlist_item_time">00:00</div>
@@ -243,45 +281,44 @@ a.carousel-control-prev, a.carousel-control-next
                                     </button>
                                 </div>
                             </div>
-
-
-
                         </div>
-
                     </div>
-
                 </div>
-                <div class="carousel-item ">
+
+
+
+
+                <div class="carousel-item active">
                     <div class="d-flex flex-column align-items-center min-vh-90" >
 
-                        <div class="overflow-hidden x_overflow-hidden p-1 m-1 x_title_1" ></div>
-                        <div class="overflow-hidden x_overflow-hidden p-1 m-1 x_title_2" ></div>
+                        <div class="h3 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_1" ></div>
+                        <div class="h5 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_2" ></div>
 
                         <div class="x_canvas" ></div>
 
-                        <div class="overflow-hidden x_overflow-hidden p-1 m-1 x_title_3"></div>
+                        <div class="overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_3"></div>
 
-                        <div class="p-1 d-flex align-items-center justify-content-around x_controler">
+                        <div class="p-1 d-flex align-items-center justify-content-around x_controler x_play_controler">
                             <button class="btn btn-primary shadow rounded-pill x_prev" >
-                                <svg class="bi bi-skip-start-fill" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-skip-start-fill" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path fill-rule="evenodd" d="M4.5 3.5A.5.5 0 0 0 4 4v8a.5.5 0 0 0 1 0V4a.5.5 0 0 0-.5-.5z"/>
                                   <path d="M4.903 8.697l6.364 3.692c.54.313 1.232-.066 1.232-.697V4.308c0-.63-.692-1.01-1.232-.696L4.903 7.304a.802.802 0 0 0 0 1.393z"/>
                                 </svg>
                             </button>
                             <button class="btn btn-primary shadow rounded-pill x_play" >
 
-                                <svg class="bi bi-pause-fill x_play_play" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-pause-fill x_play_pause" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/>
                                 </svg>
 
-                                <svg class="bi bi-play-fill d-none x_play_pause" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-play-fill x_play_play" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path d="M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>
                                 </svg>
 
                             </button>
                             <button class="btn btn-primary shadow rounded-pill x_next" >
 
-                                <svg class="bi bi-skip-end-fill" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-skip-end-fill" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path fill-rule="evenodd" d="M12 3.5a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5z"/>
                                   <path d="M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>
                                 </svg>
@@ -297,31 +334,37 @@ a.carousel-control-prev, a.carousel-control-next
                                 </div>
 
                                 <div class="badge badge-light x_volbadge">
-                                    <svg class="bi bi-volume-down-fill x_volicon" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-volume-up-fill x_volicon_high" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/>
+                                  <path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/>
+                                  <path d="M8.707 11.182A4.486 4.486 0 0 0 10.025 8a4.486 4.486 0 0 0-1.318-3.182L8 5.525A3.489 3.489 0 0 1 9.025 8 3.49 3.49 0 0 1 8 10.475l.707.707z"/>
+                                  <path fill-rule="evenodd" d="M6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/>
+                                </svg>
+                                    <svg class="bi bi-volume-down-fill x_volicon_low" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                       <path fill-rule="evenodd" d="M8.717 3.55A.5.5 0 0 1 9 4v8a.5.5 0 0 1-.812.39L5.825 10.5H3.5A.5.5 0 0 1 3 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/>
                                       <path d="M10.707 11.182A4.486 4.486 0 0 0 12.025 8a4.486 4.486 0 0 0-1.318-3.182L10 5.525A3.489 3.489 0 0 1 11.025 8c0 .966-.392 1.841-1.025 2.475l.707.707z"/>
                                     </svg>
-                                    <svg class="bi bi-volume-mute-fill d-none x_volicon_mut" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                    <svg class="bi bi-volume-mute-fill x_volicon_mut" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                       <path fill-rule="evenodd" d="M6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06zm7.137 1.596a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708l4-4a.5.5 0 0 1 .708 0z"/>
                                       <path fill-rule="evenodd" d="M9.146 5.146a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0z"/>
                                     </svg>
 
-                                    <span class="x_vol">100</span>
+                                    <span class="x_volval">100</span>
                                 </div>
 
                             </div>
 
                             <button class="btn btn-primary shadow x_volup" >
 
-                                <svg class="bi bi-plus" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <svg class="bi bi-plus" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path fill-rule="evenodd" d="M8 3.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5H4a.5.5 0 0 1 0-1h3.5V4a.5.5 0 0 1 .5-.5z"/>
                                   <path fill-rule="evenodd" d="M7.5 8a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1H8.5V12a.5.5 0 0 1-1 0V8z"/>
                                 </svg>
 
                             </button>
 
-                            <button class="btn btn-primary shadow x_voldown" >
-                                <svg class="bi bi-dash" width="24" height="24"  viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <button class="btn btn-primary shadow x_voldw" >
+                                <svg class="bi bi-dash" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                                   <path fill-rule="evenodd" d="M3.5 8a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 0 1H4a.5.5 0 0 1-.5-.5z"/>
                                 </svg>
                             </button>
@@ -329,18 +372,23 @@ a.carousel-control-prev, a.carousel-control-next
                         </div>
 
                         <div class="d-flex align-items-center justify-content-around p-1 mt-1 x_controler">
-                            <div class="badge badge-light text-monospace x_time_1">00:00</div>
-                            <div class="flex-fill">
-                                <input type="range" class="form-control-range" >
+                            <div class="badge badge-light text-monospace x_time_t">00:00</div>
+
+                            <div class="progress flex-fill mx-1 x_position">
+                                <div class="progress-bar x_position_bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="transition:none;"></div>
                             </div>
                             <div>
-                                <div class="badge badge-light text-monospace x_time_2">00:00</div>
-                                <div class="badge badge-light text-monospace x_time_3">00:00</div>
+                                <div class="badge badge-light text-monospace x_time_r">00:00</div>
+                                <div class="badge badge-light text-monospace x_time_d">00:00</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="carousel-item active">
+
+
+
+
+                <div class="carousel-item">
                     <div class="d-flex flex-column align-items-center min-vh-90">
 
                         <div class="p-1 m-0 d-flex align-items-center justify-content-start x_controler">
@@ -416,7 +464,7 @@ a.carousel-control-prev, a.carousel-control-next
                             </div>
 
                             <div class="m-1 d-flex border border-success bg-success text-white rounded-lg align-items-center x_liblist_file_item" >
-                                <div class="h5 mx-2">
+                                <div class="h5 mx-2 x_liblist_file_item_desc">
 <svg class="bi bi-music-note" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/>
   <path fill-rule="evenodd" d="M9 3v10H8V3h1z"/>
@@ -424,7 +472,7 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_liblist_file_item_title_1">Title</div>
+                                    <div class="h6 m-0 x_liblist_file_item_title_1 x_liblist_file_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
                                         <div class="flex-grow-1 font-weight-light x_liblist_file_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_liblist_file_item_time">00:00</div>

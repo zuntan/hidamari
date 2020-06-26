@@ -1,7 +1,7 @@
 $(
 function()
 {
-	//
+	// common function
 
 	var format_time = function( d )
 	{
@@ -51,9 +51,9 @@ function()
 					kv[ '_title_1' ] = n;
 
 					var t = [];
-					if( kv[ 'Track' ] ) { t.push( kv[ 'Track' ] ) }
-					if( kv[ 'Album' ] ) { t.push( kv[ 'Album' ] ) }
-					if( kv[ 'Artist' ] ) { t.push( kv[ 'Artist' ] ) }
+					if( kv[ 'Track' ] ) { t.push( kv[ 'Track' ] ); }
+					if( kv[ 'Album' ] ) { t.push( kv[ 'Album' ] ); }
+					if( kv[ 'Artist' ] ) { t.push( kv[ 'Artist' ] ); }
 
 					kv[ '_title_2' ] = t.join( " : " );
 
@@ -85,12 +85,54 @@ function()
 			}
 		}
 
+		if( Object.keys( kv ).length )
+		{
+			list.push( [ 'info', '', kv ] );
+		}
+
 		list.reverse();
 
 		return list;
 	}
 
-	// init
+	var flush_item = function()
+	{
+		var flush_item_impl = function( _f, _a )
+		{
+			return function()
+			{
+				$.each( _a
+				,	function( i, v )
+					{
+						$(v).toggleClass( "x_flush", _f );
+					}
+				);
+			};
+		}
+
+		for( var i = 0 ; i < 4 ; ++i )
+		{
+			setTimeout(
+				flush_item_impl( i % 2, arguments )
+			,	i * 75
+			);
+		}
+	}
+
+	var select_item = function( /* bool, array */ )
+	{
+		var _a = Array.from( arguments );
+		var _f = _a.shift();
+
+		$.each( _a
+		,	function( i, v )
+			{
+				$(v).toggleClass( "x_select", _f );
+			}
+		);
+	}
+
+	// init top
 
 	$( ".test2" ).click(
 		function()
@@ -98,19 +140,35 @@ function()
 		}
 	);
 
-	var ajax_state = $( "div.x_ajax_state" );
+	var ajax_state_err = $( "div.x_ajax_state_err" );
+	ajax_state_err.hide();
 
+	var ajax_state = $( "div.x_ajax_state" );
 	ajax_state.hide();
+
+	var ajax_state_t = null;
 
 	$( document ).ajaxStart(
 		function() {
-			ajax_state.show();
+			ajax_state_err.hide();
+			ajax_state_t = setTimeout( function() { ajax_state.show(); }, 125 );
 		}
 	);
 
 	$( document ).ajaxStop(
 		function() {
+			if( ajax_state_t )
+			{
+				clearTimeout( ajax_state_t );
+				ajax_state_t = null;
+			}
 			ajax_state.hide();
+		}
+	);
+
+	$( document ).ajaxError(
+		function() {
+			ajax_state_err.show();
 		}
 	);
 
@@ -186,12 +244,7 @@ function()
 
 						if( _p && kv[ 'Id' ] )
 						{
-							$.getJSON( "cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } )
-								.done(
-									function( json )
-									{
-									}
-								);
+							$.getJSON( "cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
 						}
 					}
 				}
@@ -211,6 +264,32 @@ function()
 		);
 	}
 
+	var library_page_dir_addall_impl = function( _f )
+	{
+		var t = [];
+		var a = $( ".x_liblist_file_item_add"  );
+		var p = $( ".x_liblist_file_item_play" );
+
+		if( _f && p.length != 0 )
+		{
+			t.push( p.eq( 0 ) );
+		}
+		else if( p.length != 0 )
+		{
+			t.push( a.eq( 0 ) );
+		}
+
+		for( var i = 1 ; i < a.length ; ++i )
+		{
+			t.push( a.eq( i ) );
+		}
+
+		$.each( t, function( i, v ) { v.click(); } );
+	}
+
+	$( ".x_liblist_dir_addall" ).click( 		function() { library_page_dir_addall_impl( false ); } );
+	$( ".x_liblist_dir_addall_play" ).click( function() { library_page_dir_addall_impl( true ); } );
+
 	var library_page_update = function()
 	{
 		$.getJSON( "cmd", { cmd : "lsinfo", arg1 : library_page_cur_dir() } )
@@ -228,10 +307,11 @@ function()
 						var items = [];
 						var flg_file = false;
 
-						var f_add = function( _n, _p )
+						var f_add = function( _it, _n, _p )
 						{
 							return function()
 							{
+								flush_item( _it );
 								library_page_add( _n, _p );
 								return false;
 							};
@@ -273,12 +353,14 @@ function()
 								$( ".x_liblist_file_item_title_2", file_item ).text( kv[ '_title_2' ] );
 								$( ".x_liblist_file_item_time",    file_item ).text( kv[ '_time' ] );
 
-								$( ".x_liblist_file_item_add",  file_item ).click( f_add( kv[ '_name' ], false ) );
-								$( ".x_liblist_file_item_play", file_item ).click( f_add( kv[ '_name' ], true ) );
+								$( ".x_liblist_file_item_add",  file_item ).click( f_add( file_item, kv[ '_name' ], false ) );
+								$( ".x_liblist_file_item_play", file_item ).click( f_add( file_item, kv[ '_name' ], true ) );
 
-								file_item.data( "x_id",   kv[ '_id' ] );
-								file_item.data( "x_name", kv[ '_name' ] );
-								file_item.click( function() { show_description( $(this).data( "x_name" ) ); } );
+
+								var item_desc = $( ".x_liblist_file_item_desc", file_item );
+
+								item_desc.data( "x_name", kv[ '_name' ] );
+								item_desc.click( function() { show_description( $(this).data( "x_name" ) ); } );
 
 								items.push( file_item );
 
@@ -366,6 +448,9 @@ function()
 		);
 	}
 
+	var sel = !!( $( ".x_playlist_check_all" ).data( "x_selected" ) );
+	$( ".x_playlist_check_all" ).data( "x_selected", sel );
+
 	$( ".x_playlist_check_all" ).click(
 		function()
 		{
@@ -375,6 +460,8 @@ function()
 			$( ".x_playlist_item_select" ).data( "x_selected", sel );
 			$( ".x_playlist_item_select_on"  ).toggle( sel );
 			$( ".x_playlist_item_select_off" ).toggle( !sel );
+
+			select_item( sel, $( ".x_playlist_item" ) );
 
 			playlist_check_selection();
 		}
@@ -400,7 +487,6 @@ function()
 	var playlist_up_down = function( mode_up )
 	{
 		var id_pos = [];
-		var id_set = {};
 
 		$.each( $( ".x_playlist_item_select" )
 		,	function( i, v )
@@ -413,7 +499,6 @@ function()
 					var pos = v.data( "x_pos" );
 
 					id_pos.push( [ id, pos ] );
-					id_set[ id ] = 1;
 				}
 			}
 		);
@@ -459,9 +544,8 @@ function()
 			}
 		);
 
-		playlist_update( id_set );
+		playlist_update();
 	};
-
 
 	$( ".x_playlist_up" ).click(
 		function()
@@ -477,10 +561,125 @@ function()
 		}
 	);
 
-	var playlist_update = function( selected )
+	$( ".x_playlist_dropdown" ).on( 'show.bs.dropdown',
+		function ()
+		{
+			$( ".dropdown-item", $(this) ).removeClass( "dropdown-item-checked" );
+
+			$.getJSON( "status" )
+				.done( function( json )
+					{
+					    if( json.Ok )
+					    {
+							var d = parse_flds( json.Ok );
+
+							$.each( [
+								"repeat"
+							,	"random"
+							,	"single"
+							,	"consume"
+							],	function( i, v )
+								{
+									if( d[ v ] != "0" )
+									{
+										$( ".x_" + v ).addClass( "dropdown-item-checked" );
+									}
+								}
+							);
+						}
+					}
+				);
+		}
+	);
+
+	$.each( [
+		"repeat"
+	,	"random"
+	,	"single"
+	,	"consume"
+	],	function( i, v )
+		{
+			$( ".x_" + v ).click(
+				function( _v )
+				{
+					return function()
+					{
+						var sw = $(this).hasClass( "dropdown-item-checked" );
+
+						$.getJSON( "cmd", { cmd : _v, arg1 : sw ? "0" : "1" } )
+					};
+				}( v )
+			);
+		}
+	);
+
+	var current_songid 		= "";
+	var current_songid_prev	= "";
+
+	var playlist_select_song = function( songid, _f )
 	{
-		var sel = !!( $( ".x_playlist_check_all" ).data( "x_selected" ) );
-		$( ".x_playlist_check_all" ).data( "x_selected", sel );
+		current_songid_prev = current_songid;
+		current_songid = songid;
+
+		var pl = $( ".x_playlist" );
+
+		$( ".x_playlist_item" ).each(
+			function()
+			{
+				var t = $(this);
+				var s = ( songid != "" && t.data( "x_id" ) == songid );
+
+				t.toggleClass( "text-warning x_now_play", 	s );
+				t.toggleClass( "text-white",       			!s );
+
+				if( s && ( _f || current_songid_prev != songid ) )
+				{
+					var st = pl.scrollTop();
+					var sh = pl.innerHeight();
+					var tt = t.position().top;
+					var th = t.height();
+
+					if( tt < 0  )
+					{
+						var v = ( st + tt - th );
+					    pl.animate( { scrollTop: v } );
+					}
+					else if( tt > sh )
+					{
+						var v = st + ( tt + th - sh );
+					    pl.animate( { scrollTop: v } );
+					}
+				}
+			}
+		);
+	}
+
+	var playlist_update_select_song = function()
+	{
+		$.getJSON( "status" )
+			.done( function( json )
+				{
+					var d = parse_flds( json.Ok );
+					playlist_select_song( d[ 'songid' ], true )
+				}
+			);
+	}
+
+	var playlist_update = function()
+	{
+		sel_id = {}
+
+		$.each( $( ".x_playlist_item_select" )
+		,	function( i, v )
+			{
+				v = $( v );
+
+				if( !!( v.data( "x_selected" ) ) )
+				{
+					sel_id[ v.data( "x_id" ) ] = 1;
+				}
+			}
+		);
 
 		$.getJSON( "cmd", { cmd : "playlistinfo" } )
 			.always( function()
@@ -525,19 +724,26 @@ function()
 								var item_sel = $( ".x_playlist_item_select", item );
 
 								item_sel.click(
-									function()
+									function( _it )
 									{
-										var sel = !( $(this).data( "x_selected" ) );
-										$(this).data( "x_selected", sel );
+										return function()
+										{
+											var sel = !( $(this).data( "x_selected" ) );
+											$(this).data( "x_selected", sel );
 
-										$( ".x_playlist_item_select_on",  $(this) ).toggle( sel );
-										$( ".x_playlist_item_select_off", $(this) ).toggle( !sel );
+											$( ".x_playlist_item_select_on",  $(this) ).toggle( sel );
+											$( ".x_playlist_item_select_off", $(this) ).toggle( !sel );
 
-										playlist_check_selection();
+											select_item( sel, _it );
 
-										return false;
-									}
+											playlist_check_selection();
+
+											return false;
+										}
+									}( item )
 								);
+
+
 
 								item_sel.data( "x_selected", true );
 								item_sel.click();
@@ -545,16 +751,20 @@ function()
 								var item_play = $( ".x_playlist_item_play", item );
 
 								item_play.click(
-									function()
+									function( _it )
 									{
-										console.log( $(this).data( "x_id" ) );
-
-										$.getJSON( "cmd", { cmd : "playid", arg1 : $(this).data( "x_id" ) },  )
-										return false;
-									}
+										return function()
+										{
+											flush_item( _it )
+											$.getJSON( "cmd", { cmd : "playid", arg1 : $(this).data( "x_id" ) },  )
+											return false;
+										}
+									}( item )
 								);
 
-								item.click( function() { show_description( $(this).data( "x_name" ) ); } );
+								var item_desc = $( ".x_playlist_item_desc", item );
+
+								item_desc.click( function() { show_description( $(this).data( "x_name" ) ); } );
 
 								playlist_hr.before( item );
 							}
@@ -577,10 +787,7 @@ function()
 							$( ".x_playlist_item_title_2", item ).text( kv[ '_title_2' ] );
 							$( ".x_playlist_item_time",    item ).text( kv[ '_time' ] );
 
-							item.data( "x_name", kv[ '_name' ] );
-							item.data( "x_id",   kv[ '_id' ] );
-
-							var sel = ( selected && selected[ kv[ '_id' ] ] );
+							var sel = sel_id[ kv[ '_id' ] ];
 
 							var item_sel = $( ".x_playlist_item_select", item );
 
@@ -593,6 +800,12 @@ function()
 							var item_play = $( ".x_playlist_item_play", item );
 
 							item_play.data( "x_id",  kv[ '_id' ] );
+
+							var item_desc = $( ".x_playlist_item_desc", item );
+
+							item_desc.data( "x_name", kv[ '_name' ] );
+
+							item.data( "x_id",  kv[ '_id' ] );
 						}
 					}
 					else
@@ -601,6 +814,7 @@ function()
 					}
 
 					playlist_check_selection();
+					playlist_update_select_song();
 				}
 			)
 			.fail( function()
@@ -613,26 +827,348 @@ function()
 
 	// init player
 
-/*
-	window.setInterval(
+	var update_music_position = function( _time, _duratin )
+	{
+		_time		= parseInt( _time );
+		_duratin		= parseInt( _duratin );
+
+		var v_ti  = "00:00";
+		var v_re  = "00:00";
+		var v_du  = "00:00";
+		var p_max = 0;
+		var p_pos = 0;
+
+		if( _duratin	 > 0 )
+		{
+			v_ti  = format_time( _time );
+			v_re  = format_time( _duratin - _time );
+			v_du  = format_time( _duratin );
+
+			p_max = _duratin;
+			p_pos = _time;
+		}
+
+		var v_ti_old = $( ".x_time_t" ).text();
+
+		$( ".x_time_t" ).text( v_ti );
+		$( ".x_time_r" ).text( v_re );
+		$( ".x_time_d" ).text( v_du );
+
+		if( v_ti_old != v_ti )
+		{
+			var p = $( ".x_position_bar" );
+
+			p.attr(
+				{
+					'aria-valuenow'	: p_pos
+				,	'aria-valuemin'	: 0
+				,	'aria-valuemax'	: p_max
+				}
+			);
+
+			var w = '' + parseInt( ( p_max == 0 ? 0 : p_pos / p_max ) * 1000 ) / 10 + '%';
+
+			p.css( 'width', w );
+		}
+	}
+
+	var position_change = function( evt )
+	{
+		var w		= $(this).innerWidth();
+		var np		= evt.offsetX;
+		var p_max	= $( ".x_position_bar" ).attr( 'aria-valuemax' );
+		var v_du		= $( ".x_time_d" ).text( v_du );
+
+		if( w != 0 && p_max != 0 && v_du != "00:00" )
+		{
+			var tm = parseInt( p_max * ( np / w ) );
+
+			console.log( tm, p_max );
+			$.getJSON( "cmd", { cmd : "seekcur", arg1 : tm } )
+		}
+	}
+
+	$( ".x_position" ).bind( 'mousedown',  position_change );
+	$( ".x_position" ).bind( 'touchstart', position_change );
+
+	var disabled_player = function( _f )
+	{
+		if( _f != $( ".x_next" ).attr( "disabled" ) )
+		{
+			if( _f )
+			{
+				$( ".x_play_play" ).show();
+				$( ".x_play_pause, .x_volicon_high, .x_volicon_low" ).hide();
+				$( ".x_next, .x_play, .x_prev, .x_volmut, .x_position, .x_volup, .x_voldown" ).attr( "disabled", "disabled" );
+				$( ".x_vol" ).text( "---" );
+
+				update_music_position( 0, 0 );
+			}
+			else
+			{
+				$( ".x_next, .x_play, .x_prev, .x_volmut, .x_position, .x_volup, .x_voldown" ).removeAttr( "disabled" );
+			}
+		}
+
+		if( _f )
+		{
+			volume = -1;
+			update_volume( 0 );
+		}
+	};
+
+	$( ".x_next" ).click(
 		function()
 		{
-			$.getJSON( "status" )
-				.always( function()
-					{
-					}
-				)
-				.done( function( json )
-					{
-					    if( json.Ok )
-					    {
+			$.getJSON( "cmd", { cmd : "next" } );
+		}
+	);
+
+	$( ".x_prev" ).click(
+		function()
+		{
+			$.getJSON( "cmd", { cmd : "previous" } );
+		}
+	);
+
+	$( ".x_play" ).click(
+		function()
+		{
+			var s = $(this).data( "x_state" );
+
+			if( s )
+			{
+				var c = ( s == "stop" ? "play" : ( s == "pause" ? "pause 0" : "pause 1" ) );
+				$.getJSON( "cmd", { cmd : c } );
+			}
+		}
+	);
+
+	var volume			= -1;
+	var is_mut			= function() { return !( $( ".x_volmut" ).prop( 'checked' ) ); }
+
+	var timer_volupdown	= null;
+
+	var update_volume = function( d )
+	{
+		if( volume < 0 )
+		{
+			$( ".x_volicon_high, .x_volicon_low" ).hide();
+			$( ".x_volicon_mut" ).show();
+			$( ".x_volval" ).text( volume );
+
+			return -1;
+		}
+
+		var volume_old = volume;
+		var mut = is_mut();
+
+		volume += d;
+
+		if( volume >= 100 ) { volume = 100; }
+		if( volume <= 0   ) { volume = 0; }
+
+		$( ".x_volval" ).text( volume );
+
+		if( mut || volume <= 0 )
+		{
+			$( ".x_volicon_high, .x_volicon_low" ).hide();
+			$( ".x_volicon_mut" ).show();
+		}
+		else if( volume <= 50 )
+		{
+			$( ".x_volicon_high, .x_volicon_mut" ).hide();
+			$( ".x_volicon_low" ).show();
+		}
+		else
+		{
+			$( ".x_volicon_low, .x_volicon_mut" ).hide();
+			$( ".x_volicon_high" ).show();
+		}
+
+		return mut || ( volume == volume_old ) ? -1 : volume;
+	}
+
+	var volume_impl = function( d )
+	{
+		update_volume( d );
+
+		if( !is_mut() && volume != -1 )
+		{
+			$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+		}
+
+		var tk;
+		var ct = 0;
+
+		var f = 	function()
+		{
+			update_volume( d );
+
+			ct++;
+			if( ct >= 5 )
+			{
+				if( ct != 0 && !is_mut() && volume != -1 )
+				{
+					$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+				}
+
+				ct = 0;
+			}
+
+			tk = setTimeout( f, 100 );
+		};
+
+		tk = setTimeout( f, 1000 );
+
+		var fc = function()
+		{
+			clearTimeout( tk );
+
+			if( ct != 0 && !is_mut() && volume != -1 )
+			{
+				$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+			}
+        }
+
+		$(document).one( 'mouseup', fc );
+		$(document).one( 'touchend', fc );
+	}
+
+	var volume_up = function( evt ) { volume_impl( 2 );  evt.preventDefault(); return false; }
+	var volume_dw = function( evt ) { volume_impl( -2 ); evt.preventDefault(); return false; }
+
+	$( ".x_volup" ).bind( 'touchstart', volume_up );
+	$( ".x_volup" ).bind( 'mousedown',  volume_up );
+
+	$( ".x_voldw" ).bind( 'touchstart', volume_dw );
+	$( ".x_voldw" ).bind( 'mousedown',  volume_dw );
+
+	$( ".x_volmut" ).change(
+		function()
+		{
+			update_volume( 0 );
+			$.getJSON( "cmd", { cmd : "setvol", arg1 : is_mut() ? 0 : volume } );
+		}
+	);
+
+	var update_player = function()
+	{
+		$.getJSON( "status" )
+			.always( function()
+				{
+				}
+			)
+			.done( function( json )
+				{
+				    if( json.Ok )
+				    {
+						disabled_player( false );
+
+						var d = parse_flds( json.Ok );
+
+						if( d[ 'state' ] == 'play' || d[ 'state' ] == 'pause' )
+						{
+							if( d[ 'state' ] == 'play' )
+							{
+								$( ".x_play_play" ).hide();
+								$( ".x_play_pause" ).show();
+							}
+							else
+							{
+								$( ".x_play_play" ).show();
+								$( ".x_play_pause" ).hide();
+							}
+
+							$( ".x_next, .x_prev" ).removeAttr( "disabled" );
+							update_music_position( d[ 'time' ], d[ 'duration' ] )
+						}
+						else
+						{
+							$( ".x_play_play" ).show();
+							$( ".x_play_pause" ).hide();
+							$( ".x_next, .x_prev" ).attr( "disabled", "disabled" );
+							update_music_position( 0, 0 );
+						}
+
+						$( ".x_play" ).data( "x_state", d[ 'state' ] );
+
+						if( volume == -1 )
+						{
+							volume = parseInt( d[ 'volume' ] );
+							update_volume( 0 );
+						}
+
+						if( current_songid != d[ 'songid' ] )
+						{
+							playlist_select_song( d[ 'songid' ] )
+
+							if( current_songid != "" )
+							{
+								$.getJSON( "cmd", { cmd : "playlistid", arg1 : current_songid } )
+									.always( function()
+										{
+											$( ".x_player_title_1" ).text( "" );
+											$( ".x_player_title_2" ).text( "" );
+											$( ".x_player_title_3" ).text( "" );
+										}
+									)
+									.done( function( json )
+										{
+										    if( json.Ok )
+										    {
+												var list = parse_list( json.Ok.flds );
+
+												if( list.length != 0 )
+												{
+													var k  = list[ 0 ][ 0 ];
+													var n  = list[ 0 ][ 1 ];
+													var kv = list[ 0 ][ 2 ];
+
+													$( ".x_player_title_1" ).text( kv[ '_title_1' ] );
+													$( ".x_player_title_2" ).text( kv[ '_title_2' ] );
+
+													var a = "";
+
+													if( d[ 'audio' ] )
+													{
+														var aa = d[ 'audio' ].split( ':' );
+
+														a += " " + aa[ 0 ] + "Hz";
+														a += " " + aa[ 1 ] + "bit";
+														a += " " + aa[ 2 ] + "ch";
+													}
+													if( d[ 'bitrate' ] ) { a += " bitrate: " + d[ 'bitrate' ] + "Kb"; }
+
+													$( ".x_player_title_3" ).text( a );
+												}
+											}
+										}
+									);
+							}
+						}
+
+						if( $( ".x_playlist_item" ).length != parseInt( d[ 'playlistlength' ] ) )
+						{
+							playlist_update();
 						}
 					}
-				);
-		}
-	,	250
-	);
-*/
+					else
+					{
+						disabled_player( true );
+					}
+				}
+			)
+			.fail( function()
+				{
+					disabled_player( true );
+				}
+			);
+	}
+
+	update_player();
+
+	setInterval( update_player, 250 );
 
 	var show_description = function( _n )
 	{
@@ -680,8 +1216,6 @@ function()
 									tr_base.before( tr );
 
 									tr.show();
-
-									console.log( tr );
 								}
 							}
 
@@ -701,8 +1235,6 @@ function()
 			);
 
 	}
-
-
 
 	$( '#carousel' ).on( 'slide.bs.carousel',
 		function ( x )
