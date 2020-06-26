@@ -37,7 +37,7 @@ use chrono::prelude::*;
 
 use serde::{ /* Serialize, */ Deserialize };
 
-mod mdpcom;
+mod mpdcom;
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -55,7 +55,7 @@ struct Config
 pub struct Context
 {
     config          : Config
-,   mpdcom_tx       : mpsc::Sender< mdpcom::MpdComRequest >
+,   mpdcom_tx       : mpsc::Sender< mpdcom::MpdComRequest >
 ,   mpd_status_time : Option< chrono::DateTime<Local> >
 ,   mpd_status      : Vec<(String, String)>
 }
@@ -191,28 +191,28 @@ struct CmdParam
 ///
 impl CmdParam
 {
-    fn to_request( &self ) -> ( mdpcom::MpdComRequest, oneshot::Receiver< mdpcom::MpdComResult > )
+    fn to_request( &self ) -> ( mpdcom::MpdComRequest, oneshot::Receiver< mpdcom::MpdComResult > )
     {
-        let ( mut req, rx ) = mdpcom::MpdComRequest::new();
+        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
 
         req.req += &self.cmd;
 
         if self.arg1.is_some()
         {
             req.req += " ";
-            req.req += &mdpcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+            req.req += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
         }
 
         if self.arg2.is_some()
         {
             req.req += " ";
-            req.req += &mdpcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+            req.req += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
         }
 
         if self.arg3.is_some()
         {
             req.req += " ";
-            req.req += &mdpcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+            req.req += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
         }
 
         ( req, rx )
@@ -310,7 +310,7 @@ async fn main() -> io::Result<()>
         return Err( std::io::Error::new( std::io::ErrorKind::Other, "stop!" ) );
     }
 
-    let ( tx, rx ) = mpsc::channel::< mdpcom::MpdComRequest >( 128 );
+    let ( tx, rx ) = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
 
     let ctx = web::Data::new( Mutex::new(
         Context
@@ -333,7 +333,7 @@ async fn main() -> io::Result<()>
         {
             log::debug!( "mpdcom starting." );
 
-            mdpcom::mpdcom_task( ctx_t, rx ).await.ok();
+            mpdcom::mpdcom_task( ctx_t, rx ).await.ok();
 
             log::debug!( "mpdcom stop." );
         }
@@ -376,7 +376,7 @@ async fn main() -> io::Result<()>
     .await;
 
     {
-        let ( mut req, rx ) = mdpcom::MpdComRequest::new();
+        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
 
         req.req = String::from( "close" );
 
