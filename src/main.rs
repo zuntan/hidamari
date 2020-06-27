@@ -23,21 +23,21 @@ use std::io::prelude::*;
 use std::path;
 use std::fs;
 use std::net::ToSocketAddrs;
-use std::sync::Mutex;
+use std::sync::{ Mutex };
+use std::collections::hash_map::{ HashMap };
 
 // use actix_web::http::{ header, Method, StatusCode };
-
 use actix_web::{ error, /* guard, */ middleware, web };
-use actix_web::{ App, HttpRequest, HttpResponse, HttpServer, Result };
+use actix_web::{ App, HttpRequest, HttpResponse, HttpServer, Result, Error };
 use actix_files as afs;
+use actix_web_actors::ws;
 
 use tokio::sync::{ oneshot, mpsc };
-
-use chrono::prelude::*;
 
 use serde::{ /* Serialize, */ Deserialize };
 
 mod mpdcom;
+mod wssession;
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -54,10 +54,10 @@ struct Config
 ///
 pub struct Context
 {
-    config          : Config
-,   mpdcom_tx       : mpsc::Sender< mpdcom::MpdComRequest >
-,   mpd_status_time : Option< chrono::DateTime<Local> >
-,   mpd_status      : Vec<(String, String)>
+    config                  : Config
+,   mpdcom_tx               : mpsc::Sender< mpdcom::MpdComRequest >
+,   mpd_status              : mpdcom::MpdComResult
+,   status_ws_sessions  : wssession::WsSessions
 }
 
 ///
@@ -164,18 +164,17 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
 }
 
 ///
+async fn status_ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::Payload ) -> Result< HttpResponse, Error >
+{
+    ws::start( wssession::ArcWsSession::new( &ctx, wssession::WsSwssionType::Status ), &r, stream )
+}
+
+///
 async fn status( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 {
     let ctx = ctx.lock().unwrap();
 
-    if ctx.mpd_status_time.is_some()
-    {
-        HttpResponse::Ok().json( Result::<_,()>::Ok( &ctx.mpd_status ) )
-    }
-    else
-    {
-        HttpResponse::Ok().json( Result::<(),_>::Err( "" ) )
-    }
+    HttpResponse::Ok().json( &ctx.mpd_status  )
 }
 
 ///
@@ -315,10 +314,10 @@ async fn main() -> io::Result<()>
     let ctx = web::Data::new( Mutex::new(
         Context
         {
-            config          : config.unwrap()
-        ,   mpdcom_tx       : tx
-        ,   mpd_status_time : None
-        ,   mpd_status      : Vec::new()
+            config                  : config.unwrap()
+        ,   mpdcom_tx               : tx
+        ,   mpd_status              : Ok( mpdcom::MpdComOk::new() )
+        ,   status_ws_sessions  : HashMap::new()
         }
     ) ) ;
 
@@ -347,6 +346,10 @@ async fn main() -> io::Result<()>
         App::new()
             .app_data( ctx_t.clone() )
             .wrap( middleware::Logger::default() )
+            .service(
+                web::resource( "/status_ws" )
+                    .route( web::get().to( status_ws ) )
+            )
             .service(
                 web::resource( "/status" )
                     .route( web::get().to( status ) )

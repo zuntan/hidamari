@@ -50,7 +50,7 @@ impl fmt::Display for MpdComErr
 ///
 impl MpdComOk
 {
-    fn new() -> MpdComOk
+    pub fn new() -> MpdComOk
     {
         MpdComOk { flds : Vec::new(), bin : None }
     }
@@ -59,7 +59,7 @@ impl MpdComOk
 ///
 impl MpdComErr
 {
-    fn new( err_code : i32 ) -> MpdComErr
+    pub fn new( err_code : i32 ) -> MpdComErr
     {
         MpdComErr{
             err_code
@@ -243,7 +243,7 @@ pub async fn mpdcom_task(
 
     let mut _mpd_version : Option< String > = None;
 
-    let rx_time_out = Duration::from_millis( 250 );
+    let rx_time_out = Duration::from_millis( 10 );
 
     let mut status_try_time : Option< Instant > = None;
     let status_time_out = Duration::from_millis( 200 );
@@ -299,25 +299,60 @@ pub async fn mpdcom_task(
 
             match mpdcon_exec( String::from( "status" ), conn.as_mut().unwrap(), false ).await
             {
-                Ok(x) =>
+                Ok(mut x) =>
                 {
-                    match x
+                    let mut songids = Vec::<String>::new();
+
+                    if let Ok( x ) = x.as_ref()
                     {
-                        Ok(x) =>
+                        for( k, v ) in x.flds.iter()
                         {
-                            let ctx = &mut ctx.lock().unwrap();
-
-                            ctx.mpd_status.clear();
-                            ctx.mpd_status.extend_from_slice( &x.flds );
-                            ctx.mpd_status_time = Some( chrono::Local::now() );
-
-                            status_try_time = Some( Instant::now() );
-
-                            status_ok = true;
-
-                            // log::debug!( "mpdcom status {:?}", &ctx.mpd_status_time );
+                            if k == "songid" || k == "nextsongid"
+                            {
+                                songids.push( String::from( v ) );
+                            }
                         }
-                    ,   Err(_) => {}
+                    }
+
+                    if let Ok( x2 ) = x.as_mut()
+                    {
+                        for si in songids
+                        {
+                            match mpdcon_exec( format!( "playlistid {}", si ), conn.as_mut().unwrap(), false ).await
+                            {
+                                Ok( x1 ) =>
+                                {
+                                    if let Ok( x1 ) = x1
+                                    {
+                                        x2.flds.extend_from_slice( &x1.flds );
+                                    }
+                                }
+                            ,   Err(_) => {}
+                            }
+                        }
+
+                        x2.flds.push( ( String::from( "_x_time" ), chrono::Local::now().to_rfc3339() ) );
+                    }
+
+                    let ctx = &mut ctx.lock().unwrap();
+
+                    ctx.mpd_status = x;
+
+                    status_try_time = Some( Instant::now() );
+
+                    status_ok = true;
+
+                    // log::debug!( "mpdcom status {:?}", &ctx.mpd_status_time );
+
+                    if let Ok( x ) = serde_json::to_string( &ctx.mpd_status )
+                    {
+                        for ( k, v ) in ctx.status_ws_sessions.iter()
+                        {
+                            if let super::wssession::WsSwssionType::Status = k.wst
+                            {
+                                let _ = v.do_send( super::wssession::WsSessionMessage( String::from( &x ) ) );
+                            }
+                        }
                     }
                 }
             ,   Err(x) =>
@@ -333,8 +368,7 @@ pub async fn mpdcom_task(
             {
                 let ctx = &mut ctx.lock().unwrap();
 
-                ctx.mpd_status.clear();
-                ctx.mpd_status_time = None;
+                ctx.mpd_status = Err( MpdComErr::new( -1 ) );
             }
         }
 
