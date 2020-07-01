@@ -43,7 +43,9 @@ use config::{ Config, ConfigDyn, get_config, get_config_dyn, save_config_dyn };
 ///
 pub struct Context
 {
-    config              : Config
+    server_stop         : bool
+
+,   config              : Config
 ,   config_dyn          : ConfigDyn
 
 ,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
@@ -64,7 +66,8 @@ impl Context
     {
         Context
         {
-            config
+            server_stop         : false
+        ,   config
         ,   config_dyn
         ,   mpdcom_tx
         ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
@@ -353,6 +356,10 @@ async fn main() -> io::Result<()>
     .bind( bind_addr )?
     .run()
     .await;
+
+    {
+        &ctx.lock().unwrap().server_stop = true;
+    }
 
     {
         let ( mut req, rx ) = mpdcom::MpdComRequest::new();

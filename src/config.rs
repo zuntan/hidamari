@@ -53,7 +53,6 @@ impl ConfigDyn
 ///
 pub fn get_config() -> Option< Config >
 {
-
     let err_prefix = "config load error ";
 
     let mut targets = vec![
