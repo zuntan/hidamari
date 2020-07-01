@@ -37,23 +37,23 @@ mod config;
 mod mpdcom;
 mod wssession;
 mod mpdfifo;
+mod event;
+mod task;
 
 use config::{ Config, ConfigDyn, get_config, get_config_dyn, save_config_dyn };
 
 ///
 pub struct Context
 {
-    server_stop         : bool
-
-,   config              : Config
+    config              : Config
 ,   config_dyn          : ConfigDyn
 
 ,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
 ,   mpd_status          : mpdcom::MpdComResult
 ,   status_ws_sessions  : wssession::WsSessions
 
-,   bar_data_json       : String
-,   bar_head_json       : String
+,   spec_data_json      : String
+,   spec_head_json      : String
 }
 
 impl Context
@@ -66,14 +66,13 @@ impl Context
     {
         Context
         {
-            server_stop         : false
-        ,   config
+            config
         ,   config_dyn
         ,   mpdcom_tx
         ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
         ,   status_ws_sessions  : HashMap::new()
-        ,   bar_data_json       : String::new()
-        ,   bar_head_json       : String::new()
+        ,   spec_data_json      : String::new()
+        ,   spec_head_json      : String::new()
         }
     }
 }
@@ -106,9 +105,25 @@ impl Context
 
 
 ///
-async fn status_ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::Payload ) -> Result< HttpResponse, Error >
+async fn ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::Payload ) -> Result< HttpResponse, Error >
 {
-    ws::start( wssession::ArcWsSession::new( &ctx, wssession::WsSwssionType::Status ), &r, stream )
+    ws::start( wssession::ArcWsSession::new( &ctx ), &r, stream )
+}
+
+///
+async fn spec_data( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
+{
+    let ctx = ctx.lock().unwrap();
+
+    HttpResponse::Ok().body( &ctx.spec_data_json )
+}
+
+///
+async fn spec_head( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
+{
+    let ctx = ctx.lock().unwrap();
+
+    HttpResponse::Ok().body( &ctx.spec_head_json )
 }
 
 ///
@@ -275,8 +290,7 @@ async fn main() -> io::Result<()>
 
     let config_dyn = get_config_dyn( &config );
 
-    let ( mpdcom_tx,        mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
-    let ( mut mpdfifo_tx,   mpdfifo_rx )    = mpsc::channel::< mpdfifo::MpdFifoRequest >( 2 );
+    let ( mpdcom_tx,    mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
 
     let ctx =
         web::Data::new(
@@ -296,23 +310,33 @@ async fn main() -> io::Result<()>
         async
         {
             log::debug!( "mpdcom starting." );
-
             mpdcom::mpdcom_task( ctx_t, mpdcom_rx ).await.ok();
-
             log::debug!( "mpdcom stop." );
         }
     );
 
+
+    let ( mpdfifo_tx,   mpdfifo_rx )    = event::make_channel();
     let ctx_t = ctx.clone();
 
     actix_rt::spawn(
         async
         {
             log::debug!( "mpdfifo starting." );
-
             mpdfifo::mpdfifo_task( ctx_t, mpdfifo_rx ).await.ok();
-
             log::debug!( "mpdfifo stop." );
+        }
+    );
+
+    let ( sart_tx, sart_rx )    = event::make_channel();
+    let ctx_t = ctx.clone();
+
+    actix_rt::spawn(
+        async
+        {
+            log::debug!( "spectrum_responce_task starting." );
+            task::spectrum_responce_task( ctx_t, sart_rx ).await.ok();
+            log::debug!( "spectrum_responce_task stop." );
         }
     );
 
@@ -326,8 +350,14 @@ async fn main() -> io::Result<()>
             .app_data( ctx_t.clone() )
             .wrap( middleware::Logger::default() )
             .service(
-                web::resource( "/status_ws" )
-                    .route( web::get().to( status_ws ) )
+                web::resource( "/spec_data" )
+                    .route( web::get().to( spec_data ) )
+                    .route( web::post().to( spec_data ) )
+            )
+            .service(
+                web::resource( "/spec_head" )
+                    .route( web::get().to( spec_head ) )
+                    .route( web::post().to( spec_head ) )
             )
             .service(
                 web::resource( "/status" )
@@ -351,15 +381,15 @@ async fn main() -> io::Result<()>
                 web::resource( "/" )
                     .to( root )
             )
+            .service(
+                web::resource( "/ws" )
+                    .route( web::get().to( ws ) )
+            )
         }
     )
     .bind( bind_addr )?
     .run()
     .await;
-
-    {
-        &ctx.lock().unwrap().server_stop = true;
-    }
 
     {
         let ( mut req, rx ) = mpdcom::MpdComRequest::new();
@@ -373,22 +403,22 @@ async fn main() -> io::Result<()>
         log::debug!( "mpdcom shutdown." );
     }
 
+    for mut tx in vec![ mpdfifo_tx, sart_tx ]
     {
-        let ( mut req, rx ) = mpdfifo::MpdFifoRequest::new();
+        let ( mut req, rx ) = event::new_request();
 
-        req.req = mpdfifo::MpdFifoRequestType::Shutdown;
+        req.req = event::EventRequestType::Shutdown;
 
-        mpdfifo_tx.send( req ).await.ok();
+        tx.send( req ).await.ok();
 
         rx.await.ok();
-
-        log::debug!( "mpdfifo shutdown." );
     }
 
     {
         let ctx = &ctx.lock().unwrap();
         save_config_dyn( &ctx.config, &ctx.config_dyn );
     }
+
 
     server
 }

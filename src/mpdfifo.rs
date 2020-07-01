@@ -18,13 +18,15 @@ use libc::{F_GETFL, F_SETFL, fcntl, O_NONBLOCK};
 
 use actix_web::web;
 
-use tokio::time::{ timeout, Duration, Instant };
-use tokio::sync::{ oneshot, mpsc };
+use tokio::time::{ Duration, Instant };
+use tokio::sync::{ mpsc };
 
 use serde::{ Serialize, /* Deserialize */ };
 
 use chfft::CFft1D;
 use num_complex::Complex;
+
+use crate::event;
 
 #[derive(Debug, Serialize, Clone)]
 struct BarData<'a>
@@ -43,41 +45,6 @@ struct BarHeader<'a>
 }
 
 type BarHeaderResult<'a> = Result< BarHeader<'a>, () >;
-
-#[derive(Debug)]
-pub enum MpdFifoRequestType
-{
-    Nop
-,   Shutdown
-}
-
-///
-pub struct MpdFifoRequest
-{
-    pub req  : MpdFifoRequestType
-,   pub tx   : oneshot::Sender< MpdFifoResult >
-}
-
-pub struct MpdFifoResult
-{
-}
-
-///
-impl MpdFifoRequest
-{
-    pub fn new() -> ( MpdFifoRequest, oneshot::Receiver< MpdFifoResult > )
-    {
-        let ( tx, rx ) = oneshot::channel::< MpdFifoResult >();
-
-        (
-            MpdFifoRequest{
-                req         : MpdFifoRequestType::Nop
-            ,   tx
-            }
-        ,   rx
-        )
-    }
-}
 
 fn open_fifo( fifo_name : &str ) -> io::Result< File >
 {
@@ -109,7 +76,7 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
     Ok( fifo )
 }
 
-const RX_TIMEOUT        : Duration = Duration::from_millis( 10 );
+
 const SAMPLING_RATE     : usize = 44100;
 const CHANNELS          : usize = 2;
 const F_BUF_SIZE        : usize = SAMPLING_RATE / 20;
@@ -128,7 +95,7 @@ const ENABLE_CORRECTION : bool  = true;
 
 pub async fn mpdfifo_task(
     ctx     : web::Data< Mutex< super::Context > >
-,   mut rx  : mpsc::Receiver< MpdFifoRequest >
+,   mut rx  : mpsc::Receiver< event::EventRequest >
 )
 -> Result< (), Box< dyn std::error::Error> >
 {
@@ -207,7 +174,7 @@ pub async fn mpdfifo_task(
 
             if let Ok( x ) = serde_json::to_string( &bh )
             {
-                ctx.bar_head_json = x;
+                ctx.spec_head_json = x;
             }
 
             String::from( &ctx.config.mpd_fifo )
@@ -311,25 +278,9 @@ pub async fn mpdfifo_task(
 
     loop
     {
-        match timeout( RX_TIMEOUT, rx.recv() ).await
+        if event::event_shutdown( &mut rx ).await
         {
-            Ok( recv ) =>
-            {
-                let recv = recv.unwrap();
-
-                log::debug!( "rx recv [{:?}]", recv.req );
-
-                match recv.req
-                {
-                    MpdFifoRequestType::Shutdown =>
-                    {
-                        recv.tx.send( MpdFifoResult{} ).ok();
-                        break;
-                    }
-                ,   _ => {}
-                }
-            }
-        ,   Err(_) => {}
+            break;
         }
 
         match fifo
@@ -453,7 +404,7 @@ pub async fn mpdfifo_task(
 
                             if let Ok( x ) = serde_json::to_string( &bd )
                             {
-                                ctx.bar_data_json = x;
+                                ctx.spec_data_json = x;
                             }
                         }
                     }

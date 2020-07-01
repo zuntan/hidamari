@@ -22,8 +22,8 @@ pub type WsSessions = HashMap< Arc< WsSession >, Recipient< WsSessionMessage > >
 
 pub enum WsSwssionType
 {
-    Status
-,   Spectrum
+    Default
+,   Special
 }
 
 pub struct WsSession
@@ -79,7 +79,12 @@ impl Into< ArcWsSession > for Arc< WsSession >
 
 impl ArcWsSession
 {
-    pub fn new ( ctx : & web::Data< Mutex< super::Context > >, wst : WsSwssionType ) -> ArcWsSession
+    pub fn new( ctx : & web::Data< Mutex< super::Context > > ) -> ArcWsSession
+    {
+        Arc::new( WsSession{ ctx : ctx.clone(), wst : WsSwssionType::Default } ).into()
+    }
+
+    pub fn with_type( ctx : & web::Data< Mutex< super::Context > >, wst : WsSwssionType ) -> ArcWsSession
     {
         Arc::new( WsSession{ ctx : ctx.clone(), wst } ).into()
     }

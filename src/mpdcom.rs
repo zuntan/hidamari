@@ -357,7 +357,7 @@ pub async fn mpdcom_task(
                     {
                         for ( k, v ) in ctx.status_ws_sessions.iter()
                         {
-                            if let super::wssession::WsSwssionType::Status = k.wst
+                            if let super::wssession::WsSwssionType::Default = k.wst
                             {
                                 let _ = v.do_send( super::wssession::WsSessionMessage( String::from( &x ) ) );
                             }
