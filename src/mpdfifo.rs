@@ -8,7 +8,6 @@
 ///
 
 use std::sync::Mutex;
-use std::thread;
 use std::io::{ self, Read };
 use std::collections::VecDeque;
 use std::fs::File;
@@ -18,7 +17,7 @@ use libc::{F_GETFL, F_SETFL, fcntl, O_NONBLOCK};
 
 use actix_web::web;
 
-use tokio::time::{ Duration, Instant };
+use tokio::time::{ delay_for, Duration, Instant };
 use tokio::sync::{ mpsc };
 
 use serde::{ Serialize, /* Deserialize */ };
@@ -218,7 +217,7 @@ pub async fn mpdfifo_task(
                         break;
                     }
                 ,   Ok( _ ) => {
-                        thread::sleep( FIFO_STALL_SLEEP );
+                        delay_for( FIFO_STALL_SLEEP ).await;
                     }
                 }
             }
@@ -272,7 +271,7 @@ pub async fn mpdfifo_task(
                 s_buf.push_back( 0 );
             }
 
-            thread::sleep( FIFO_STALL_SLEEP );
+            delay_for( FIFO_STALL_SLEEP ).await;
         }
     }
 
@@ -287,7 +286,7 @@ pub async fn mpdfifo_task(
         {
             Err(_) =>
             {
-                thread::sleep( FIFO_ERROR_SLEEP );
+                delay_for( FIFO_ERROR_SLEEP ).await;
             }
         ,   Ok( ref mut fifo_file ) =>
             {

@@ -8,16 +8,15 @@
 ///
 
 use std::sync::Mutex;
-use std::thread;
 
 use actix_web::web;
 
-use tokio::time::{ Duration };
+use tokio::time::{ delay_for, Duration };
 
 use crate::event;
 use crate::wssession;
 
-const THREAD_SLEEP : Duration = Duration::from_millis( 65 );
+const TASK_SLEEP : Duration = Duration::from_millis( 65 );
 
 pub async fn spectrum_responce_task(
     ctx     : web::Data< Mutex< super::Context > >
@@ -25,13 +24,13 @@ pub async fn spectrum_responce_task(
 )
 -> Result< (), Box< dyn std::error::Error> >
 {
-    let sleep_dur = THREAD_SLEEP - event::EVENT_SHUTDOWN_TIMEOUT;
+    let sleep_dur = TASK_SLEEP - event::EVENT_SHUTDOWN_TIMEOUT;
 
     let mut last_data = String::new();
 
     loop
     {
-        thread::sleep( sleep_dur );
+        delay_for( sleep_dur ).await;
 
         if event::event_shutdown( &mut rx ).await
         {
