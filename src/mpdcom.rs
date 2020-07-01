@@ -73,10 +73,18 @@ impl MpdComErr
 ///
 pub type MpdComResult = Result< MpdComOk, MpdComErr >;
 
+#[derive(Debug)]
+pub enum MpdComRequestType
+{
+    Nop
+,   Cmd(String)
+,   Shutdown
+}
+
 ///
 pub struct MpdComRequest
 {
-    pub req  : String
+    pub req  : MpdComRequestType
 ,   pub tx   : oneshot::Sender< MpdComResult >
 }
 
@@ -89,7 +97,7 @@ impl MpdComRequest
 
         (
             MpdComRequest{
-                req         : String::new()
+                req         : MpdComRequestType::Cmd( String::new() )
             ,   tx
             }
         ,   rx
@@ -378,41 +386,50 @@ pub async fn mpdcom_task(
             {
                 let recv = recv.unwrap();
 
-                log::debug!( "rx recv [{}]", recv.req );
+                log::debug!( "rx recv [{:?}]", recv.req );
 
-                if recv.req == "close"
+                match recv.req
                 {
-                    if conn.is_some()
+                    MpdComRequestType::Shutdown =>
                     {
-                        log::info!( "connection close" );
-                        conn.as_mut().unwrap().shutdown();
+                        if conn.is_some()
+                        {
+                            log::info!( "connection close" );
+                            conn.as_mut().unwrap().shutdown();
+                        }
+
+                        recv.tx.send( Ok( MpdComOk::new() ) ).ok();
+                        break;
                     }
 
-                    recv.tx.send( Ok( MpdComOk::new() ) ).ok();
-                    break;
-                }
-                else if conn.is_some()
-                {
-                    match mpdcon_exec( recv.req, conn.as_mut().unwrap(), mpd_protolog ).await
+                ,   MpdComRequestType::Cmd( cmd ) =>
                     {
-                        Ok(x) =>
+                        if cmd != "close" && conn.is_some()
                         {
-                            recv.tx.send( x ).ok();
-                        }
-                    ,   Err(x) =>
-                        {
-                            log::warn!( "connection error [{:?}]", x );
-                            conn.as_mut().unwrap().shutdown();
-                            conn = None;
-                            conn_try_time = Some( Instant::now() );
+                            match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                            {
+                                Ok(x) =>
+                                {
+                                    recv.tx.send( x ).ok();
+                                }
+                            ,   Err(x) =>
+                                {
+                                    log::warn!( "connection error [{:?}]", x );
+                                    conn.as_mut().unwrap().shutdown();
+                                    conn = None;
+                                    conn_try_time = Some( Instant::now() );
 
+                                    recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                                }
+                            }
+                        }
+                        else
+                        {
                             recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
                         }
                     }
-                }
-                else
-                {
-                    recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+
+                ,   _ => {}
                 }
             }
         ,   Err(_) =>

@@ -38,6 +38,7 @@ use serde::{ /* Serialize, */ Deserialize };
 
 mod mpdcom;
 mod wssession;
+mod mpdfifo;
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -46,6 +47,7 @@ struct Config
     bind_addr   : String
 ,   mpd_addr    : String
 ,   mpd_protolog: bool
+,   mpd_fifo    : String
 ,   log_level   : String
 ,   theme_dir   : String
 ,   theme       : String
@@ -54,10 +56,14 @@ struct Config
 ///
 pub struct Context
 {
-    config                  : Config
-,   mpdcom_tx               : mpsc::Sender< mpdcom::MpdComRequest >
-,   mpd_status              : mpdcom::MpdComResult
+    config              : Config
+,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
+,   mpd_status          : mpdcom::MpdComResult
 ,   status_ws_sessions  : wssession::WsSessions
+
+,   mpdfifo_tx          : mpsc::Sender< mpdfifo::MpdFifoRequest >
+,   bar_dat_json        : String
+,   bar_cap_json        : String
 }
 
 ///
@@ -192,27 +198,31 @@ impl CmdParam
 {
     fn to_request( &self ) -> ( mpdcom::MpdComRequest, oneshot::Receiver< mpdcom::MpdComResult > )
     {
-        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
+        let mut cmd = String::new();
 
-        req.req += &self.cmd;
+        cmd += &self.cmd;
 
         if self.arg1.is_some()
         {
-            req.req += " ";
-            req.req += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+            cmd += " ";
+            cmd += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
         }
 
         if self.arg2.is_some()
         {
-            req.req += " ";
-            req.req += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+            cmd += " ";
+            cmd += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
         }
 
         if self.arg3.is_some()
         {
-            req.req += " ";
-            req.req += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+            cmd += " ";
+            cmd += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
         }
+
+        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
+
+        req.req = mpdcom::MpdComRequestType::Cmd( cmd );
 
         ( req, rx )
     }
@@ -309,19 +319,27 @@ async fn main() -> io::Result<()>
         return Err( std::io::Error::new( std::io::ErrorKind::Other, "stop!" ) );
     }
 
-    let ( tx, rx ) = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
+    let ( mpdcom_tx,    mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
+    let ( mpdfifo_tx,   mpdfifo_rx )    = mpsc::channel::< mpdfifo::MpdFifoRequest >( 2 );
 
-    let ctx = web::Data::new( Mutex::new(
-        Context
-        {
-            config                  : config.unwrap()
-        ,   mpdcom_tx               : tx
-        ,   mpd_status              : Ok( mpdcom::MpdComOk::new() )
-        ,   status_ws_sessions  : HashMap::new()
-        }
-    ) ) ;
+    let ctx =
+        web::Data::new(
+            Mutex::new(
+                Context
+                {
+                    config              : config.unwrap()
+                ,   mpdcom_tx           : mpdcom_tx
+                ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
+                ,   status_ws_sessions  : HashMap::new()
+                ,   mpdfifo_tx          : mpdfifo_tx
+                ,   bar_dat_json        : String::new()
+                ,   bar_cap_json        : String::new()
+                }
+            )
+        );
 
-    let bind_addr = {
+    let bind_addr =
+    {
         String::from( &ctx.lock().unwrap().config.bind_addr )
     };
 
@@ -332,7 +350,7 @@ async fn main() -> io::Result<()>
         {
             log::debug!( "mpdcom starting." );
 
-            mpdcom::mpdcom_task( ctx_t, rx ).await.ok();
+            mpdcom::mpdcom_task( ctx_t, mpdcom_rx ).await.ok();
 
             log::debug!( "mpdcom stop." );
         }
@@ -342,8 +360,9 @@ async fn main() -> io::Result<()>
 
     let ctx_t = ctx.clone();
 
-    let server = HttpServer::new( move || {
-        App::new()
+    let server = HttpServer::new( move ||
+        {
+            App::new()
             .app_data( ctx_t.clone() )
             .wrap( middleware::Logger::default() )
             .service(
@@ -381,13 +400,25 @@ async fn main() -> io::Result<()>
     {
         let ( mut req, rx ) = mpdcom::MpdComRequest::new();
 
-        req.req = String::from( "close" );
+        req.req = mpdcom::MpdComRequestType::Shutdown;
 
         &ctx.lock().unwrap().mpdcom_tx.send( req ).await;
 
         rx.await.ok();
 
         log::debug!( "mpdcom shutdown." );
+    }
+
+    {
+        let ( mut req, rx ) = mpdfifo::MpdFifoRequest::new();
+
+        req.req = mpdfifo::MpdFifoRequestType::Shutdown;
+
+        &ctx.lock().unwrap().mpdfifo_tx.send( req ).await;
+
+        rx.await.ok();
+
+        log::debug!( "mpdfifo shutdown." );
     }
 
     server
