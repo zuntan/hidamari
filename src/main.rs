@@ -19,10 +19,7 @@ extern crate chrono;
 extern crate lazy_static;
 
 use std::io;
-use std::io::prelude::*;
 use std::path;
-use std::fs;
-use std::net::ToSocketAddrs;
 use std::sync::{ Mutex };
 use std::collections::hash_map::{ HashMap };
 
@@ -36,35 +33,48 @@ use tokio::sync::{ oneshot, mpsc };
 
 use serde::{ /* Serialize, */ Deserialize };
 
+mod config;
 mod mpdcom;
 mod wssession;
 mod mpdfifo;
 
-///
-#[derive(Debug, Deserialize, Clone)]
-struct Config
-{
-    bind_addr   : String
-,   mpd_addr    : String
-,   mpd_protolog: bool
-,   mpd_fifo    : String
-,   log_level   : String
-,   theme_dir   : String
-,   theme       : String
-}
+use config::{ Config, ConfigDyn, get_config, get_config_dyn, save_config_dyn };
 
 ///
 pub struct Context
 {
     config              : Config
+,   config_dyn          : ConfigDyn
+
 ,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
 ,   mpd_status          : mpdcom::MpdComResult
 ,   status_ws_sessions  : wssession::WsSessions
 
-,   mpdfifo_tx          : mpsc::Sender< mpdfifo::MpdFifoRequest >
-,   bar_dat_json        : String
-,   bar_cap_json        : String
+,   bar_data_json       : String
+,   bar_head_json       : String
 }
+
+impl Context
+{
+    fn new(
+        config              : Config
+    ,   config_dyn          : ConfigDyn
+    ,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
+    ) -> Context
+    {
+        Context
+        {
+            config
+        ,   config_dyn
+        ,   mpdcom_tx
+        ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
+        ,   status_ws_sessions  : HashMap::new()
+        ,   bar_data_json       : String::new()
+        ,   bar_head_json       : String::new()
+        }
+    }
+}
+
 
 ///
 impl Context
@@ -82,92 +92,15 @@ impl Context
             path.push( "_theme" );
         }
 
-        if self.config.theme != ""
+        if self.config_dyn.theme != ""
         {
-            path.push( &self.config.theme );
+            path.push( &self.config_dyn.theme );
         }
 
         path
     }
 }
 
-///
-fn get_config() -> Option< Config >
-{
-    let mut targets = vec![
-        String::from( "hidamari.conf" )
-    ,   String::from( "/etc/hidamari.conf" )
-    ];
-
-    let args: Vec<String> = std::env::args().collect();
-
-    if args.len() >= 2
-    {
-        targets.insert( 0, args[1].clone() );
-    }
-
-    let mut conts : Option< String > = None;
-
-    for t in targets
-    {
-        log::debug!( "config try loading [{:?}]", &t );
-
-        if let Ok( mut f ) = fs::File::open( &t ).map( |f| io::BufReader::new( f ) )
-        {
-            log::info!( "config loading [{}]", &t );
-
-            let mut tmp_conts = String::new();
-
-            if let Ok( _ ) = f.read_to_string( &mut tmp_conts )
-            {
-                conts = Some( tmp_conts );
-            }
-
-            break;
-        }
-    }
-
-    if conts.is_some()
-    {
-        if let Ok( x ) = toml::de::from_str::<Config>( &conts.unwrap() )
-        {
-            if x.bind_addr.to_socket_addrs().is_err()
-            {
-                log::error!( "invalid value `bind_addr`" );
-            }
-            else if x.mpd_addr.to_socket_addrs().is_err()
-            {
-                log::error!( "invalid value `mpd_addr`" );
-            }
-            else
-            {
-                return Some( x );
-            }
-        }
-    }
-
-    log::error!( "config load error." );
-    None
-}
-
-///
-fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) -> Result< afs::NamedFile >
-{
-    let mut path = ctx.lock().unwrap().get_theme_path();
-
-    path.push( p );
-
-    log::debug!("{:?}", &path );
-
-    if path.is_file()
-    {
-        Ok( afs::NamedFile::open( path )? )
-    }
-    else
-    {
-        return Err( error::ErrorNotFound( "" ) );
-    }
-}
 
 ///
 async fn status_ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::Payload ) -> Result< HttpResponse, Error >
@@ -258,13 +191,24 @@ async fn cmd_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CmdPara
     cmd_impl( ctx, &*param ).await
 }
 
-
 ///
-async fn favicon( ctx : web::Data< Mutex< Context > > ) -> Result< afs::NamedFile >
+fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) -> Result< afs::NamedFile >
 {
-    theme_content_impl( ctx, path::Path::new( "favicon.ico" ) )
-}
+    let mut path = ctx.lock().unwrap().get_theme_path();
 
+    path.push( p );
+
+    log::debug!("{:?}", &path );
+
+    if path.is_file()
+    {
+        Ok( afs::NamedFile::open( path )? )
+    }
+    else
+    {
+        return Err( error::ErrorNotFound( "" ) );
+    }
+}
 ///
 async fn theme( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Result< afs::NamedFile >
 {
@@ -304,6 +248,11 @@ async fn root( ctx : web::Data< Mutex< Context > > ) -> Result< afs::NamedFile >
     theme_content_impl( ctx, path::Path::new( "main.html" ) )
 }
 
+///
+async fn favicon( ctx : web::Data< Mutex< Context > > ) -> Result< afs::NamedFile >
+{
+    theme_content_impl( ctx, path::Path::new( "favicon.ico" ) )
+}
 
 ///
 #[actix_rt::main]
@@ -319,22 +268,17 @@ async fn main() -> io::Result<()>
         return Err( std::io::Error::new( std::io::ErrorKind::Other, "stop!" ) );
     }
 
-    let ( mpdcom_tx,    mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
-    let ( mpdfifo_tx,   mpdfifo_rx )    = mpsc::channel::< mpdfifo::MpdFifoRequest >( 2 );
+    let config = config.unwrap();
+
+    let config_dyn = get_config_dyn( &config );
+
+    let ( mpdcom_tx,        mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
+    let ( mut mpdfifo_tx,   mpdfifo_rx )    = mpsc::channel::< mpdfifo::MpdFifoRequest >( 2 );
 
     let ctx =
         web::Data::new(
             Mutex::new(
-                Context
-                {
-                    config              : config.unwrap()
-                ,   mpdcom_tx           : mpdcom_tx
-                ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
-                ,   status_ws_sessions  : HashMap::new()
-                ,   mpdfifo_tx          : mpdfifo_tx
-                ,   bar_dat_json        : String::new()
-                ,   bar_cap_json        : String::new()
-                }
+                Context::new( config, config_dyn, mpdcom_tx )
             )
         );
 
@@ -353,6 +297,19 @@ async fn main() -> io::Result<()>
             mpdcom::mpdcom_task( ctx_t, mpdcom_rx ).await.ok();
 
             log::debug!( "mpdcom stop." );
+        }
+    );
+
+    let ctx_t = ctx.clone();
+
+    actix_rt::spawn(
+        async
+        {
+            log::debug!( "mpdfifo starting." );
+
+            mpdfifo::mpdfifo_task( ctx_t, mpdfifo_rx ).await.ok();
+
+            log::debug!( "mpdfifo stop." );
         }
     );
 
@@ -414,11 +371,16 @@ async fn main() -> io::Result<()>
 
         req.req = mpdfifo::MpdFifoRequestType::Shutdown;
 
-        &ctx.lock().unwrap().mpdfifo_tx.send( req ).await;
+        mpdfifo_tx.send( req ).await.ok();
 
         rx.await.ok();
 
         log::debug!( "mpdfifo shutdown." );
+    }
+
+    {
+        let ctx = &ctx.lock().unwrap();
+        save_config_dyn( &ctx.config, &ctx.config_dyn );
     }
 
     server

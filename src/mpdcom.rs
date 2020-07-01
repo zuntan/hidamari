@@ -97,7 +97,7 @@ impl MpdComRequest
 
         (
             MpdComRequest{
-                req         : MpdComRequestType::Cmd( String::new() )
+                req         : MpdComRequestType::Nop
             ,   tx
             }
         ,   rx
@@ -231,7 +231,8 @@ async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
 ///
 pub async fn mpdcom_task(
     ctx     : web::Data< Mutex< super::Context > >
-,   mut rx  : mpsc::Receiver< MpdComRequest > )
+,   mut rx  : mpsc::Receiver< MpdComRequest >
+)
 -> Result< (), Box< dyn std::error::Error> >
 {
     log::debug!( "mpdcom starting." );
@@ -432,10 +433,7 @@ pub async fn mpdcom_task(
                 ,   _ => {}
                 }
             }
-        ,   Err(_) =>
-            {
-                // log::debug!( "{:?}", x );
-            }
+        ,   Err(_) => {}
         }
     }
 
