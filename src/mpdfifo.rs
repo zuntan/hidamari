@@ -28,14 +28,16 @@ use num_complex::Complex;
 use crate::event;
 
 #[derive(Debug, Serialize, Clone)]
-struct SpecData<'a>
+struct SpecData
 {
     spec_t : String
-,   spec_l : &'a[ f32 ]
-,   spec_r : &'a[ f32 ]
+,   spec_l : Vec::< u32 >
+,   spec_r : Vec::< u32 >
+,   rms_l  : u32
+,   rms_r  : u32
 }
 
-type SpecDataResult<'a> = Result< SpecData<'a>, () >;
+type SpecDataResult<'a> = Result< &'a SpecData, () >;
 
 #[derive(Debug, Serialize, Clone)]
 struct SpecHeader<'a>
@@ -145,11 +147,11 @@ pub async fn mpdfifo_task(
 
         if ENABLE_CORRECTION
         {
-            spec_amp_p[ i ] = i as f32 / OCT_SCALE / 4.0;
+            spec_amp_p[ i ] = i as f32 / OCT_SCALE / 4.0 * 10.0;
         }
         else
         {
-            spec_amp_p[ i ] = 2.0;
+            spec_amp_p[ i ] = 2.0 * 10.0;
         }
     }
 
@@ -160,6 +162,21 @@ pub async fn mpdfifo_task(
 
         spec_amp_n[ p ] += 1.0;
         fft_amp_b[ i ] = p;
+    }
+
+    let mut spd = SpecData
+    {
+        spec_t : String::new()
+    ,   spec_l : Vec::< u32 >::new()
+    ,   spec_r : Vec::< u32 >::new()
+    ,   rms_l  : 0
+    ,   rms_r  : 0
+    };
+
+    for _ in bar_st..bar_ed
+    {
+        spd.spec_l.push( 0 );
+        spd.spec_r.push( 0 );
     }
 
     let fifo_name =
@@ -242,14 +259,15 @@ pub async fn mpdfifo_task(
             let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f32();
             s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
 
-            let bd : SpecDataResult = Ok(
-                SpecData
-                {
-                    spec_t : chrono::Local::now().to_rfc3339()
-                ,   spec_l : &spec_amp_l[ bar_st..bar_ed ]
-                ,   spec_r : &spec_amp_r[ bar_st..bar_ed ]
-                }
-            );
+            spd.spec_t = chrono::Local::now().to_rfc3339();
+
+            for i in bar_st..bar_ed
+            {
+                spd.spec_l[ i - bar_st ] = spec_amp_l[ i ] as u32;
+                spd.spec_r[ i - bar_st ] = spec_amp_l[ i ] as u32;
+            }
+
+            let bd : SpecDataResult = Ok( &spd );
 
             if let Ok( x ) = serde_json::to_string( &bd )
             {
@@ -273,6 +291,9 @@ pub async fn mpdfifo_task(
                         spec_amp_l[ p ] = 0.0;
                         spec_amp_r[ p ] = 0.0;
                     }
+
+                    spd.rms_l = 0;
+                    spd.rms_r = 0;
 
                     fifo_stall_reset = true;
 
@@ -378,6 +399,9 @@ pub async fn mpdfifo_task(
                             {
                                 let mut s_buf_iter = s_buf.iter();
 
+                                let mut sum_l : f32 = 0.0;
+                                let mut sum_r : f32 = 0.0;
+
                                 for i in 0..FFT_BUF_SIZE
                                 {
                                     let l = *s_buf_iter.next().unwrap() as f32 / std::i16::MAX as f32;
@@ -385,7 +409,13 @@ pub async fn mpdfifo_task(
 
                                     fft_i_l[ i ] = Complex::< f32 >::new( l, 0.0 );
                                     fft_i_r[ i ] = Complex::< f32 >::new( r, 0.0 );
+
+                                    sum_l += l * l;
+                                    sum_r += r * r;
                                 }
+
+                                spd.rms_l = ( ( sum_l / FFT_BUF_SIZE as f32 ).sqrt() * 1000.0 ) as u32;
+                                spd.rms_r = ( ( sum_r / FFT_BUF_SIZE as f32 ).sqrt() * 1000.0 ) as u32;
                             }
 
                             for _ in 0.. ( FFT_BUF_SIZE - FFT_BUF_SLIDE_SIZE ) * CHANNELS
@@ -419,8 +449,8 @@ pub async fn mpdfifo_task(
                                     spec_amp_r[ p ] /= spec_amp_n[ p ];
                                 }
 
-                                spec_amp_l[ p ] = ( spec_amp_l[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 100.0 );
-                                spec_amp_r[ p ] = ( spec_amp_r[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 100.0 );
+                                spec_amp_l[ p ] = ( spec_amp_l[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 1000.0 );
+                                spec_amp_r[ p ] = ( spec_amp_r[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 1000.0 );
                             }
 
                             _fcnt += 1;
