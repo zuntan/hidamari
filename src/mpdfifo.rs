@@ -35,6 +35,8 @@ struct SpecData
 ,   spec_r : Vec::< u32 >
 ,   rms_l  : u32
 ,   rms_r  : u32
+,   peak_l : u32
+,   peak_r : u32
 }
 
 type SpecDataResult<'a> = Result< &'a SpecData, () >;
@@ -93,6 +95,9 @@ const FFT_SPEC_SIZE     : usize = FFT_BUF_SIZE / 2;
 const FFT_SPEC_HZ_D     : f32 = SAMPLING_RATE as f32 / 2.0 / FFT_SPEC_SIZE as f32;
 const OCT_SCALE         : f32 = 2.0;
 const ENABLE_CORRECTION : bool  = true;
+const CORRECTION_1      : f32 = 4.0;
+const CORRECTION_2      : f32 = 10.0;
+const CORRECTION_3      : f32 = 20.0;
 
 pub async fn mpdfifo_task(
     ctx     : web::Data< Mutex< super::Context > >
@@ -147,7 +152,7 @@ pub async fn mpdfifo_task(
 
         if ENABLE_CORRECTION
         {
-            spec_amp_p[ i ] = i as f32 / OCT_SCALE / 4.0 * 10.0;
+            spec_amp_p[ i ] = i as f32 / OCT_SCALE / CORRECTION_1 * CORRECTION_2;
         }
         else
         {
@@ -171,6 +176,8 @@ pub async fn mpdfifo_task(
     ,   spec_r : Vec::< u32 >::new()
     ,   rms_l  : 0
     ,   rms_r  : 0
+    ,   peak_l : 0
+    ,   peak_r : 0
     };
 
     for _ in bar_st..bar_ed
@@ -264,7 +271,7 @@ pub async fn mpdfifo_task(
             for i in bar_st..bar_ed
             {
                 spd.spec_l[ i - bar_st ] = spec_amp_l[ i ] as u32;
-                spd.spec_r[ i - bar_st ] = spec_amp_l[ i ] as u32;
+                spd.spec_r[ i - bar_st ] = spec_amp_r[ i ] as u32;
             }
 
             let bd : SpecDataResult = Ok( &spd );
@@ -294,6 +301,8 @@ pub async fn mpdfifo_task(
 
                     spd.rms_l = 0;
                     spd.rms_r = 0;
+                    spd.peak_l = 0;
+                    spd.peak_r = 0;
 
                     fifo_stall_reset = true;
 
@@ -402,20 +411,28 @@ pub async fn mpdfifo_task(
                                 let mut sum_l : f32 = 0.0;
                                 let mut sum_r : f32 = 0.0;
 
+                                let mut peak_l : f32 = 0.0;
+                                let mut peak_r : f32 = 0.0;
+
                                 for i in 0..FFT_BUF_SIZE
                                 {
                                     let l = *s_buf_iter.next().unwrap() as f32 / std::i16::MAX as f32;
                                     let r = *s_buf_iter.next().unwrap() as f32 / std::i16::MAX as f32;
 
-                                    fft_i_l[ i ] = Complex::< f32 >::new( l, 0.0 );
-                                    fft_i_r[ i ] = Complex::< f32 >::new( r, 0.0 );
+                                    fft_i_l[ i ] = Complex::< f32 >::new( l , 0.0 );
+                                    fft_i_r[ i ] = Complex::< f32 >::new( r , 0.0 );
 
-                                    sum_l += l * l;
-                                    sum_r += r * r;
+                                    sum_l += l * l * 10000.0;
+                                    sum_r += r * r * 10000.0;
+
+                                    peak_l = peak_l.max( l * l * 10000.0 );
+                                    peak_r = peak_r.max( r * r * 10000.0 );
                                 }
 
-                                spd.rms_l = ( ( sum_l / FFT_BUF_SIZE as f32 ).sqrt() * 1000.0 ) as u32;
-                                spd.rms_r = ( ( sum_r / FFT_BUF_SIZE as f32 ).sqrt() * 1000.0 ) as u32;
+                                spd.rms_l = ( ( sum_l / FFT_BUF_SIZE as f32 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
+                                spd.rms_r = ( ( sum_r / FFT_BUF_SIZE as f32 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
+                                spd.peak_l = ( peak_l.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
+                                spd.peak_r = ( peak_r.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
                             }
 
                             for _ in 0.. ( FFT_BUF_SIZE - FFT_BUF_SLIDE_SIZE ) * CHANNELS

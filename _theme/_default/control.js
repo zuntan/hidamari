@@ -1325,7 +1325,7 @@ function()
 			ctx.save();
 			ctx.translate( cw / 2 , ch / 2 );
 
-			var tw = 6000;
+			var tw = 10000;
 
 			var pnow = performance.now();
 
@@ -1365,11 +1365,15 @@ function()
 			ctx.lineCap = "round";
 
 			ctx.beginPath();
-			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.25 ), t1, t2 );
+			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.20 ), t1, t2 );
 			ctx.stroke();
 
 			ctx.beginPath();
-			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.5 ), t1, t2 );
+			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.40 ), t1, t2 );
+			ctx.stroke();
+
+			ctx.beginPath();
+			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.60 ), t1, t2 );
 			ctx.stroke();
 
 			ctx.fillStyle   = "#fff";
