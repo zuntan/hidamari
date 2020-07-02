@@ -45,23 +45,25 @@ use config::{ Config, ConfigDyn, get_config, get_config_dyn, save_config_dyn };
 ///
 pub struct Context
 {
-    config              : Config
-,   config_dyn          : ConfigDyn
+    config          : Config
+,   config_dyn      : ConfigDyn
 
-,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
-,   mpd_status          : mpdcom::MpdComResult
-,   status_ws_sessions  : wssession::WsSessions
+,   mpdcom_tx       : mpsc::Sender< mpdcom::MpdComRequest >
+,   mpd_status_json : String
 
-,   spec_data_json      : String
-,   spec_head_json      : String
+,   ws_sess_no      : u64
+,   ws_sessions     : wssession::WsSessions
+
+,   spec_data_json  : String
+,   spec_head_json  : String
 }
 
 impl Context
 {
     fn new(
-        config              : Config
-    ,   config_dyn          : ConfigDyn
-    ,   mpdcom_tx           : mpsc::Sender< mpdcom::MpdComRequest >
+        config      : Config
+    ,   config_dyn  : ConfigDyn
+    ,   mpdcom_tx   : mpsc::Sender< mpdcom::MpdComRequest >
     ) -> Context
     {
         Context
@@ -69,10 +71,11 @@ impl Context
             config
         ,   config_dyn
         ,   mpdcom_tx
-        ,   mpd_status          : Ok( mpdcom::MpdComOk::new() )
-        ,   status_ws_sessions  : HashMap::new()
-        ,   spec_data_json      : String::new()
-        ,   spec_head_json      : String::new()
+        ,   mpd_status_json : String::new()
+        ,   ws_sess_no      : 0
+        ,   ws_sessions     : HashMap::new()
+        ,   spec_data_json  : String::new()
+        ,   spec_head_json  : String::new()
         }
     }
 }
@@ -131,7 +134,7 @@ async fn status( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 {
     let ctx = ctx.lock().unwrap();
 
-    HttpResponse::Ok().json( &ctx.mpd_status  )
+    HttpResponse::Ok().body( &ctx.mpd_status_json )
 }
 
 ///
@@ -334,9 +337,9 @@ async fn main() -> io::Result<()>
     actix_rt::spawn(
         async
         {
-            log::debug!( "spectrum_responce_task starting." );
-            task::spectrum_responce_task( ctx_t, sart_rx ).await.ok();
-            log::debug!( "spectrum_responce_task stop." );
+            log::debug!( "spec_responce_task starting." );
+            task::spec_responce_task( ctx_t, sart_rx ).await.ok();
+            log::debug!( "spec_responce_task stop." );
         }
     );
 

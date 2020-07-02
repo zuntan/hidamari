@@ -566,9 +566,9 @@ function()
 		{
 			$( ".dropdown-item", $(this) ).removeClass( "dropdown-item-checked" );
 
-			if( status_ws.Ok )
+			if( ws_status )
 			{
-				var d = parse_flds( status_ws.Ok.flds );
+				var d = parse_flds( ws_status );
 
 				$.each( [
 					"repeat"
@@ -651,9 +651,9 @@ function()
 
 	var playlist_update_select_song = function()
 	{
-		if( status_ws.Ok )
+		if( ws_status )
 		{
-			var d = parse_flds( status_ws.Ok.flds );
+			var d = parse_flds( ws_status );
 			playlist_select_song( d[ 'songid' ], true )
 		}
 	}
@@ -1046,11 +1046,14 @@ function()
 		}
 	);
 
+	var visu_state_play    = false;
+	var visu_state_title_1 = null;
+
 	var update_player = function()
 	{
-		if( status_ws.Ok )
+		if( ws_status )
 		{
-			var df = parse_list( status_ws.Ok.flds );
+			var df = parse_list( ws_status );
 
 			var d = df[ 0 ][ 2 ];
 
@@ -1062,11 +1065,15 @@ function()
 				{
 					$( ".x_play_play" ).hide();
 					$( ".x_play_pause" ).show();
+
+					visu_state_play = true;
 				}
 				else
 				{
 					$( ".x_play_play" ).show();
 					$( ".x_play_pause" ).hide();
+
+					visu_state_play = false;
 				}
 
 				$( ".x_next, .x_prev" ).removeAttr( "disabled" );
@@ -1078,6 +1085,8 @@ function()
 				$( ".x_play_pause" ).hide();
 				$( ".x_next, .x_prev" ).attr( "disabled", "disabled" );
 				update_music_position( 0, 0 );
+
+				visu_state_play = false;
 			}
 
 			$( ".x_play" ).data( "x_state", d[ 'state' ] );
@@ -1101,6 +1110,8 @@ function()
 			{
 				var kv = df[ 1 ][ 2 ];
 
+				visu_state_title_1 = kv[ '_title_1' ]
+
 				$( ".x_player_title_1" ).text( kv[ '_title_1' ] );
 				$( ".x_player_title_2" ).text( kv[ '_title_2' ] );
 
@@ -1117,6 +1128,10 @@ function()
 				if( d[ 'bitrate' ] ) { a += " bitrate: " + d[ 'bitrate' ] + "Kb"; }
 
 				$( ".x_player_title_3" ).text( a );
+			}
+			else
+			{
+				visu_state_title_1 = null;
 			}
 
 			if( $( ".x_playlist_item" ).length != parseInt( d[ 'playlistlength' ] ) )
@@ -1156,7 +1171,7 @@ function()
 							$( "tbody > tr", m ).each( function() { if( ! tr_base.is( $(this) ) ) { $(this).remove(); } } );
 
 							var key = [
-								[ "Title",  		"_title_1" ]
+								[ "Title",  	"_title_1" ]
 							,	[ "Time",  		"_time" ]
 							,	[ "Artist",	 	"Artist" ]
 							,	[ "Album", 		"Album" ]
@@ -1206,16 +1221,44 @@ function()
 		}
 	)
 
-	var status_ws = {};
+	$( ".x_canvas-indicator" ).click(
+		function()
+		{
+			$( ".x_canvas-indicator" ).removeClass( "active" );
+			$( this ).addClass( "active" );
+			var s = $( this ).data( "slide-to" );
+			$( ".x_canvas-item" ).removeClass( "active" );
+			$( ".x_canvas-item" ).eq( s ).addClass( "active" );
+		}
+	)
+
+	var ws_status = null;
+	var ws_spec_l = null;
+	var ws_spec_r = null;
+	var ws_spec_t = null;
+	var ws_spec_h = null;
+
+	$.getJSON( "spec_head" )
+		.done( function( json )
+			{
+			    if( json.Ok && json.Ok.spec_h )
+			    {
+					ws_spec_h = json.Ok.spec_h
+				}
+			}
+		)
+		;
+
 
 	var ws_open = function()
 	{
 		var ws_proto = location.protocol == 'https:' ? 'wss:' : 'ws:';
-	    var ws = new WebSocket( ws_proto + '//' + location.host + '/status_ws' );
+	    var ws = new WebSocket( ws_proto + '//' + location.host + '/ws' );
 
 		var ws_reopen = function()
 		{
-			status_ws = {};
+			ws_status = null;
+			ws_spec   = null;
 			setTimeout( ws_open, 1000 );
 		};
 
@@ -1223,11 +1266,243 @@ function()
 	    ws.onError = ws_reopen;
 	    ws.onmessage = function( e )
         {
-			status_ws = $.parseJSON( e.data );
-			update_player();
+			j_data = $.parseJSON( e.data );
+
+			if( j_data && j_data.Ok )
+			{
+				if( j_data.Ok.status )
+				{
+					ws_status = j_data.Ok.status
+					update_player();
+				}
+
+				if( j_data.Ok.spec_l )
+				{
+					ws_spec_l = j_data.Ok.spec_l
+				}
+
+				if( j_data.Ok.spec_r )
+				{
+					ws_spec_r = j_data.Ok.spec_r
+				}
+
+				if( j_data.Ok.spec_t )
+				{
+					ws_spec_t = j_data.Ok.spec_t
+				}
+			}
 		};
 	};
 
 	ws_open();
+
+	var canv0 = $( ".x_canvas_0" ).get( 0 );
+	var canv1 = $( ".x_canvas_1" ).get( 0 );
+	var canv2 = $( ".x_canvas_2" ).get( 0 );
+	var canvS = [ canv0, canv1, canv2 ];
+
+	var imgsrcNoImage = 'data:image/svg+xml,<svg class="bi bi-music-note" viewBox="0 0 16 16" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/><path fill-rule="evenodd" d="M9 3v10H8V3h1z"/><path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5V2.82z"/></svg>';
+
+	var drawCanv0State = null;
+
+	var drawCanv0 = function()
+	{
+		var canv = canv0;
+		var ctx  = canv.getContext( "2d" );
+
+		if( !ctx ) { return; }
+
+		var cw = canv.width;
+		var ch = canv.height;
+
+		ctx.clearRect( 0, 0, cw, ch );
+
+		if( visu_state_title_1 )
+		{
+			var img = new Image();
+			img.src = imgsrcNoImage;
+
+			ctx.save();
+			ctx.translate( cw / 2 , ch / 2 );
+
+			var tw = 3000;
+
+			var pnow = performance.now();
+
+			if( visu_state_play && drawCanv0State == null )
+			{
+				drawCanv0State = pnow;
+			}
+
+			if( drawCanv0State != null )
+			{
+				var t = ( pnow - drawCanv0State ) % tw / tw;
+				ctx.rotate( 2 * Math.PI * t );
+
+				var tt = Math.floor( pnow - drawCanv0State ) % tw;
+
+				if( !visu_state_play && t < 0.01 )
+				{
+					drawCanv0State = null;
+				}
+			}
+
+			var w = Math.min( canv0.width, canv0.height ) / 2;
+
+			ctx.drawImage( img, w / -2, w / -2, w, w );
+			ctx.restore();
+		}
+		else
+		{
+			drawCanv0State = null;
+		}
+	}
+
+	var drawCanv1State = null;
+
+	var drawCanv1 = function()
+	{
+		var canv = canv1;
+		var ctx  = canv.getContext( "2d" );
+
+		if( !ctx ) { return; }
+
+		var cw = canv.width;
+		var ch = canv.height;
+
+		ctx.clearRect( 0, 0, cw, ch );
+
+		if( ws_spec_l && ws_spec_r && ws_spec_h )
+		{
+			if( !drawCanv1State )
+			{
+				drawCanv1State = {};
+				drawCanv1State.l = ws_spec_l.slice();
+				drawCanv1State.r = ws_spec_r.slice();
+			}
+
+			var st = drawCanv1State;
+
+			var spec_l = ws_spec_l.slice();
+			var spec_r = ws_spec_r.slice();
+
+			ctx.save();
+			ctx.translate( cw / 2 , ch - 40 );
+
+			var dw = ( cw * 0.8 / 2 ) / ws_spec_h.length;
+			var dh = ( ch * 0.9 ) / 100;
+
+			var pd = 0.5;
+			var lb = -12;
+
+			ctx.font      = "12px serif";
+			ctx.textAlign = "center";
+
+			for( var i = 0 ; i < ws_spec_h.length ; ++i )
+			{
+				var hz = ws_spec_h[ i ];
+
+				if( hz > 1000 )
+				{
+					hz = '' + Math.round( hz / 102.4 ) / 10 + 'k';
+				}
+
+				var y = ( ( i + 1 ) % 2 ) * 12;
+				var xl = (  i + 1 ) * dw;
+				var xr = ( -i - 1 ) * dw;
+
+				ctx.fillStyle = "#fff";
+
+				ctx.fillText( hz, xl + dw / 2, y );
+				ctx.fillText( hz, xr + dw / 2, y );
+
+				ctx.fillRect( xl, lb,  dw - 1, -spec_l[ i ] * dh );
+				ctx.fillRect( xr, lb,  dw - 1, -spec_r[ i ] * dh );
+
+				st.l[ i ] = Math.max( spec_l[ i ], Math.max( st.l[ i ] - pd, 0 ) );
+				st.r[ i ] = Math.max( spec_r[ i ], Math.max( st.r[ i ] - pd, 0 ) );
+
+				/*
+				ctx.fillStyle = "#f00";
+				*/
+
+				ctx.fillRect( xl, lb - st.l[ i ] * dh,  dw - 1, -2 );
+				ctx.fillRect( xr, lb - st.r[ i ] * dh,  dw - 1, -2 );
+			}
+
+			ctx.restore();
+		}
+	}
+
+	var drawCanv2 = function()
+	{
+		var canv = canv2;
+		var ctx  = canv.getContext( "2d" );
+
+		if( !ctx ) { return; }
+
+		var cw = canv.width;
+		var ch = canv.height;
+
+		ctx.clearRect( 0, 0, cw, ch );
+
+		if( ws_spec_l && ws_spec_r && ws_spec_h )
+		{
+
+		}
+	}
+
+	var draw = function()
+	{
+		drawCanv0();
+		drawCanv1();
+		drawCanv2();
+		requestAnimationFrame( draw );
+	}
+
+	requestAnimationFrame( draw );
+
+	$( window ).resize(
+		function()
+		{
+			$.each( canvS,
+				function( i, v )
+				{
+					if( v )
+					{
+						var p = $( v ).parent();
+						var w1 = parseInt( p.css( 'padding-left'), 10 );
+						var w2 = parseInt( p.css( 'padding-right'), 10 );
+						var w = p.innerWidth() - w1 - w2 - 16;
+						$( v ).attr( 'width', w );
+
+						var h1 = parseInt( p.css( 'padding-top'), 10 );
+						var h2 = parseInt( p.css( 'padding-bottom'), 10 );
+						var h = p.innerHeight() - h1 - h2 - 32;
+						$( v ).attr( 'height', h );
+					}
+				}
+			);
+
+			drawCanv0();
+		}
+	);
+
+	$( window ).resize();
+
+	$.each( canvS,
+		function( i, v )
+		{
+			$( v ).click(
+				function()
+				{
+					if( this.requestFullscreen )
+					{
+						this.requestFullscreen();
+					}
+				}
+			);
+		}
+	);
 }
 );

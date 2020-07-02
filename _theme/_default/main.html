@@ -31,12 +31,6 @@ a.carousel-control-prev, a.carousel-control-next
 
 .min-vh-90 { min-height:90vh!important }
 
-.x_canvas
-{
-    min-height:50vh!important;
-    width:90vw;
-}
-
 .x_controler
 {
     width:85vw;
@@ -109,6 +103,77 @@ a.carousel-control-prev, a.carousel-control-next
     height : 0.5rem;
     cursor : pointer;
 }
+
+.x_canvas
+{
+    position: relative;
+    min-height:50vh!important;
+    width:90vw;
+}
+
+.x_canvas-inner
+{
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+
+.x_canvas-item
+{
+    position: relative;
+    display: none;
+    align-items: center;
+    width: 100%;
+    min-height:49vh!important;
+    backface-visibility: hidden;
+    perspective: 1000px;
+}
+
+.x_canvas-item-inner
+{
+    min-height:49vh!important;
+}
+
+.x_canvas-item-inner-item
+{
+    height : 39vh;
+}
+
+.x_canvas-item.active
+{
+    display: block;
+}
+
+.x_canvas-indicators
+{
+    position: absolute;
+    right: 0;
+    bottom: 10px;
+    left: 0;
+    z-index: 15;
+    display: flex;
+    -ms-flex-pack: center;
+    justify-content: center;
+
+    /*
+    padding-left: 0;
+    margin-right: 15%;
+    margin-left: 15%;
+    */
+
+    height:24px;
+}
+
+.x_canvas-indicator
+{
+    opacity:0.5;
+}
+
+.x_canvas-indicator.active
+{
+    opacity:1.0;
+}
+
 
 --></style>
 
@@ -285,16 +350,33 @@ a.carousel-control-prev, a.carousel-control-next
                     </div>
                 </div>
 
-
-
-
                 <div class="carousel-item active">
                     <div class="d-flex flex-column align-items-center min-vh-90" >
 
                         <div class="h3 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_1" ></div>
                         <div class="h5 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_2" ></div>
 
-                        <div class="x_canvas" ></div>
+                        <div class="bg-dark rounded-lg x_canvas" >
+
+                            <div class="x_canvas-indicators">
+                                <button type="button" class="btn btn-light mx-2 rounded-pill x_canvas-indicator active" data-slide-to="0""></button>
+                                <button type="button" class="btn btn-light mx-2 rounded-pill x_canvas-indicator "       data-slide-to="1"></button>
+                                <button type="button" class="btn btn-light mx-2 rounded-pill x_canvas-indicator "       data-slide-to="2"></button>
+                            </div>
+
+                          <div class="x_canvas-inner">
+                            <div class="x_canvas-item rounded-lg active">
+                              <canvas class="p-2 x_canvas_0"></canvas>
+                            </div>
+                            <div class="x_canvas-item rounded-lg">
+                              <canvas class="p-2 x_canvas_1"></canvas>
+                            </div>
+                            <div class="x_canvas-item rounded-lg">
+                              <canvas class="p-2 x_canvas_2"></canvas>
+                            </div>
+                          </div>
+
+                        </div>
 
                         <div class="overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_3"></div>
 

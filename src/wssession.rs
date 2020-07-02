@@ -29,7 +29,8 @@ pub enum WsSwssionType
 pub struct WsSession
 {
         ctx : web::Data< Mutex< super::Context > >
-,   pub wst : WsSwssionType
+,       wsn : u64
+, pub   wst : WsSwssionType
 }
 
 impl PartialEq for WsSession
@@ -81,12 +82,19 @@ impl ArcWsSession
 {
     pub fn new( ctx : & web::Data< Mutex< super::Context > > ) -> ArcWsSession
     {
-        Arc::new( WsSession{ ctx : ctx.clone(), wst : WsSwssionType::Default } ).into()
+        Self::with_type( ctx, WsSwssionType::Default )
     }
 
     pub fn with_type( ctx : & web::Data< Mutex< super::Context > >, wst : WsSwssionType ) -> ArcWsSession
     {
-        Arc::new( WsSession{ ctx : ctx.clone(), wst } ).into()
+        let wsn =
+        {
+            let mut ctx = ctx.lock().unwrap();
+            ctx.ws_sess_no += 1;
+            ctx.ws_sess_no
+        };
+
+        Arc::new( WsSession{ ctx : ctx.clone(), wsn, wst } ).into()
     }
 }
 
@@ -96,25 +104,30 @@ impl Actor for ArcWsSession
 
     fn started( &mut self, wsctx: &mut Self::Context )
     {
+        let sz =
+        {
+            let t : &Arc< WsSession > = self.deref();
 
-        let mut ctx = self.ctx.lock().unwrap();
+            let mut ctx = self.ctx.lock().unwrap();
+            ctx.ws_sessions.insert( t.clone(), wsctx.address().recipient() );
+            ctx.ws_sessions.len()
+        };
 
-        let t : &Arc< WsSession > = self.deref();
-
-        ctx.status_ws_sessions.insert( t.clone(), wsctx.address().recipient() );
-
-        log::debug!( "start {}", ctx.status_ws_sessions.len() );
+        log::debug!( "start wsn:{} sz:{}", self.wsn, sz );
     }
 
     fn stopped( &mut self, _wsctx: &mut Self::Context )
     {
-        let mut ctx = self.ctx.lock().unwrap();
+        let sz =
+        {
+            let t : &Arc< WsSession > = self.deref();
 
-        let t : &Arc< WsSession > = self.deref();
+            let mut ctx = self.ctx.lock().unwrap();
+            ctx.ws_sessions.remove( t );
+            ctx.ws_sessions.len()
+        };
 
-        ctx.status_ws_sessions.remove( t );
-
-        log::debug!( "stop {}", ctx.status_ws_sessions.len() );
+        log::debug!( "stop wsn:{} sz:{}", self.wsn, sz );
     }
 }
 
@@ -125,18 +138,37 @@ impl StreamHandler< Result< ws::Message, ws::ProtocolError > > for ArcWsSession
     ,   msg: Result< ws::Message, ws::ProtocolError >
     ,   ctx: &mut Self::Context
     ) {
-        if let Ok(msg) = msg {
-            match msg {
-                ws::Message::Text(text) => ctx.text(text),
-                    ws::Message::Ping(bytes) => ctx.pong(&bytes),
-                ws::Message::Close(reason) => {
-                    ctx.close(reason);
-                    ctx.stop();
+        match msg
+        {
+            Ok( x ) =>
+            {
+                match x
+                {
+                    ws::Message::Text( text ) =>
+                    {
+                        log::debug!( "text [{}]", text );
+                    }
+
+                ,   ws::Message::Ping( bytes ) =>
+                    {
+                        log::debug!( "ping {:?} bytes", bytes.len() );
+                        ctx.pong( &bytes )
+                    }
+
+                ,   ws::Message::Close( reason ) =>
+                    {
+                        log::debug!( "close [{:?}]", &reason );
+                        ctx.close( reason );
+                        ctx.stop();
+                    }
+                ,   _ => {}
                 }
-                _ => {}
             }
-        } else {
-            ctx.stop();
+        ,   Err( ref x ) =>
+            {
+                log::debug!( "close [{:?}]", x );
+                ctx.stop();
+            }
         }
     }
 }

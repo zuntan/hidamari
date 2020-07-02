@@ -29,6 +29,33 @@ pub struct MpdComOk
 }
 
 ///
+impl MpdComOk
+{
+    pub fn new() -> MpdComOk
+    {
+        MpdComOk { flds : Vec::new(), bin : None }
+    }
+}
+
+///
+#[derive(Debug, Serialize, Clone)]
+pub struct MpdComOkStatus
+{
+    pub status:     Vec<(String,String)>
+}
+
+impl MpdComOkStatus
+{
+    pub fn from( f : MpdComOk ) -> MpdComOkStatus
+    {
+        MpdComOkStatus
+        {
+            status : Vec::from( f.flds )
+        }
+    }
+}
+
+///
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComErr
 {
@@ -36,24 +63,6 @@ pub struct MpdComErr
 ,   pub cmd_index:  i32
 ,   pub cur_cmd:    String
 ,   pub msg_text:   String
-}
-
-///
-impl fmt::Display for MpdComErr
-{
-    fn fmt( &self, f: &mut fmt::Formatter<'_> ) -> fmt::Result
-    {
-        write!( f, "code:{} msg:{}", self.err_code, self.msg_text )
-    }
-}
-
-///
-impl MpdComOk
-{
-    pub fn new() -> MpdComOk
-    {
-        MpdComOk { flds : Vec::new(), bin : None }
-    }
 }
 
 ///
@@ -71,7 +80,17 @@ impl MpdComErr
 }
 
 ///
-pub type MpdComResult = Result< MpdComOk, MpdComErr >;
+impl fmt::Display for MpdComErr
+{
+    fn fmt( &self, f: &mut fmt::Formatter<'_> ) -> fmt::Result
+    {
+        write!( f, "code:{} msg:{}", self.err_code, self.msg_text )
+    }
+}
+
+///
+pub type MpdComResult       = Result< MpdComOk,         MpdComErr >;
+pub type MpdComStatusResult = Result< MpdComOkStatus,   MpdComErr >;
 
 #[derive(Debug)]
 pub enum MpdComRequestType
@@ -345,22 +364,35 @@ pub async fn mpdcom_task(
 
                     let ctx = &mut ctx.lock().unwrap();
 
-                    ctx.mpd_status = x;
+                    ctx.mpd_status_json =
+                        match x
+                        {
+                            Ok( x2 ) =>
+                            {
+                                match serde_json::to_string( &MpdComStatusResult::Ok( MpdComOkStatus::from( x2 ) ) )
+                                {
+                                    Ok( x ) => { x }
+                                ,   _       => { String::new() }
+                                }
+                            }
+                            Err( ref x2 ) =>
+                            {
+                                match serde_json::to_string( x2 )
+                                {
+                                    Ok( x ) => { x }
+                                    _       => { String::new() }
+                                }
+                            }
+                        };
 
                     status_try_time = Some( Instant::now() );
-
                     status_ok = true;
 
-                    // log::debug!( "mpdcom status {:?}", &ctx.mpd_status_time );
-
-                    if let Ok( x ) = serde_json::to_string( &ctx.mpd_status )
+                    for ( k, v ) in ctx.ws_sessions.iter()
                     {
-                        for ( k, v ) in ctx.status_ws_sessions.iter()
+                        if let super::wssession::WsSwssionType::Default = k.wst
                         {
-                            if let super::wssession::WsSwssionType::Default = k.wst
-                            {
-                                let _ = v.do_send( super::wssession::WsSessionMessage( String::from( &x ) ) );
-                            }
+                            let _ = v.do_send( super::wssession::WsSessionMessage( String::from( &ctx.mpd_status_json ) ) );
                         }
                     }
                 }
@@ -377,7 +409,13 @@ pub async fn mpdcom_task(
             {
                 let ctx = &mut ctx.lock().unwrap();
 
-                ctx.mpd_status = Err( MpdComErr::new( -1 ) );
+                ctx.mpd_status_json =
+                    match serde_json::to_string( &MpdComResult::Err( MpdComErr::new( -1 ) )  )
+                    {
+                        Ok( x ) => { x }
+                        _       => { String::new() }
+                    }
+                    ;
             }
         }
 
@@ -387,7 +425,7 @@ pub async fn mpdcom_task(
             {
                 let recv = recv.unwrap();
 
-                log::debug!( "rx recv [{:?}]", recv.req );
+                log::debug!( "recv [{:?}]", recv.req );
 
                 match recv.req
                 {

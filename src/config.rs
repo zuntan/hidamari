@@ -12,8 +12,6 @@ use std::io::prelude::*;
 use std::fs;
 use std::net::ToSocketAddrs;
 
-use tokio::time::{ Duration };
-
 use serde::{ Serialize, Deserialize };
 
 ///
@@ -34,7 +32,7 @@ pub struct Config
 pub struct ConfigDyn
 {
     pub theme           : String
-,   pub mpdfifo_delay   : Duration
+,   pub mpdfifo_delay   : u32
 }
 
 ///
@@ -45,7 +43,7 @@ impl ConfigDyn
         ConfigDyn
         {
             theme           : String::from( "_default" )
-        ,   mpdfifo_delay   : Duration::from_millis( 500 )
+        ,   mpdfifo_delay   : 500
         }
     }
 }

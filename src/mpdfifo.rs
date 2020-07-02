@@ -28,22 +28,22 @@ use num_complex::Complex;
 use crate::event;
 
 #[derive(Debug, Serialize, Clone)]
-struct BarData<'a>
+struct SpecData<'a>
 {
-    time  : String
-,   bar_l : &'a[ f32 ]
-,   bar_r : &'a[ f32 ]
+    spec_t : String
+,   spec_l : &'a[ f32 ]
+,   spec_r : &'a[ f32 ]
 }
 
-type BarDataResult<'a> = Result< BarData<'a>, () >;
+type SpecDataResult<'a> = Result< SpecData<'a>, () >;
 
 #[derive(Debug, Serialize, Clone)]
-struct BarHeader<'a>
+struct SpecHeader<'a>
 {
-    bar_h : &'a[ u32 ]
+    spec_h : &'a[ u32 ]
 }
 
-type BarHeaderResult<'a> = Result< BarHeader<'a>, () >;
+type SpecHeaderResult<'a> = Result< SpecHeader<'a>, () >;
 
 fn open_fifo( fifo_name : &str ) -> io::Result< File >
 {
@@ -110,13 +110,13 @@ pub async fn mpdfifo_task(
     let mut fft_amp_r : Vec::< f32 > = vec![ 0.0 ; FFT_SPEC_SIZE ];
     let mut fft_amp_b : Vec::< usize > = vec![ 0 ; FFT_SPEC_SIZE ];
 
-    let bar_len     : usize = ( ( SAMPLING_RATE as f32 ).log2().floor() * OCT_SCALE ) as usize;
+    let spec_len     : usize = ( ( SAMPLING_RATE as f32 ).log2().floor() * OCT_SCALE ) as usize;
 
-    let mut bar_amp_l : Vec::< f32 > = vec![ 0.0 ; bar_len ];
-    let mut bar_amp_r : Vec::< f32 > = vec![ 0.0 ; bar_len ];
-    let mut bar_amp_h : Vec::< u32 > = vec![ 0   ; bar_len ];
-    let mut bar_amp_n : Vec::< f32 > = vec![ 0.0 ; bar_len ];
-    let mut bar_amp_p : Vec::< f32 > = vec![ 0.0 ; bar_len ];
+    let mut spec_amp_l : Vec::< f32 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_r : Vec::< f32 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_h : Vec::< u32 > = vec![ 0   ; spec_len ];
+    let mut spec_amp_n : Vec::< f32 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_p : Vec::< f32 > = vec![ 0.0 ; spec_len ];
 
     let mut bar_st = 0;
     let mut bar_ed = 0;
@@ -127,11 +127,11 @@ pub async fn mpdfifo_task(
     let mut _rcnt = 0;
     let mut _scnt = 0;
 
-    for i in 0..bar_len
+    for i in 0..spec_len
     {
         let hz = 2_f32.powf( i as f32 / OCT_SCALE ) as u32;
 
-        bar_amp_h[ i ] = hz;
+        spec_amp_h[ i ] = hz;
 
         if bar_st == 0 && hz > 16
         {
@@ -145,11 +145,11 @@ pub async fn mpdfifo_task(
 
         if ENABLE_CORRECTION
         {
-            bar_amp_p[ i ] = i as f32 / OCT_SCALE / 4.0;
+            spec_amp_p[ i ] = i as f32 / OCT_SCALE / 4.0;
         }
         else
         {
-            bar_amp_p[ i ] = 2.0;
+            spec_amp_p[ i ] = 2.0;
         }
     }
 
@@ -158,26 +158,35 @@ pub async fn mpdfifo_task(
         let hz = FFT_SPEC_HZ_D * ( i as f32 + 0.5 );
         let p = ( hz.log2() * OCT_SCALE ).floor() as usize;
 
-        bar_amp_n[ p ] += 1.0;
+        spec_amp_n[ p ] += 1.0;
         fft_amp_b[ i ] = p;
     }
 
     let fifo_name =
+    {
+        let ctx = &mut ctx.lock().unwrap();
+
+        let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f32();
+        s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+
+        let bh : SpecHeaderResult = Ok( SpecHeader { spec_h : &spec_amp_h[ bar_st..bar_ed ] } );
+
+        if let Ok( x ) = serde_json::to_string( &bh )
         {
-            let ctx = &mut ctx.lock().unwrap();
+            ctx.spec_head_json = x;
+        }
 
-            let d = ctx.config_dyn.mpdfifo_delay.as_secs_f32();
-            s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+        String::from( &ctx.config.mpd_fifo )
+    };
 
-            let bh : BarHeaderResult = Ok( BarHeader { bar_h : &bar_amp_h[ bar_st..bar_ed ] } );
-
-            if let Ok( x ) = serde_json::to_string( &bh )
-            {
-                ctx.spec_head_json = x;
-            }
-
-            String::from( &ctx.config.mpd_fifo )
-        };
+    if fifo_name != ""
+    {
+        log::info!( "mpdfifo enable target [{}]", &fifo_name );
+    }
+    else
+    {
+        log::info!( "mpdfifo disable" );
+    }
 
     let mut fifo = open_fifo( &fifo_name );
 
@@ -224,21 +233,50 @@ pub async fn mpdfifo_task(
         }
     }
 
-    macro_rules! fifo_reset {
-        () => {
+    macro_rules! update_ctx
+    {
+        () =>
+        {
+            let ctx = &mut ctx.lock().unwrap();
+
+            let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f32();
+            s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+
+            let bd : SpecDataResult = Ok(
+                SpecData
+                {
+                    spec_t : chrono::Local::now().to_rfc3339()
+                ,   spec_l : &spec_amp_l[ bar_st..bar_ed ]
+                ,   spec_r : &spec_amp_r[ bar_st..bar_ed ]
+                }
+            );
+
+            if let Ok( x ) = serde_json::to_string( &bd )
+            {
+                ctx.spec_data_json = x;
+            }
+        }
+    }
+
+    macro_rules! fifo_reset
+    {
+        () =>
+        {
             if let Some( x ) = fifo_stall_time
             {
                 _scnt += 1;
 
                 if !fifo_stall_reset && x.elapsed() > FIFO_STALL_RESET
                 {
-                    for p in 0..bar_len
+                    for p in 0..spec_len
                     {
-                        bar_amp_l[ p ] = 0.0;
-                        bar_amp_r[ p ] = 0.0;
+                        spec_amp_l[ p ] = 0.0;
+                        spec_amp_r[ p ] = 0.0;
                     }
 
                     fifo_stall_reset = true;
+
+                    update_ctx!();
                 }
                 else if x.elapsed() > FIFO_STALL_REOPEN
                 {
@@ -358,10 +396,10 @@ pub async fn mpdfifo_task(
                             let fft_o_l = fft_engine_chfft.forward( fft_i_l.as_slice() );
                             let fft_o_r = fft_engine_chfft.forward( fft_i_r.as_slice() );
 
-                            for p in 0..bar_len
+                            for p in 0..spec_len
                             {
-                                bar_amp_l[ p ] = 0.0;
-                                bar_amp_r[ p ] = 0.0;
+                                spec_amp_l[ p ] = 0.0;
+                                spec_amp_r[ p ] = 0.0;
                             }
 
                             for i in 0..FFT_SPEC_SIZE
@@ -369,42 +407,25 @@ pub async fn mpdfifo_task(
                                 fft_amp_l[ i ] = fft_o_l[ i ].norm_sqr().sqrt().log10() * 20.0;
                                 fft_amp_r[ i ] = fft_o_r[ i ].norm_sqr().sqrt().log10() * 20.0;
 
-                                bar_amp_l[ fft_amp_b[ i ] ] += fft_amp_l[ i ];
-                                bar_amp_r[ fft_amp_b[ i ] ] += fft_amp_r[ i ];
+                                spec_amp_l[ fft_amp_b[ i ] ] += fft_amp_l[ i ];
+                                spec_amp_r[ fft_amp_b[ i ] ] += fft_amp_r[ i ];
                             }
 
-                            for p in 0..bar_len
+                            for p in 0..spec_len
                             {
-                                if bar_amp_n[ p ] != 0.0
+                                if spec_amp_n[ p ] != 0.0
                                 {
-                                    bar_amp_l[ p ] /= bar_amp_n[ p ];
-                                    bar_amp_r[ p ] /= bar_amp_n[ p ];
+                                    spec_amp_l[ p ] /= spec_amp_n[ p ];
+                                    spec_amp_r[ p ] /= spec_amp_n[ p ];
                                 }
 
-                                bar_amp_l[ p ] = ( bar_amp_l[ p ].max( 0.0 ) * bar_amp_p[ p ] ).min( 100.0 );
-                                bar_amp_r[ p ] = ( bar_amp_r[ p ].max( 0.0 ) * bar_amp_p[ p ] ).min( 100.0 );
+                                spec_amp_l[ p ] = ( spec_amp_l[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 100.0 );
+                                spec_amp_r[ p ] = ( spec_amp_r[ p ].max( 0.0 ) * spec_amp_p[ p ] ).min( 100.0 );
                             }
 
                             _fcnt += 1;
 
-                            let ctx = &mut ctx.lock().unwrap();
-
-                            let d = ctx.config_dyn.mpdfifo_delay.as_secs_f32();
-                            s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
-
-                            let bd : BarDataResult = Ok(
-                                BarData
-                                {
-                                    time  : chrono::Local::now().to_rfc3339()
-                                ,   bar_l : &bar_amp_l[ bar_st..bar_ed ]
-                                ,   bar_r : &bar_amp_r[ bar_st..bar_ed ]
-                                }
-                            );
-
-                            if let Ok( x ) = serde_json::to_string( &bd )
-                            {
-                                ctx.spec_data_json = x;
-                            }
+                            update_ctx!();
                         }
                     }
                 }
