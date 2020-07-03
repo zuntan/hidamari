@@ -38,4 +38,6 @@ Also, visual animations will make you feel better while you play.
  - <img src="screenshot/011.png" width="30%" > spectrum visualize full screen mode
  
  
- 
+# See also
+ - blog
+    - https://zuntansan.hatenablog.jp/
