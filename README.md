@@ -10,6 +10,10 @@ You can easily select songs from the library, operate the playlist, and play/sto
 
 Also, visual animations will make you feel better while you play.
 
+# Demo Movie
+
+[YouTube](https://youtu.be/_FmcRL2XlY8)
+
 # Screen Shot
 
 ## library
