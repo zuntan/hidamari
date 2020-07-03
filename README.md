@@ -35,6 +35,7 @@ Also, visual animations will make you feel better while you play.
  - <img src="screenshot/008.png" width="30%" >
  - <img src="screenshot/009.png" width="30%" >
  - <img src="screenshot/010.png" width="30%" >
+ - <img src="screenshot/011.png" width="30%" > full screen mode
  
  
  
