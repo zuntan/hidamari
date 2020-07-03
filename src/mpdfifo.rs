@@ -92,12 +92,12 @@ const FIFO_STALL_REOPEN : Duration = Duration::from_millis( 1000 );
 const FFT_BUF_SIZE      : usize = S_BUF_SIZE / 2;
 const FFT_BUF_SLIDE_SIZE: usize = FFT_BUF_SIZE / 2;
 const FFT_SPEC_SIZE     : usize = FFT_BUF_SIZE / 2;
-const FFT_SPEC_HZ_D     : f32 = SAMPLING_RATE as f32 / 2.0 / FFT_SPEC_SIZE as f32;
-const OCT_SCALE         : f32 = 2.0;
+const FFT_SPEC_HZ_D     : f64 = SAMPLING_RATE as f64 / 2.0 / FFT_SPEC_SIZE as f64;
+const OCT_SCALE         : f64 = 2.0;
 const ENABLE_CORRECTION : bool  = true;
-const CORRECTION_1      : f32 = 4.0;
-const CORRECTION_2      : f32 = 10.0;
-const CORRECTION_3      : f32 = 20.0;
+const CORRECTION_1      : f64 = 4.0;
+const CORRECTION_2      : f64 = 10.0;
+const CORRECTION_3      : f64 = 20.0;
 
 pub async fn mpdfifo_task(
     ctx     : web::Data< Mutex< super::Context > >
@@ -105,25 +105,25 @@ pub async fn mpdfifo_task(
 )
 -> Result< (), Box< dyn std::error::Error> >
 {
-    let mut fft_engine_chfft = CFft1D::<f32>::with_len( FFT_BUF_SIZE );
+    let mut fft_engine_chfft = CFft1D::<f64>::with_len( FFT_BUF_SIZE );
 
     let mut f_buf = [ 0u8 ; F_BUF_SAMPLE_SZ * F_BUF_SIZE ];
     let     mut s_buf = VecDeque::< i16 >::with_capacity( S_BUF_SIZE );
 
-    let mut fft_i_l : Vec::< Complex< f32 > > = vec![ Complex::new( 0.0, 0.0 ); FFT_BUF_SIZE ];
-    let mut fft_i_r : Vec::< Complex< f32 > > = vec![ Complex::new( 0.0, 0.0 ); FFT_BUF_SIZE ];
+    let mut fft_i_l : Vec::< Complex< f64 > > = vec![ Complex::new( 0.0, 0.0 ); FFT_BUF_SIZE ];
+    let mut fft_i_r : Vec::< Complex< f64 > > = vec![ Complex::new( 0.0, 0.0 ); FFT_BUF_SIZE ];
 
-    let mut fft_amp_l : Vec::< f32 > = vec![ 0.0 ; FFT_SPEC_SIZE ];
-    let mut fft_amp_r : Vec::< f32 > = vec![ 0.0 ; FFT_SPEC_SIZE ];
+    let mut fft_amp_l : Vec::< f64 > = vec![ 0.0 ; FFT_SPEC_SIZE ];
+    let mut fft_amp_r : Vec::< f64 > = vec![ 0.0 ; FFT_SPEC_SIZE ];
     let mut fft_amp_b : Vec::< usize > = vec![ 0 ; FFT_SPEC_SIZE ];
 
-    let spec_len     : usize = ( ( SAMPLING_RATE as f32 ).log2().floor() * OCT_SCALE ) as usize;
+    let spec_len     : usize = ( ( SAMPLING_RATE as f64 ).log2().floor() * OCT_SCALE ) as usize;
 
-    let mut spec_amp_l : Vec::< f32 > = vec![ 0.0 ; spec_len ];
-    let mut spec_amp_r : Vec::< f32 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_l : Vec::< f64 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_r : Vec::< f64 > = vec![ 0.0 ; spec_len ];
     let mut spec_amp_h : Vec::< u32 > = vec![ 0   ; spec_len ];
-    let mut spec_amp_n : Vec::< f32 > = vec![ 0.0 ; spec_len ];
-    let mut spec_amp_p : Vec::< f32 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_n : Vec::< f64 > = vec![ 0.0 ; spec_len ];
+    let mut spec_amp_p : Vec::< f64 > = vec![ 0.0 ; spec_len ];
 
     let mut bar_st = 0;
     let mut bar_ed = 0;
@@ -136,7 +136,7 @@ pub async fn mpdfifo_task(
 
     for i in 0..spec_len
     {
-        let hz = 2_f32.powf( i as f32 / OCT_SCALE ) as u32;
+        let hz = 2_f64.powf( i as f64 / OCT_SCALE ) as u32;
 
         spec_amp_h[ i ] = hz;
 
@@ -152,7 +152,7 @@ pub async fn mpdfifo_task(
 
         if ENABLE_CORRECTION
         {
-            spec_amp_p[ i ] = i as f32 / OCT_SCALE / CORRECTION_1 * CORRECTION_2;
+            spec_amp_p[ i ] = i as f64 / OCT_SCALE / CORRECTION_1 * CORRECTION_2;
         }
         else
         {
@@ -162,7 +162,7 @@ pub async fn mpdfifo_task(
 
     for i in 0..FFT_SPEC_SIZE
     {
-        let hz = FFT_SPEC_HZ_D * ( i as f32 + 0.5 );
+        let hz = FFT_SPEC_HZ_D * ( i as f64 + 0.5 );
         let p = ( hz.log2() * OCT_SCALE ).floor() as usize;
 
         spec_amp_n[ p ] += 1.0;
@@ -190,8 +190,8 @@ pub async fn mpdfifo_task(
     {
         let ctx = &mut ctx.lock().unwrap();
 
-        let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f32();
-        s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+        let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f64();
+        s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f64 ) as usize;
 
         let bh : SpecHeaderResult = Ok( SpecHeader { spec_h : &spec_amp_h[ bar_st..bar_ed ] } );
 
@@ -263,8 +263,8 @@ pub async fn mpdfifo_task(
         {
             let ctx = &mut ctx.lock().unwrap();
 
-            let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f32();
-            s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+            let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f64();
+            s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f64 ) as usize;
 
             spd.spec_t = chrono::Local::now().to_rfc3339();
 
@@ -333,7 +333,7 @@ pub async fn mpdfifo_task(
                 fifo_stall_time = Some( Instant::now() );
             }
 
-            for _ in 0..( FIFO_STALL_SLEEP.as_secs_f32() * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize
+            for _ in 0..( FIFO_STALL_SLEEP.as_secs_f64() * ( SAMPLING_RATE * CHANNELS ) as f64 ) as usize
             {
                 s_buf.pop_front();
                 s_buf.push_back( 0 );
@@ -408,19 +408,19 @@ pub async fn mpdfifo_task(
                             {
                                 let mut s_buf_iter = s_buf.iter();
 
-                                let mut sum_l : f32 = 0.0;
-                                let mut sum_r : f32 = 0.0;
+                                let mut sum_l  : f64 = 0.0;
+                                let mut sum_r  : f64 = 0.0;
 
-                                let mut peak_l : f32 = 0.0;
-                                let mut peak_r : f32 = 0.0;
+                                let mut peak_l : f64 = 0.0;
+                                let mut peak_r : f64 = 0.0;
 
                                 for i in 0..FFT_BUF_SIZE
                                 {
-                                    let l = *s_buf_iter.next().unwrap() as f32 / std::i16::MAX as f32;
-                                    let r = *s_buf_iter.next().unwrap() as f32 / std::i16::MAX as f32;
+                                    let l = *s_buf_iter.next().unwrap() as f64 / std::i16::MAX as f64;
+                                    let r = *s_buf_iter.next().unwrap() as f64 / std::i16::MAX as f64;
 
-                                    fft_i_l[ i ] = Complex::< f32 >::new( l , 0.0 );
-                                    fft_i_r[ i ] = Complex::< f32 >::new( r , 0.0 );
+                                    fft_i_l[ i ] = Complex::< f64 >::new( l , 0.0 );
+                                    fft_i_r[ i ] = Complex::< f64 >::new( r , 0.0 );
 
                                     sum_l += l * l * 10000.0;
                                     sum_r += r * r * 10000.0;
@@ -429,10 +429,10 @@ pub async fn mpdfifo_task(
                                     peak_r = peak_r.max( r * r * 10000.0 );
                                 }
 
-                                spd.rms_l = ( ( sum_l / FFT_BUF_SIZE as f32 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
-                                spd.rms_r = ( ( sum_r / FFT_BUF_SIZE as f32 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
-                                spd.peak_l = ( peak_l.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
-                                spd.peak_r = ( peak_r.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ) as u32;
+                                spd.rms_l  = ( ( sum_l / FFT_BUF_SIZE as f64 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ).max( 0.0 ) as u32;
+                                spd.rms_r  = ( ( sum_r / FFT_BUF_SIZE as f64 ).sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ).max( 0.0 ) as u32;
+                                spd.peak_l = ( peak_l.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ).max( 0.0 ) as u32;
+                                spd.peak_r = ( peak_r.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ).max( 0.0 ) as u32;
                             }
 
                             for _ in 0.. ( FFT_BUF_SIZE - FFT_BUF_SLIDE_SIZE ) * CHANNELS
