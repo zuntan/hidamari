@@ -1669,7 +1669,7 @@ function()
 
 					ctx.beginPath();
 					ctx.moveTo( 0, r3a );
-					ctx.lineTo( 0, r3a );
+					ctx.lineTo( 0, r3a + 1 );
 					ctx.stroke();
 
 					ctx.beginPath();
@@ -1684,7 +1684,7 @@ function()
 
 					ctx.beginPath();
 					ctx.moveTo( 0, r2a );
-					ctx.lineTo( 0, r2a );
+					ctx.lineTo( 0, r2a + 1 );
 				    ctx.stroke();
 
 					ctx.restore();
