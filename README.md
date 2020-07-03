@@ -32,10 +32,10 @@ Also, visual animations will make you feel better while you play.
 
  - <img src="screenshot/006.png" width="30%" >
  - <img src="screenshot/007.png" width="30%" >
- - <img src="screenshot/008.png" width="30%" >
- - <img src="screenshot/009.png" width="30%" >
- - <img src="screenshot/010.png" width="30%" >
- - <img src="screenshot/011.png" width="30%" > full screen mode
+ - <img src="screenshot/008.png" width="30%" > spectrum visualize
+ - <img src="screenshot/009.png" width="30%" > spectrum visualize
+ - <img src="screenshot/010.png" width="30%" > spectrum visualize
+ - <img src="screenshot/011.png" width="30%" > spectrum visualize full screen mode
  
  
  
