@@ -134,12 +134,6 @@ function()
 
 	// init top
 
-	$( ".test2" ).click(
-		function()
-		{
-		}
-	);
-
 	var ajax_state_err = $( "div.x_ajax_state_err" );
 	ajax_state_err.hide();
 
@@ -214,7 +208,12 @@ function()
 		}
 	);
 
-	$( ".x_dir_refresh" ).click( library_page_update );
+	$( ".x_dir_refresh" ).click(
+		function()
+		{
+			library_page_update();
+		}
+	 );
 
 	$( "li", library_bc ).each( function() { if( ! library_bc_lif.is( $(this) ) ) { $(this).remove(); } } );
 
@@ -287,7 +286,7 @@ function()
 		$.each( t, function( i, v ) { v.click(); } );
 	}
 
-	$( ".x_liblist_dir_addall" ).click( 		function() { library_page_dir_addall_impl( false ); } );
+	$( ".x_liblist_dir_addall" ).click( 	function() { library_page_dir_addall_impl( false ); } );
 	$( ".x_liblist_dir_addall_play" ).click( function() { library_page_dir_addall_impl( true ); } );
 
 	var library_page_update = function()
@@ -1315,31 +1314,39 @@ function()
 
 		if( visu_state_title_1 )
 		{
+			if( !drawCanv0State )
+			{
+				drawCanv0State = {};
+				drawCanv0State.pnow = null;
+			}
+
+			var st = drawCanv0State;
+
 			var img = new Image();
 			img.src = imgsrcNoImage;
 
 			ctx.save();
 			ctx.translate( cw / 2 , ch / 2 );
 
-			var tw = 10000;
+			var tw1 = 10000;
+			var tw2 = 2000;
+			var tw3 = 250;
 
 			var pnow = performance.now();
 
-			if( visu_state_play && drawCanv0State == null )
+			if( visu_state_play && st.pnow == null )
 			{
-				drawCanv0State = pnow;
+				st.pnow = pnow;
 			}
 
-			if( drawCanv0State != null )
+			if( st.pnow != null )
 			{
-				var t = ( pnow - drawCanv0State ) % tw / tw;
+				var t = ( pnow - st.pnow ) % tw1 / tw1;
 				ctx.rotate( 2 * Math.PI * t );
-
-				var tt = Math.floor( pnow - drawCanv0State ) % tw;
 
 				if( !visu_state_play && t < 0.01 )
 				{
-					drawCanv0State = null;
+					st.pnow = null;
 				}
 			}
 
@@ -1348,17 +1355,32 @@ function()
 			ctx.strokeStyle = "#fff";
 			ctx.fillStyle   = "#000";
 
+			ctx.lineWidth = w * 0.01;
+
 			ctx.beginPath();
 			ctx.arc( 0, 0, w / 2, 0, 2 * Math.PI );
 			ctx.closePath()
 			ctx.fill();
 			ctx.stroke();
 
-			var t1 = 2 * Math.PI * ( 210 / 360 );
+			var t1 = 2 * Math.PI * ( 220 / 360 );
 			var t2 = 2 * Math.PI * ( 250 / 360 );
 
 			ctx.lineWidth = w * 0.04;
 			ctx.lineCap = "round";
+
+			ctx.save();
+
+			ctx.translate( dx, dy );
+
+			/*
+			if( st.pnow != null )
+			{
+				var t = ( pnow - st.pnow ) % tw3 / tw3;
+				t = Math.cos( 2 * Math.PI * t ) * 2 / 360;
+				ctx.rotate( 2 * Math.PI * t );
+			}
+			*/
 
 			ctx.beginPath();
 			ctx.arc( 0, 0, ( w / 2 ) - ( w / 2 * 0.20 ), t1, t2 );
@@ -1384,12 +1406,27 @@ function()
 			ctx.closePath()
 			ctx.fill();
 
+			ctx.restore();
+
 			var dx = w / 2 * 1.1;
 			var dy = w / 2 * 1.1;
 
-			ctx.drawImage( img, w / -2 + dx, w / -2 + dy, w / 2, w / 2 );
+			ctx.save();
 
-			var fs = w * 0.10;
+			ctx.translate( dx, dy );
+
+			if( st.pnow != null )
+			{
+				var t = ( pnow - st.pnow ) % tw2 / tw2;
+				t = Math.cos( 2 * Math.PI * t ) * 3 / 360;
+				ctx.rotate( 2 * Math.PI * t );
+			}
+
+			ctx.drawImage( img, w / -2, w / -2, w / 2, w / 2 );
+
+			ctx.restore();
+
+			var fs = Math.round( w ) * 0.1;
 
 			ctx.font      = "" + fs + "px sans-serif";
 			ctx.textAlign = "center";
@@ -1488,7 +1525,6 @@ function()
 	}
 
 	var drawCanv2State = null;
-	var sqlv = 0.0;
 
 	var drawCanv2 = function()
 	{
@@ -1510,6 +1546,8 @@ function()
 			{
 				drawCanv2State = {};
 				drawCanv2State.sqlv = 0.0;
+				drawCanv2State.rmsL = [ 0, 0 ];
+				drawCanv2State.rmsR = [ 0, 0 ];
 			}
 
 			var st = drawCanv2State;
@@ -1519,8 +1557,14 @@ function()
 			var rms_l  = ws_rms_l;
 			var rms_r  = ws_rms_r;
 
-			var f = function( isR, spec, rms )
+			var f = function( isR, spec, rms, rmsS )
 			{
+				rmsS.push( rms );
+				rmsS.shift();
+
+				rms = rmsS.reduce( ( acc, cur ) => acc + cur ) / rmsS.length;
+				rms /= 1000;
+
 				var w = canv.width / 2;
 				var h = canv.height / 2;
 
@@ -1536,16 +1580,14 @@ function()
 				ctx.save();
 				ctx.translate( w , h );
 
-				rms /= 1000.0;
-
-				st.sqlv += 0.01 * ( rms < 0.01 ? -1 : 1 );
+				st.sqlv += 0.01 * ( rms < 0.01 ? -0.4 : 1 );
 				st.sqlv = Math.max( 0, st.sqlv );
 				st.sqlv = Math.min( 0.5, st.sqlv );
 
 				var t1 = ( pnow % 60000 ) / 60000 ;
 				var t2 = ( pnow % 30000 ) / 30000 ;
 
-				var zm = 1 + Math.cos( 2 * Math.PI * t1 ) * st.sqlv;
+				var zm = 1.2 + Math.cos( 2 * Math.PI * t1 ) * st.sqlv;
 
 				ctx.transform( zm, Math.cos( 2 * Math.PI * t1 ) * st.sqlv, Math.sin( 2 * Math.PI * t1 ) * st.sqlv, zm, 0, 0 );
 
@@ -1651,8 +1693,8 @@ function()
 				ctx.restore();
 			}
 
-			f( 0, spec_l, rms_l );
-			f( 1, spec_r, rms_r );
+			f( 0, spec_l, rms_l, st.rmsL );
+			f( 1, spec_r, rms_r, st.rmsR );
 		}
 	}
 
