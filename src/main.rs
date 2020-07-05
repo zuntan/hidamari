@@ -51,6 +51,9 @@ pub struct Context
 ,   mpdcom_tx       : mpsc::Sender< mpdcom::MpdComRequest >
 ,   mpd_status_json : String
 
+,   mpd_volume      : u8
+,   mpd_mute        : bool
+
 ,   ws_sess_no      : u64
 ,   ws_sessions     : wssession::WsSessions
 
@@ -72,6 +75,8 @@ impl Context
         ,   config_dyn
         ,   mpdcom_tx
         ,   mpd_status_json : String::new()
+        ,   mpd_volume      : 0
+        ,   mpd_mute        : false
         ,   ws_sess_no      : 0
         ,   ws_sessions     : HashMap::new()
         ,   spec_data_json  : String::new()
@@ -101,6 +106,24 @@ impl Context
         {
             path.push( &self.config_dyn.theme );
         }
+
+        path
+    }
+
+    pub fn get_common_path( &self ) -> path::PathBuf
+    {
+        let mut path = path::PathBuf::new();
+
+        if self.config.theme_dir != ""
+        {
+            path.push( &self.config.theme_dir );
+        }
+        else
+        {
+            path.push( "_theme" );
+        }
+
+        path.push( "_common" );
 
         path
     }
@@ -152,31 +175,64 @@ impl CmdParam
 {
     fn to_request( &self ) -> ( mpdcom::MpdComRequest, oneshot::Receiver< mpdcom::MpdComResult > )
     {
-        let mut cmd = String::new();
+        let mut cmd = self.cmd.trim_end().to_lowercase();
 
-        cmd += &self.cmd;
+        let reqval =
+            match cmd.as_str()
+            {
+                "setvol" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        mpdcom::MpdComRequestType::SetVol( String::from( self.arg1.as_ref().unwrap().as_str() ) )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
+            ,   "setmute" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        mpdcom::MpdComRequestType::SetMute( String::from( self.arg1.as_ref().unwrap().as_str() ) )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
+            ,   "" =>
+                {
+                    mpdcom::MpdComRequestType::Nop
+                }
+            ,   _ =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+                    }
 
-        if self.arg1.is_some()
-        {
-            cmd += " ";
-            cmd += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
-        }
+                    if self.arg2.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+                    }
 
-        if self.arg2.is_some()
-        {
-            cmd += " ";
-            cmd += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
-        }
+                    if self.arg3.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+                    }
 
-        if self.arg3.is_some()
-        {
-            cmd += " ";
-            cmd += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
-        }
+                    mpdcom::MpdComRequestType::Cmd( cmd )
+                }
+            };
 
         let ( mut req, rx ) = mpdcom::MpdComRequest::new();
 
-        req.req = mpdcom::MpdComRequestType::Cmd( cmd );
+        req.req = reqval;
 
         ( req, rx )
     }
@@ -213,6 +269,51 @@ async fn cmd_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CmdPara
 }
 
 ///
+async fn common( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Result< afs::NamedFile >
+{
+    log::debug!("{}", req.path() );
+
+    let mut p : Vec<String> = Vec::new();
+
+    for x in req.path().split( '/' ).skip(2)
+    {
+        match x
+        {
+            "" | "."    => {}
+        ,   ".."        =>
+            {
+                if p.pop().is_none()
+                {
+                    break;
+                }
+            }
+        ,   _       => { p.push( String::from( x ) ); }
+        }
+    }
+
+    if p.len() == 0
+    {
+        return Err( error::ErrorForbidden( "" ) );
+    }
+    else
+    {
+        let mut path = ctx.lock().unwrap().get_common_path();
+
+        path.push( path::Path::new( p.join( "/" ).as_str() ) );
+
+        if path.is_file()
+        {
+            Ok( afs::NamedFile::open( path )? )
+        }
+        else
+        {
+            Err( error::ErrorNotFound( "" ) )
+        }
+    }
+}
+
+
+///
 fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) -> Result< afs::NamedFile >
 {
     let mut path = ctx.lock().unwrap().get_theme_path();
@@ -227,9 +328,10 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
     }
     else
     {
-        return Err( error::ErrorNotFound( "" ) );
+        Err( error::ErrorNotFound( "" ) )
     }
 }
+
 ///
 async fn theme( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Result< afs::NamedFile >
 {
@@ -379,6 +481,10 @@ async fn main() -> io::Result<()>
             .service(
                 web::resource( "/theme/*" )
                     .to( theme )
+            )
+            .service(
+                web::resource( "/common/*" )
+                    .to( common )
             )
             .service(
                 web::resource( "/" )

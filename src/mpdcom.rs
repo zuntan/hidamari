@@ -9,6 +9,7 @@
 
 use std::fmt;
 use std::sync::Mutex;
+use std::str::FromStr;
 
 use actix_web::web;
 
@@ -97,6 +98,8 @@ pub enum MpdComRequestType
 {
     Nop
 ,   Cmd(String)
+,   SetVol(String)
+,   SetMute(String)
 ,   Shutdown
 }
 
@@ -360,6 +363,27 @@ pub async fn mpdcom_task(
                         }
 
                         x2.flds.push( ( String::from( "_x_time" ), chrono::Local::now().to_rfc3339() ) );
+
+                        let p = x2.flds.iter().position( |x| x.0 == "volume" );
+
+                        if let Some( p ) = p
+                        {
+                            let vol = x2.flds.remove( p );
+
+                            let volval = if let Ok( volval ) = u8::from_str( &vol.1 ) { volval } else { 0 };
+
+                            let ctx = &mut ctx.lock().unwrap();
+
+                            if !ctx.mpd_mute || volval > 0
+                            {
+                                ctx.mpd_volume = volval;
+                                ctx.mpd_mute = false;
+                            }
+
+                            x2.flds.push( ( String::from( "volume"      ), ctx.mpd_volume.to_string() ) );
+                            x2.flds.push( ( String::from( "mute"        ), String::from( if ctx.mpd_mute { "1" } else { "0" } ) ) );
+                            x2.flds.push( ( String::from( "_x_volume"   ), vol.1 ) );
+                        }
                     }
 
                     let ctx = &mut ctx.lock().unwrap();
@@ -441,6 +465,77 @@ pub async fn mpdcom_task(
                         break;
                     }
 
+                ,   MpdComRequestType::SetVol( volume ) =>
+                    {
+                        if let Ok( vol ) = u8::from_str( &volume )
+                        {
+                            if vol <= 100
+                            {
+                                let mut done = false;
+
+                                {
+                                    let ctx = &mut ctx.lock().unwrap();
+
+                                    if ctx.mpd_mute
+                                    {
+                                        ctx.mpd_volume = vol;
+                                        done = true;
+                                    }
+                                }
+
+                                if !done
+                                {
+                                    let cmd = String::from( "setvol " ) + &vol.to_string();
+
+                                    match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                                    {
+                                        Ok(x) =>
+                                        {
+                                            recv.tx.send( x ).ok();
+                                        }
+                                    ,   Err(x) =>
+                                        {
+                                            log::warn!( "connection error [{:?}]", x );
+                                            conn.as_mut().unwrap().shutdown();
+                                            conn = None;
+                                            conn_try_time = Some( Instant::now() );
+
+                                            recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    recv.tx.send( Err( MpdComErr::new( -3 ) ) ).ok();
+                                }
+                            }
+                            else
+                            {
+                                recv.tx.send( Err( MpdComErr::new( -3 ) ) ).ok();
+                            }
+                        }
+                        else
+                        {
+                            recv.tx.send( Err( MpdComErr::new( -3 ) ) ).ok();
+                        }
+                    }
+
+                ,   MpdComRequestType::SetMute( mute ) =>
+                    {
+                        {
+                            let ctx = &mut ctx.lock().unwrap();
+
+                            ctx.mpd_mute =
+                                match mute.to_lowercase().as_str()
+                                {
+                                    "1" | "true" | "on" => true
+                                ,   _                   => false
+                                };
+                        }
+
+                        recv.tx.send( Ok( MpdComOk::new() ) ).ok();
+                    }
+
                 ,   MpdComRequestType::Cmd( cmd ) =>
                     {
                         if cmd != "close" && conn.is_some()
@@ -468,7 +563,10 @@ pub async fn mpdcom_task(
                         }
                     }
 
-                ,   _ => {}
+                ,   _ =>
+                    {
+                        recv.tx.send( Err( MpdComErr::new( -3 ) ) ).ok();
+                    }
                 }
             }
         ,   Err(_) => {}
