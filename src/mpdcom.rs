@@ -45,6 +45,7 @@ pub struct MpdComOkStatus
     pub status:     Vec<(String,String)>
 }
 
+///
 impl MpdComOkStatus
 {
     pub fn from( f : MpdComOk ) -> MpdComOkStatus
@@ -91,8 +92,10 @@ impl fmt::Display for MpdComErr
 
 ///
 pub type MpdComResult       = Result< MpdComOk,         MpdComErr >;
+///
 pub type MpdComStatusResult = Result< MpdComOkStatus,   MpdComErr >;
 
+///
 #[derive(Debug)]
 pub enum MpdComRequestType
 {
@@ -184,8 +187,9 @@ async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
         }
         else if buf.starts_with( "ACK [" )
         {
-            lazy_static! {
-                static ref RE: regex::Regex =
+            lazy_static!
+            {
+                static ref RE : regex::Regex =
                     regex::Regex::new( r"^ACK\s*\[(\d+)@(\d+)\]\s+\{([^}]*)\}\s*(.*)\n" ).unwrap();
             }
 
@@ -201,8 +205,9 @@ async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
         }
         else
         {
-            lazy_static! {
-                static ref RE: regex::Regex =
+            lazy_static!
+            {
+                static ref RE : regex::Regex =
                     regex::Regex::new( r"^([^:]*):\s*(.*)\n" ).unwrap();
             }
 
@@ -332,6 +337,32 @@ pub async fn mpdcom_task(
             {
                 Ok(mut x) =>
                 {
+                    if let Ok( x2 ) = x.as_mut()
+                    {
+                        x2.flds.push( ( String::from( "_x_time" ), chrono::Local::now().to_rfc3339() ) );
+
+                        let p = x2.flds.iter().position( |x| x.0 == "volume" );
+
+                        if let Some( p ) = p
+                        {
+                            let vol = x2.flds.remove( p );
+
+                            let volval = if let Ok( volval ) = u8::from_str( &vol.1 ) { volval } else { 0 };
+
+                            let ctx = &mut ctx.lock().unwrap();
+
+                            if !ctx.mpd_mute || volval > 0
+                            {
+                                ctx.mpd_volume = volval;
+                                ctx.mpd_mute = false;
+                            }
+
+                            x2.flds.push( ( String::from( "volume"      ), ctx.mpd_volume.to_string() ) );
+                            x2.flds.push( ( String::from( "mute"        ), String::from( if ctx.mpd_mute { "1" } else { "0" } ) ) );
+                            x2.flds.push( ( String::from( "_x_volume"   ), vol.1 ) );
+                        }
+                    }
+
                     let mut songids = Vec::<String>::new();
 
                     if let Ok( x ) = x.as_ref()
@@ -361,29 +392,6 @@ pub async fn mpdcom_task(
                             ,   Err(_) => {}
                             }
                         }
-
-                        x2.flds.push( ( String::from( "_x_time" ), chrono::Local::now().to_rfc3339() ) );
-
-                        let p = x2.flds.iter().position( |x| x.0 == "volume" );
-
-                        if let Some( p ) = p
-                        {
-                            let vol = x2.flds.remove( p );
-
-                            let volval = if let Ok( volval ) = u8::from_str( &vol.1 ) { volval } else { 0 };
-
-                            let ctx = &mut ctx.lock().unwrap();
-
-                            if !ctx.mpd_mute || volval > 0
-                            {
-                                ctx.mpd_volume = volval;
-                                ctx.mpd_mute = false;
-                            }
-
-                            x2.flds.push( ( String::from( "volume"      ), ctx.mpd_volume.to_string() ) );
-                            x2.flds.push( ( String::from( "mute"        ), String::from( if ctx.mpd_mute { "1" } else { "0" } ) ) );
-                            x2.flds.push( ( String::from( "_x_volume"   ), vol.1 ) );
-                        }
                     }
 
                     let ctx = &mut ctx.lock().unwrap();
@@ -411,14 +419,6 @@ pub async fn mpdcom_task(
 
                     status_try_time = Some( Instant::now() );
                     status_ok = true;
-
-                    for ( k, v ) in ctx.ws_sessions.iter()
-                    {
-                        if let super::wssession::WsSwssionType::Default = k.wst
-                        {
-                            let _ = v.do_send( super::wssession::WsSessionMessage( String::from( &ctx.mpd_status_json ) ) );
-                        }
-                    }
                 }
             ,   Err(x) =>
                 {
@@ -506,7 +506,7 @@ pub async fn mpdcom_task(
                                 }
                                 else
                                 {
-                                    recv.tx.send( Err( MpdComErr::new( -3 ) ) ).ok();
+                                    recv.tx.send( Ok( MpdComOk::new() ) ).ok();
                                 }
                             }
                             else
@@ -522,18 +522,41 @@ pub async fn mpdcom_task(
 
                 ,   MpdComRequestType::SetMute( mute ) =>
                     {
+                        let mute = match mute.to_lowercase().as_str()
+                            {
+                                "1" | "true" | "on" => true
+                            ,   _                   => false
+                            };
+
+                        let cmd = if mute
+                            {
+                                String::from( "setvol 0" )
+                            }
+                            else
+                            {
+                                let ctx = &mut ctx.lock().unwrap();
+                                String::from( "setvol " ) + &ctx.mpd_volume.to_string()
+                            };
+
+                        match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
                         {
-                            let ctx = &mut ctx.lock().unwrap();
+                            Ok(x) =>
+                            {
+                                let ctx = &mut ctx.lock().unwrap();
+                                ctx.mpd_mute = mute;
 
-                            ctx.mpd_mute =
-                                match mute.to_lowercase().as_str()
-                                {
-                                    "1" | "true" | "on" => true
-                                ,   _                   => false
-                                };
+                                recv.tx.send( x ).ok();
+                            }
+                        ,   Err(x) =>
+                            {
+                                log::warn!( "connection error [{:?}]", x );
+                                conn.as_mut().unwrap().shutdown();
+                                conn = None;
+                                conn_try_time = Some( Instant::now() );
+
+                                recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                            }
                         }
-
-                        recv.tx.send( Ok( MpdComOk::new() ) ).ok();
                     }
 
                 ,   MpdComRequestType::Cmd( cmd ) =>

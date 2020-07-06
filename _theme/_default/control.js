@@ -936,31 +936,51 @@ function()
 		}
 	);
 
-	var volume			= -1;
-	var is_mut			= function() { return !( $( ".x_volmut" ).prop( 'checked' ) ); }
+	var is_mut = function()
+	{
+		return !( $( ".x_volmut" ).prop( 'checked' ) );
+	}
+
+	var mute_timer = null;
+
+	var set_mute = function( mute )
+	{
+		if( mute_timer != null ) { return; }
+
+		$( ".x_volmut" ).prop( 'checked', !( mute === true || mute === "1" ) );
+
+		mute_timer = setTimeout(
+			function()
+			{
+				mute_timer = null
+			}
+		, 	1500
+		);
+	}
 
 	var update_volume = function( d )
 	{
-		if( volume < 0 )
-		{
-			$( ".x_volicon_high, .x_volicon_low" ).hide();
-			$( ".x_volicon_mut" ).show();
-			$( ".x_volval" ).text( volume );
-
-			return -1;
-		}
-
-		var volume_old = volume;
-		var mut = is_mut();
-
+		var volume = parseInt( $( ".x_volval" ).text() );
 		volume += d;
+
+		if( volume >= 100 ) { volume = 100; }
+		if( volume <= 0   ) { volume = 0; }
+
+		set_volume( volume, true );
+
+		return volume;
+	}
+
+	var set_volume = function( volume, force )
+	{
+		if( !force && ( volume_timer_a != null || volume_timer_b != null ) ) { return; }
 
 		if( volume >= 100 ) { volume = 100; }
 		if( volume <= 0   ) { volume = 0; }
 
 		$( ".x_volval" ).text( volume );
 
-		if( mut || volume <= 0 )
+		if( is_mut() || volume <= 0 )
 		{
 			$( ".x_volicon_high, .x_volicon_low" ).hide();
 			$( ".x_volicon_mut" ).show();
@@ -975,31 +995,27 @@ function()
 			$( ".x_volicon_low, .x_volicon_mut" ).hide();
 			$( ".x_volicon_high" ).show();
 		}
-
-		return mut || ( volume == volume_old ) ? -1 : volume;
 	}
 
-	var volume_timer = null;
+	var volume_timer_a = null;
+	var volume_timer_b = null;
 
 	var volume_impl = function( d )
 	{
-		update_volume( d );
+		var volume = update_volume( d );
 
-		if( !is_mut() && volume != -1 )
-		{
-			$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
-		}
+		$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
 
 		var ct = 0;
 
-		var f =	function()
+		var f = function()
 		{
-			update_volume( d );
+			var volume = update_volume( d );
 
 			ct++;
 			if( ct >= 5 )
 			{
-				if( ct != 0 && !is_mut() && volume != -1 )
+				if( ct != 0 )
 				{
 					$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
 				}
@@ -1007,21 +1023,29 @@ function()
 				ct = 0;
 			}
 
-			volume_timer = setTimeout( f, 100 );
+			volume_timer_a = setTimeout( f, 100 );
 		};
 
-		volume_timer = setTimeout( f, 1000 );
+		volume_timer_a = setTimeout( f, 1000 );
 
 		var fc = function()
 		{
-			clearTimeout( volume_timer );
+			clearTimeout( volume_timer_a );
 
-			if( ct != 0 && !is_mut() && volume != -1 )
+			if( ct != 0 )
 			{
+				var volume = update_volume( 0 );
 				$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
 			}
 
-			volume_timer = null;
+			volume_timer_a = null;
+			volume_timer_b = setTimeout(
+				function()
+				{
+					volume_timer_b = null
+				}
+			, 	1500
+			);
         }
 
 		$(document).one( 'mouseup', fc );
@@ -1040,8 +1064,7 @@ function()
 	$( ".x_volmut" ).change(
 		function()
 		{
-			update_volume( 0 );
-			$.getJSON( "cmd", { cmd : "setvol", arg1 : is_mut() ? 0 : volume } );
+			$.getJSON( "cmd", { cmd : "setmute", arg1 : is_mut() ? 1 : 0 } );
 		}
 	);
 
@@ -1090,11 +1113,8 @@ function()
 
 			$( ".x_play" ).data( "x_state", d[ 'state' ] );
 
-			if( volume_timer == null && !is_mut() )
-			{
-				volume = parseInt( d[ 'volume' ] );
-				update_volume( 0 );
-			}
+			set_volume( parseInt( d[ 'volume' ] ), false );
+			set_mute( d[ 'mute' ] );
 
 			if( current_songid != d[ 'songid' ] )
 			{
@@ -1432,8 +1452,9 @@ function()
 			ctx.textAlign = "center";
 			ctx.textBaseline = "middle";
 			ctx.strokeStyle = "#fff";
-			ctx.lineWidth = 5;
+			ctx.lineWidth = 4;
 			ctx.lineCap = "round";
+			ctx.lineJoin = "round";
 
 			ctx.fillStyle   = "#000";
 
@@ -1700,16 +1721,18 @@ function()
 
 	var draw = function()
 	{
-		drawCanv0();
-		drawCanv1();
-		drawCanv2();
-		requestAnimationFrame( draw );
-	}
+		if( window.document.fullscreenElement )
+		{
+			var v = window.document.fullscreenElement;
 
-	requestAnimationFrame( draw );
-
-	$( window ).resize(
-		function()
+			var p = $( v ).parent();
+			var w1 = parseInt( p.css( 'padding-left'), 10 );
+			var w2 = parseInt( p.css( 'padding-right'), 10 );
+			var w = p.innerWidth() - w1 - w2 - 16;
+			$( v ).attr( 'width',  w );
+			$( v ).attr( 'height', w * 9 / 16 );
+		}
+		else
 		{
 			$.each( canvS,
 				function( i, v )
@@ -1720,21 +1743,35 @@ function()
 						var w1 = parseInt( p.css( 'padding-left'), 10 );
 						var w2 = parseInt( p.css( 'padding-right'), 10 );
 						var w = p.innerWidth() - w1 - w2 - 16;
-						$( v ).attr( 'width', w );
 
 						var h1 = parseInt( p.css( 'padding-top'), 10 );
 						var h2 = parseInt( p.css( 'padding-bottom'), 10 );
 						var h = p.innerHeight() - h1 - h2 - 32;
-						$( v ).attr( 'height', h );
+
+						var ww = $( v ).attr( 'width' );
+						var hh = $( v ).attr( 'height' );
+
+						if( ww != w )
+						{
+							$( v ).attr( 'width', w );
+						}
+
+						if( hh != h )
+						{
+							$( v ).attr( 'height', h );
+						}
 					}
 				}
 			);
-
-			drawCanv0();
 		}
-	);
 
-	$( window ).resize();
+		drawCanv0();
+		drawCanv1();
+		drawCanv2();
+		requestAnimationFrame( draw );
+	}
+
+	requestAnimationFrame( draw );
 
 	$.each( canvS,
 		function( i, v )
@@ -1750,5 +1787,6 @@ function()
 			);
 		}
 	);
+
 }
 );

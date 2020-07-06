@@ -440,7 +440,7 @@ async fn main() -> io::Result<()>
         async
         {
             log::debug!( "spec_responce_task starting." );
-            task::spec_responce_task( ctx_t, sart_rx ).await.ok();
+            task::ws_responce_task( ctx_t, sart_rx ).await.ok();
             log::debug!( "spec_responce_task stop." );
         }
     );
