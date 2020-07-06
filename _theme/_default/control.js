@@ -3,6 +3,73 @@ function()
 {
 	// common function
 
+	var ws_status = null;
+	var ws_spec_l = null;
+	var ws_spec_r = null;
+	var ws_rms_l  = null;
+	var ws_rms_r  = null;
+	var ws_spec_t = null;
+	var ws_spec_h = null;
+
+	var ws_open = function()
+	{
+		$.getJSON( "/spec_head" )
+			.always( function()
+				{
+					ws_spec_h = null;
+				}
+			)
+			.done( function( json )
+				{
+				    if( json.Ok && json.Ok.spec_h )
+				    {
+						ws_spec_h = json.Ok.spec_h
+					}
+				}
+			);
+
+		var ws_proto = location.protocol == 'https:' ? 'wss:' : 'ws:';
+	    var ws = new WebSocket( ws_proto + '//' + location.host + '/ws' );
+
+		var ws_reopen = function()
+		{
+			ws_status = null;
+			ws_spec_l = null;
+			ws_spec_r = null;
+			ws_rms_l  = null;
+			ws_rms_r  = null;
+			ws_spec_t = null;
+			setTimeout( ws_open, 1000 );
+		};
+
+		ws.onclose = ws_reopen;
+	    ws.onError = ws_reopen;
+	    ws.onmessage = function( e )
+        {
+			j_data = $.parseJSON( e.data );
+
+			if( j_data && j_data.Ok )
+			{
+				if( j_data.Ok.status )
+				{
+					ws_status = j_data.Ok.status
+					update_player();
+				}
+
+				if( j_data.Ok.spec_t )
+				{
+					ws_spec_l = j_data.Ok.spec_l
+					ws_spec_r = j_data.Ok.spec_r
+					ws_spec_t = j_data.Ok.spec_t
+					ws_rms_l  = j_data.Ok.rms_l
+					ws_rms_r  = j_data.Ok.rms_r
+				}
+			}
+		};
+	};
+
+	ws_open();
+
 	var format_time = function( d )
 	{
 		d = parseInt( d );
@@ -168,7 +235,7 @@ function()
 
 	// init library
 
-	var base_folder_item		= $( "div.x_liblist_folder_item" ).clone();
+	var base_folder_item	= $( "div.x_liblist_folder_item" ).clone();
 	var base_file_item		= $( "div.x_liblist_file_item" ).clone();
 
 	$( "div.x_liblist_folder_item" ).remove();
@@ -233,7 +300,7 @@ function()
 
 	var library_page_add = function( _n, _p )
 	{
-		$.getJSON( "cmd", { cmd : "addid", arg1 : _n } )
+		$.getJSON( "/cmd", { cmd : "addid", arg1 : _n } )
 			.done(
 				function( json )
 				{
@@ -243,12 +310,11 @@ function()
 
 						if( _p && kv[ 'Id' ] )
 						{
-							$.getJSON( "cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+							$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
 						}
 					}
 				}
 			);
-
 	}
 
 	var library_page_clear = function()
@@ -286,12 +352,12 @@ function()
 		$.each( t, function( i, v ) { v.click(); } );
 	}
 
-	$( ".x_liblist_dir_addall" ).click( 	function() { library_page_dir_addall_impl( false ); } );
-	$( ".x_liblist_dir_addall_play" ).click( function() { library_page_dir_addall_impl( true ); } );
+	$( ".x_liblist_dir_addall" ).click( 		function() { library_page_dir_addall_impl( false 	); } );
+	$( ".x_liblist_dir_addall_play" ).click( 	function() { library_page_dir_addall_impl( true		); } );
 
 	var library_page_update = function()
 	{
-		$.getJSON( "cmd", { cmd : "lsinfo", arg1 : library_page_cur_dir() } )
+		$.getJSON( "/cmd", { cmd : "lsinfo", arg1 : library_page_cur_dir() } )
 			.always( function()
 				{
 					library_page_clear();
@@ -474,7 +540,7 @@ function()
 				{
 					if( !!( $(v).data( "x_selected" ) ) )
 					{
-						$.getJSON( "cmd", { cmd : "deleteid", arg1 : $(v).data( "x_id" ) },  )
+						$.getJSON( "/cmd", { cmd : "deleteid", arg1 : $(v).data( "x_id" ) },  )
 					}
 				}
 			);
@@ -535,9 +601,9 @@ function()
 				$.ajax(
 					{
 						dataType	: "json"
-					,	url		: "cmd"
+					,	url			: "/cmd"
 					, 	data		: { cmd : "moveid", arg1 : v[0], arg2 : v[1] }
-					,	async	: false
+					,	async		: false
 					}
 				);
 			}
@@ -600,7 +666,7 @@ function()
 					{
 						var sw = $(this).hasClass( "dropdown-item-checked" );
 
-						$.getJSON( "cmd", { cmd : _v, arg1 : sw ? "0" : "1" } )
+						$.getJSON( "/cmd", { cmd : _v, arg1 : sw ? "0" : "1" } )
 					};
 				}( v )
 			);
@@ -673,7 +739,7 @@ function()
 			}
 		);
 
-		$.getJSON( "cmd", { cmd : "playlistinfo" } )
+		$.getJSON( "/cmd", { cmd : "playlistinfo" } )
 			.always( function()
 				{
 					$.each( [
@@ -748,7 +814,7 @@ function()
 										return function()
 										{
 											flush_item( _it )
-											$.getJSON( "cmd", { cmd : "playid", arg1 : $(this).data( "x_id" ) },  )
+											$.getJSON( "/cmd", { cmd : "playid", arg1 : $(this).data( "x_id" ) },  )
 											return false;
 										}
 									}( item )
@@ -876,7 +942,7 @@ function()
 			var tm = parseInt( p_max * ( np / w ) );
 
 			console.log( tm, p_max );
-			$.getJSON( "cmd", { cmd : "seekcur", arg1 : tm } )
+			$.getJSON( "/cmd", { cmd : "seekcur", arg1 : tm } )
 		}
 	}
 
@@ -912,14 +978,14 @@ function()
 	$( ".x_next" ).click(
 		function()
 		{
-			$.getJSON( "cmd", { cmd : "next" } );
+			$.getJSON( "/cmd", { cmd : "next" } );
 		}
 	);
 
 	$( ".x_prev" ).click(
 		function()
 		{
-			$.getJSON( "cmd", { cmd : "previous" } );
+			$.getJSON( "/cmd", { cmd : "previous" } );
 		}
 	);
 
@@ -931,7 +997,7 @@ function()
 			if( s )
 			{
 				var c = ( s == "stop" ? "play" : ( s == "pause" ? "pause 0" : "pause 1" ) );
-				$.getJSON( "cmd", { cmd : c } );
+				$.getJSON( "/cmd", { cmd : c } );
 			}
 		}
 	);
@@ -954,7 +1020,7 @@ function()
 			{
 				mute_timer = null
 			}
-		, 	1500
+		, 	2000
 		);
 	}
 
@@ -1004,7 +1070,7 @@ function()
 	{
 		var volume = update_volume( d );
 
-		$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+		$.getJSON( "/cmd", { cmd : "setvol", arg1 : volume } );
 
 		var ct = 0;
 
@@ -1017,7 +1083,7 @@ function()
 			{
 				if( ct != 0 )
 				{
-					$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+					$.getJSON( "/cmd", { cmd : "setvol", arg1 : volume } );
 				}
 
 				ct = 0;
@@ -1035,7 +1101,7 @@ function()
 			if( ct != 0 )
 			{
 				var volume = update_volume( 0 );
-				$.getJSON( "cmd", { cmd : "setvol", arg1 : volume } );
+				$.getJSON( "/cmd", { cmd : "setvol", arg1 : volume } );
 			}
 
 			volume_timer_a = null;
@@ -1064,7 +1130,7 @@ function()
 	$( ".x_volmut" ).change(
 		function()
 		{
-			$.getJSON( "cmd", { cmd : "setmute", arg1 : is_mut() ? 1 : 0 } );
+			$.getJSON( "/cmd", { cmd : "setmute", arg1 : is_mut() ? 1 : 0 } );
 		}
 	);
 
@@ -1166,7 +1232,7 @@ function()
 
 	var show_description = function( _n )
 	{
-		$.getJSON( "cmd", { cmd : "lsinfo", arg1 : _n } )
+		$.getJSON( "/cmd", { cmd : "lsinfo", arg1 : _n } )
 			.done( function( json )
 				{
 					if( json.Ok )
@@ -1213,7 +1279,7 @@ function()
 								}
 							}
 
-							$.getJSON( "cmd", { cmd : "readpicture", arg1 : _n, arg2 : 0 } )
+							$.getJSON( "/cmd", { cmd : "readpicture", arg1 : _n, arg2 : 0 } )
 								.done( function( json )
 									{
 										if( json.Ok )
@@ -1251,72 +1317,10 @@ function()
 		}
 	)
 
-	var ws_status = null;
-	var ws_spec_l = null;
-	var ws_spec_r = null;
-	var ws_rms_l  = null;
-	var ws_rms_r  = null;
-	var ws_spec_t = null;
-	var ws_spec_h = null;
-
-	$.getJSON( "spec_head" )
-		.done( function( json )
-			{
-			    if( json.Ok && json.Ok.spec_h )
-			    {
-					ws_spec_h = json.Ok.spec_h
-				}
-			}
-		)
-		;
-
-
-	var ws_open = function()
-	{
-		var ws_proto = location.protocol == 'https:' ? 'wss:' : 'ws:';
-	    var ws = new WebSocket( ws_proto + '//' + location.host + '/ws' );
-
-		var ws_reopen = function()
-		{
-			ws_status = null;
-			ws_spec   = null;
-			setTimeout( ws_open, 1000 );
-		};
-
-		ws.onclose = ws_reopen;
-	    ws.onError = ws_reopen;
-	    ws.onmessage = function( e )
-        {
-			j_data = $.parseJSON( e.data );
-
-			if( j_data && j_data.Ok )
-			{
-				if( j_data.Ok.status )
-				{
-					ws_status = j_data.Ok.status
-					update_player();
-				}
-
-				if( j_data.Ok.spec_t )
-				{
-					ws_spec_l = j_data.Ok.spec_l
-					ws_spec_r = j_data.Ok.spec_r
-					ws_spec_t = j_data.Ok.spec_t
-					ws_rms_l  = j_data.Ok.rms_l
-					ws_rms_r  = j_data.Ok.rms_r
-				}
-			}
-		};
-	};
-
-	ws_open();
-
 	var canv0 = $( ".x_canvas_0" ).get( 0 );
 	var canv1 = $( ".x_canvas_1" ).get( 0 );
 	var canv2 = $( ".x_canvas_2" ).get( 0 );
 	var canvS = [ canv0, canv1, canv2 ];
-
-	var imgsrcNoImage = 'data:image/svg+xml,<svg class="bi bi-music-note" viewBox="0 0 16 16" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/><path fill-rule="evenodd" d="M9 3v10H8V3h1z"/><path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5V2.82z"/></svg>';
 
 	var drawCanv0State = null;
 
@@ -1338,12 +1342,11 @@ function()
 			{
 				drawCanv0State = {};
 				drawCanv0State.pnow = null;
+				drawCanv0State.imgNoImage = new Image();
+				drawCanv0State.imgNoImage.src = 'data:image/svg+xml,<svg class="bi bi-music-note" viewBox="0 0 16 16" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/><path fill-rule="evenodd" d="M9 3v10H8V3h1z"/><path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5V2.82z"/></svg>';
 			}
 
 			var st = drawCanv0State;
-
-			var img = new Image();
-			img.src = imgsrcNoImage;
 
 			ctx.save();
 			ctx.translate( cw / 2 , ch / 2 );
@@ -1442,7 +1445,7 @@ function()
 				ctx.rotate( 2 * Math.PI * t );
 			}
 
-			ctx.drawImage( img, w / -2, w / -2, w / 2, w / 2 );
+			ctx.drawImage( st.imgNoImage, w / -2, w / -2, w / 2, w / 2 );
 
 			ctx.restore();
 
@@ -1788,5 +1791,11 @@ function()
 		}
 	);
 
+	$( ".x_setting_go" ).click(
+		function()
+		{
+			location.href = "/common/setting.html";
+		}
+	);
 }
 );

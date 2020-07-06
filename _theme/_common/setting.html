@@ -61,15 +61,15 @@
         <div class="input-group input-group-sm">
 
             <div class="input-group-prepend">
-                <label class="input-group-text" for="x_setting_theme">Theme</label>
+                <label class="input-group-text" for="x_st_theme">Theme</label>
             </div>
 
-            <select class="custom-select" id="x_setting_theme">
+            <select class="custom-select x_st_themes" id="x_st_themes">
                 <option value="_default" >Default</option>
             </select>
 
             <div class="input-group-append">
-                <button class="btn btn-primary" type="button">Apply</button>
+                <button class="btn btn-primary x_st_theme_apply" type="button">Apply</button>
             </div>
 
         </div>
@@ -77,25 +77,25 @@
         <div class="input-group input-group-sm mt-2">
 
             <div class="input-group-prepend">
-                <label class="input-group-text" for="x_setting_theme">Bluetooth Recive</label>
+                <label class="input-group-text" for="x_st_bluetooth_pair">Bluetooth Recive</label>
             </div>
 
             <div class="custom-control custom-switch mx-2">
-              <input type="checkbox" class="custom-control-input shadow " id="customSwitch2"  >
-              <label class="custom-control-label" for="customSwitch2">
+              <input type="checkbox" class="custom-control-input shadow x_st_bluetooth" id="x_st_bluetooth" >
+              <label class="custom-control-label" for="x_st_bluetooth">
               </label>
             </div>
 
             <div class="input-group-prepend">
-                <button class="btn btn-primary" type="button">Scan</button>
+                <button class="btn btn-primary x_st_bluetooth_scan" type="button">Scan</button>
             </div>
 
-            <select class="custom-select" id="x_setting_theme">
-                <option value="_default" >Default</option>
+            <select class="custom-select" id="x_st_bluetooth_pair">
+                <option value="_default" >...</option>
             </select>
 
             <div class="input-group-append">
-                <button class="btn btn-primary" type="button">Pairing</button>
+                <button class="btn btn-primary x_st_bluetooth_pair" type="button">Pairing</button>
             </div>
 
         </div>
@@ -108,48 +108,151 @@
         <div class="input-group input-group-sm mt-2">
 
             <div class="input-group-prepend">
-                <label class="input-group-text" for="x_setting_theme">Animatio Delay</label>
+                <label class="input-group-text" for="x_st_anidelay">Animation Delay</label>
             </div>
 
             <div class="input-group-append mx-2">
-                <input type="range" class="form-control-range" id="">
+                <input type="range" class="form-control-range x_st_anidelay" id="x_st_anidelay" min="0" max="1000" step="50" />
             </div>
 
             <div class="input-group-append">
                 <span class="input-group-text" id="basic-addon1">
-                    <span >500</span>
+                    <span class="x_st_anidelay_val" >500</span>
                     <span > ms</span>
                 </span>
             </div>
 
             <div class="input-group-append">
-                <button class="btn btn-primary" type="button">Apply</button>
+                <button class="btn btn-primary x_st_anidelay_apply" type="button">Apply</button>
             </div>
 
         </div>
 
     </div>
 
-
     <div class="container-fluid mt-5">
-        <h5>Developer Section</h5>
+        <h5>Development Section
+            <a href="#" class="btn btn-link">
+<svg width="24" height="24" viewBox="0 0 16 16" class="bi bi-caret-down-fill x_st_dev_close" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
+</svg>
+<svg width="24" height="24" viewBox="0 0 16 16" class="bi bi-caret-down x_st_dev_open" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M3.204 5L8 10.481 12.796 5H3.204zm-.753.659l4.796 5.48a1 1 0 0 0 1.506 0l4.796-5.48c.566-.647.106-1.659-.753-1.659H3.204a1 1 0 0 0-.753 1.659z"/>
+</svg>
+            </a>
+        </h5>
 
-        <div class="container-fluid mt-3">
-            <h6>Hidamari Status</h6>
+        <div class="container-fluid x_st_dev mb-5">
+
+            <div class="container-fluid mt-3 d-none">
+                <h6>Hidamari Status</h6>
+                <div class="container-fluid d-flex align-items-start">
+                    <button class="btn btn-primary btn-sm x_st_dev_status_update">Update</button>
+                    <textarea class="flex-fill            x_st_dev_status_result"></textarea>
+                </div>
+            </div>
+
+            <div class="container-fluid mt-3">
+                <h6>MPD Command Exec</h6>
+                <div class="container-fluid d-flex align-items-start">
+
+                    <div class="d-flex flex-column">
+                        <div class="d-flex">
+                            <div style="min-width:5em;">
+                                CMD
+                                <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"></button>
+                                <div class="dropdown-menu">
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">play</a>
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">stop</a>
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">setvol</a>
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">setmute</a>
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">playlistinfo</a>
+                                    <a class="dropdown-item x_st_dev_cmd_ddi" href="#">lsinfo</a>
+                                </div>
+                            </div>
+                            <input type="text" class="x_st_dev_cmd_cmd" style="width:10em;">
+                            <button class="btn btn-primary btn-sm x_st_dev_cmd_exec" type="button">Exec</button>
+                        </div>
+                        <div class="d-flex">
+                            <div style="min-width:5em;">
+                                ARGS
+                            </div>
+                            <input type="text" class="x_st_dev_cmd_arg1" style="width:6em;">
+                            <input type="text" class="x_st_dev_cmd_arg2" style="width:2em;">
+                            <input type="text" class="x_st_dev_cmd_arg3" style="width:2em;">
+                        </div>
+                    </div>
+
+                    <textarea class="flex-fill            x_st_dev_cmd_result"></textarea>
+
+                </div>
+            </div>
+
+            <div class="container-fluid mt-3">
+                <h6>Hidamari WebSocket</h6>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div >
+                        Monitor
+                    </div>
+                    <div class="custom-control custom-switch mx-2">
+                        <input type="checkbox" class="custom-control-input shadow x_ws_monitor" id="x_ws_monitor"  >
+                        <label class="custom-control-label" for="x_ws_monitor"></label>
+                    </div>
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_status
+                    </div>
+                    <textarea class="flex-fill x_ws_monitor_ws_status" rows="10"></textarea>
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_spec_l
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_spec_l" />
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_spec_r
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_spec_r" />
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_spec_t
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_spec_t" />
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_rms_l
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_rms_l" />
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_rms_r
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_rms_r" />
+                </div>
+
+                <div class="container-fluid d-flex align-items-start">
+                    <div style="width:5em;">
+                        ws_spec_h
+                    </div>
+                    <input class="flex-fill x_ws_monitor_ws_spec_h" />
+                </div>
+
+            </div>
+
         </div>
-
-        <div class="container-fluid mt-3">
-            <h6>MPD Command Exec</h6>
-        </div>
-
-        <div class="container-fluid mt-3">
-            <h6>Hidamari Volume Change</h6>
-        </div>
-
-        <div class="container-fluid mt-3">
-            <h6>Hidamari WebSocket</h6>
-        </div>
-
 
     </div>
 

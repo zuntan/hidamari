@@ -190,7 +190,7 @@ pub async fn mpdfifo_task(
     {
         let ctx = &mut ctx.lock().unwrap();
 
-        let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f64();
+        let d = Duration::from_millis( ctx.config_dyn.spec_delay as u64 ).as_secs_f64();
         s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f64 ) as usize;
 
         let bh : SpecHeaderResult = Ok( SpecHeader { spec_h : &spec_amp_h[ bar_st..bar_ed ] } );
@@ -263,7 +263,7 @@ pub async fn mpdfifo_task(
         {
             let ctx = &mut ctx.lock().unwrap();
 
-            let d = Duration::from_millis( ctx.config_dyn.mpdfifo_delay as u64 ).as_secs_f64();
+            let d = Duration::from_millis( ctx.config_dyn.spec_delay as u64 ).as_secs_f64();
             s_buf_delay_size = ( d * ( SAMPLING_RATE * CHANNELS ) as f64 ) as usize;
 
             spd.spec_t = chrono::Local::now().to_rfc3339();

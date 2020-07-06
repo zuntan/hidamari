@@ -40,13 +40,12 @@ mod mpdfifo;
 mod event;
 mod task;
 
-use config::{ Config, ConfigDyn, get_config, get_config_dyn, save_config_dyn };
 
 ///
 pub struct Context
 {
-    config          : Config
-,   config_dyn      : ConfigDyn
+    config          : config::Config
+,   config_dyn      : config::ConfigDyn
 
 ,   mpdcom_tx       : mpsc::Sender< mpdcom::MpdComRequest >
 ,   mpd_status_json : String
@@ -64,8 +63,8 @@ pub struct Context
 impl Context
 {
     fn new(
-        config      : Config
-    ,   config_dyn  : ConfigDyn
+        config      : config::Config
+    ,   config_dyn  : config::ConfigDyn
     ,   mpdcom_tx   : mpsc::Sender< mpdcom::MpdComRequest >
     ) -> Context
     {
@@ -99,7 +98,7 @@ impl Context
         }
         else
         {
-            path.push( "_theme" );
+            path.push( config::THEME_DIR );
         }
 
         if self.config_dyn.theme != ""
@@ -120,15 +119,51 @@ impl Context
         }
         else
         {
-            path.push( "_theme" );
+            path.push( config::THEME_DIR );
         }
 
-        path.push( "_common" );
+        path.push( config::THEME_COMMON_DIR );
 
         path
     }
 }
 
+///
+#[derive(Debug, Deserialize, Clone)]
+struct ConfigParam
+{
+    update : Option<String>
+}
+
+///
+async fn config_impl( ctx : web::Data< Mutex< Context > >, param : &ConfigParam ) -> HttpResponse
+{
+    let mut ctx = ctx.lock().unwrap();
+
+    if param.update.is_some()
+    {
+        let newval = String::from( param.update.as_ref().unwrap().trim_end() );
+
+        if newval != ""
+        {
+            ctx.config_dyn.update( &newval );
+        }
+    }
+
+    HttpResponse::Ok().json( config::make_config_dyn_output( &ctx.config, &ctx.config_dyn ) )
+}
+
+///
+async fn config_get( ctx : web::Data< Mutex< Context > >, param: web::Query<ConfigParam> ) -> HttpResponse
+{
+    config_impl( ctx, &*param ).await
+}
+
+///
+async fn config_post( ctx : web::Data< Mutex< Context > >, param: web::Form<ConfigParam> ) -> HttpResponse
+{
+    config_impl( ctx, &*param ).await
+}
 
 ///
 async fn ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::Payload ) -> Result< HttpResponse, Error >
@@ -140,7 +175,6 @@ async fn ws( ctx : web::Data< Mutex< Context > >, r: HttpRequest, stream: web::P
 async fn spec_data( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 {
     let ctx = ctx.lock().unwrap();
-
     HttpResponse::Ok().body( &ctx.spec_data_json )
 }
 
@@ -148,7 +182,6 @@ async fn spec_data( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 async fn spec_head( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 {
     let ctx = ctx.lock().unwrap();
-
     HttpResponse::Ok().body( &ctx.spec_head_json )
 }
 
@@ -156,7 +189,6 @@ async fn spec_head( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 async fn status( ctx : web::Data< Mutex< Context > > ) -> HttpResponse
 {
     let ctx = ctx.lock().unwrap();
-
     HttpResponse::Ok().body( &ctx.mpd_status_json )
 }
 
@@ -257,14 +289,12 @@ async fn cmd_impl( ctx : web::Data< Mutex< Context > >, param : &CmdParam ) -> H
 ///
 async fn cmd_get( ctx : web::Data< Mutex< Context > >, param: web::Query<CmdParam> ) -> HttpResponse
 {
-    log::debug!("command_get" );
     cmd_impl( ctx, &*param ).await
 }
 
 ///
 async fn cmd_post( ctx : web::Data< Mutex< Context > >, param: web::Form<CmdParam> ) -> HttpResponse
 {
-    log::debug!("command_post" );
     cmd_impl( ctx, &*param ).await
 }
 
@@ -312,7 +342,6 @@ async fn common( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Res
     }
 }
 
-
 ///
 fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) -> Result< afs::NamedFile >
 {
@@ -335,8 +364,6 @@ fn theme_content_impl( ctx : web::Data< Mutex< Context > >, p : &path::Path ) ->
 ///
 async fn theme( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Result< afs::NamedFile >
 {
-    log::debug!("{}", req.path() );
-
     let mut p : Vec<String> = Vec::new();
 
     for x in req.path().split( '/' ).skip(2)
@@ -368,7 +395,7 @@ async fn theme( ctx : web::Data< Mutex< Context > >, req : HttpRequest ) -> Resu
 ///
 async fn root( ctx : web::Data< Mutex< Context > > ) -> Result< afs::NamedFile >
 {
-    theme_content_impl( ctx, path::Path::new( "main.html" ) )
+    theme_content_impl( ctx, path::Path::new( config::THEME_MAIN ) )
 }
 
 ///
@@ -384,7 +411,7 @@ async fn main() -> io::Result<()>
     std::env::set_var( "RUST_LOG", "debug" );
     env_logger::init();
 
-    let config = get_config();
+    let config = config::get_config();
 
     if config.is_none()
     {
@@ -393,7 +420,7 @@ async fn main() -> io::Result<()>
 
     let config = config.unwrap();
 
-    let config_dyn = get_config_dyn( &config );
+    let config_dyn = config::get_config_dyn( &config );
 
     let ( mpdcom_tx,    mpdcom_rx )     = mpsc::channel::< mpdcom::MpdComRequest >( 128 );
 
@@ -454,6 +481,11 @@ async fn main() -> io::Result<()>
             App::new()
             .app_data( ctx_t.clone() )
             .wrap( middleware::Logger::default() )
+            .service(
+                web::resource( "/config" )
+                    .route( web::get().to( config_get ) )
+                    .route( web::post().to( config_post ) )
+            )
             .service(
                 web::resource( "/spec_data" )
                     .route( web::get().to( spec_data ) )
@@ -525,7 +557,7 @@ async fn main() -> io::Result<()>
 
     {
         let ctx = &ctx.lock().unwrap();
-        save_config_dyn( &ctx.config, &ctx.config_dyn );
+        config::save_config_dyn( &ctx.config, &ctx.config_dyn );
     }
 
 

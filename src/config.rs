@@ -9,6 +9,7 @@
 
 use std::io;
 use std::io::prelude::*;
+use std::path;
 use std::fs;
 use std::net::ToSocketAddrs;
 
@@ -27,12 +28,18 @@ pub struct Config
 ,   pub theme_dir   : String
 }
 
+pub const THEME_MAIN        : &str = "main.html";
+pub const THEME_DIR         : &str = "_theme";
+pub const THEME_DEFAULT_DIR : &str = "_default";
+pub const THEME_COMMON_DIR  : &str = "_common";
+pub const THEME_HIDE_DIR    : &str = "^[_.]";
+
 ///
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConfigDyn
 {
     pub theme           : String
-,   pub mpdfifo_delay   : u32
+,   pub spec_delay      : u32
 }
 
 ///
@@ -42,9 +49,106 @@ impl ConfigDyn
     {
         ConfigDyn
         {
-            theme           : String::from( "_default" )
-        ,   mpdfifo_delay   : 500
+            theme           : String::from( THEME_DEFAULT_DIR )
+        ,   spec_delay      : 500
         }
+    }
+
+    pub fn update( &mut self, newval : &str )
+    {
+        let newval : serde_json::Result< ConfigDynInput > = serde_json::from_str( newval );
+
+        match newval
+        {
+            Ok( nv ) =>
+            {
+                if let Some( x ) = nv.theme
+                {
+                    log::debug!( "update dyn theme {}", &x );
+                    self.theme = String::from( &x );
+                }
+
+                if let Some( x ) = nv.spec_delay
+                {
+                    log::debug!( "update dyn spec_delay {}", x );
+                    self.spec_delay = x;
+                }
+            }
+        ,   Err( x ) =>
+            {
+                log::error!( "{:?}", x );
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ConfigDynOutput
+{
+    pub theme       : String
+,   pub themes      : Vec< String >
+,   pub spec_delay  : u32
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigDynInput
+{
+    pub theme      : Option< String >
+,   pub spec_delay : Option< u32 >
+}
+
+pub fn make_config_dyn_output( config : &Config, config_dyn : &ConfigDyn ) -> ConfigDynOutput
+{
+    let mut path = path::PathBuf::new();
+
+    if config.theme_dir != ""
+    {
+        path.push( &config.theme_dir );
+    }
+    else
+    {
+        path.push( THEME_DIR );
+    }
+
+    let mut themes = Vec::< String >::new();
+
+    themes.push( String::from( THEME_DEFAULT_DIR ) );
+
+    if let Ok( entries ) = fs::read_dir( path )
+    {
+        for entry in entries
+        {
+            if let Ok( entry ) = entry
+            {
+                if let Ok( entry_s ) = entry.file_name().into_string()
+                {
+                    lazy_static!
+                    {
+                        static ref RE : regex::Regex =
+                            regex::Regex::new( THEME_HIDE_DIR ).unwrap();
+                    }
+
+                    if !RE.is_match( &entry_s )
+                    {
+                        let mut path_main = entry.path();
+
+                        path_main.push( THEME_MAIN );
+
+                        if path_main.is_file()
+                        {
+                            themes.push( String::from( &entry_s ) );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ConfigDynOutput
+    {
+        theme           : String::from( &config_dyn.theme )
+    ,   themes          : themes
+    ,   spec_delay      : config_dyn.spec_delay
     }
 }
 
