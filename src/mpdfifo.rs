@@ -12,8 +12,10 @@ use std::io::{ self, Read };
 use std::collections::VecDeque;
 use std::fs::File;
 
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{ AsRawFd };
-use libc::{F_GETFL, F_SETFL, fcntl, O_NONBLOCK};
+use libc;
 
 use actix_web::web;
 
@@ -56,20 +58,25 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
         return Err( io::Error::from( io::ErrorKind::NotFound ) );
     }
 
-    let fifo = File::open( fifo_name )?;
+    let mut options = OpenOptions::new();
+
+    options.read( true );
+    options.custom_flags( libc::O_NONBLOCK | libc::O_RDONLY );
+
+    let fifo = options.open( fifo_name )?;
 
     let fd = fifo.as_raw_fd();
 
-    let flags = unsafe { fcntl( fd, F_GETFL, 0 ) };
+    let flags = unsafe { libc::fcntl( fd, libc::F_GETFL, 0 ) };
 
     if flags < 0
     {
         return Err( io::Error::last_os_error() );
     }
 
-    let flags = flags | O_NONBLOCK;
+    let flags = flags | libc::O_NONBLOCK;
 
-    let res = unsafe { fcntl( fd, F_SETFL, flags ) };
+    let res = unsafe { libc::fcntl( fd, libc::F_SETFL, flags ) };
 
     if res != 0
     {
@@ -249,7 +256,12 @@ pub async fn mpdfifo_task(
                         fifo = Err( x );
                         break;
                     }
-                ,   Ok( _ ) => {
+                ,   Ok( x ) => {
+                        if x == 0
+                        {
+                            break;
+                        }
+
                         delay_for( FIFO_STALL_SLEEP ).await;
                     }
                 }
