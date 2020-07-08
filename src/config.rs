@@ -6,33 +6,46 @@
 
 ///
 ///
-
 use std::io;
 use std::io::prelude::*;
 use std::path;
 use std::fs;
-use std::net::ToSocketAddrs;
+use std::net::{ SocketAddr, ToSocketAddrs };
 
-use serde::{ Serialize, Deserialize };
-
-///
-#[derive(Debug, Deserialize, Clone)]
-pub struct Config
-{
-    pub config_dyn  : String
-,   pub bind_addr   : String
-,   pub mpd_addr    : String
-,   pub mpd_protolog: bool
-,   pub mpd_fifo    : String
-,   pub log_level   : String
-,   pub theme_dir   : String
-}
+use serde::{ Deserialize, Serialize };
 
 pub const THEME_MAIN        : &str = "main.html";
 pub const THEME_DIR         : &str = "_theme";
 pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
+
+///
+#[derive(Debug, Deserialize, Clone)]
+pub struct Config
+{
+    pub config_dyn  : String
+,       bind_addr   : String
+,       mpd_addr    : String
+,   pub mpd_protolog: bool
+,   pub mpd_fifo    : String
+,   pub log_level   : String
+,   pub theme_dir   : String
+}
+
+
+impl Config
+{
+    pub fn bind_addr( &self ) -> SocketAddr
+    {
+        self.bind_addr.to_socket_addrs().unwrap().next().unwrap()
+    }
+
+    pub fn mpd_addr( &self ) -> SocketAddr
+    {
+        self.mpd_addr.to_socket_addrs().unwrap().next().unwrap()
+    }
+}
 
 ///
 #[derive(Debug, Serialize, Deserialize, Clone)]

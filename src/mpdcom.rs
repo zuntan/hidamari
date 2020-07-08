@@ -8,10 +8,7 @@
 ///
 
 use std::fmt;
-use std::sync::Mutex;
 use std::str::FromStr;
-
-use actix_web::web;
 
 use tokio::io::BufReader;
 use tokio::net::TcpStream;
@@ -25,8 +22,8 @@ use serde::{ Serialize, /* Deserialize */ };
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComOk
 {
-    pub flds:       Vec<(String,String)>
-,   pub bin:        Option<Vec<u8>>
+    pub flds:       Vec< ( String, String ) >
+,   pub bin:        Option< Vec< u8 > >
 }
 
 ///
@@ -42,7 +39,7 @@ impl MpdComOk
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComOkStatus
 {
-    pub status:     Vec<(String,String)>
+    pub status:     Vec< ( String,String ) >
 }
 
 ///
@@ -100,9 +97,9 @@ pub type MpdComStatusResult = Result< MpdComOkStatus,   MpdComErr >;
 pub enum MpdComRequestType
 {
     Nop
-,   Cmd(String)
-,   SetVol(String)
-,   SetMute(String)
+,   Cmd( String )
+,   SetVol( String )
+,   SetMute( String )
 ,   Shutdown
 }
 
@@ -145,7 +142,7 @@ pub fn quote_arg( arg: &str ) -> String
 
 ///
 async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
--> Result< MpdComResult, Box< dyn std::error::Error> >
+-> io::Result< MpdComResult >
 {
     if protolog
     {
@@ -257,19 +254,18 @@ async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
 
 ///
 pub async fn mpdcom_task(
-    ctx     : web::Data< Mutex< super::Context > >
+    arwlctx   : crate::ARWLContext
 ,   mut rx  : mpsc::Receiver< MpdComRequest >
 )
--> Result< (), Box< dyn std::error::Error> >
 {
     log::debug!( "mpdcom starting." );
 
     let mpd_addr;
     let mpd_protolog;
     {
-        let ctx = &ctx.lock().unwrap();
+        let ctx = arwlctx.read().await;
 
-        mpd_addr = String::from( &ctx.config.mpd_addr );
+        mpd_addr = ctx.config.mpd_addr();
         mpd_protolog = ctx.config.mpd_protolog;
     };
 
@@ -279,12 +275,12 @@ pub async fn mpdcom_task(
 
     let mut _mpd_version : Option< String > = None;
 
-    let rx_time_out = Duration::from_millis( 10 );
+    let rx_time_out = Duration::from_millis( 20 );
 
     let mut status_try_time : Option< Instant > = None;
-    let status_time_out = Duration::from_millis( 200 );
+    let status_time_out = Duration::from_millis( 250 );
 
-    log::debug!( "mpdcom start. {:?} {}", mpd_addr, mpd_protolog );
+    log::debug!( "mpdcom {:?} protolog {:?}", mpd_addr, mpd_protolog );
 
     loop
     {
@@ -304,14 +300,14 @@ pub async fn mpdcom_task(
                     let mut reader = BufReader::new( &mut x );
                     let mut buf = String::new();
 
-                    reader.read_line( &mut buf ).await?;
+                    let _ = reader.read_line( &mut buf ).await;
 
                     log::info!( "connected {}", &buf );
 
                     if !buf.starts_with("OK MPD ")
                     {
                         log::warn!( "connect shutdown" );
-                        x.shutdown( std::net::Shutdown::Both )?;
+                        let _ = x.shutdown( std::net::Shutdown::Both );
                     }
                     else
                     {
@@ -349,7 +345,7 @@ pub async fn mpdcom_task(
 
                             let volval = if let Ok( volval ) = u8::from_str( &vol.1 ) { volval } else { 0 };
 
-                            let ctx = &mut ctx.lock().unwrap();
+                            let mut ctx = arwlctx.write().await;
 
                             if !ctx.mpd_mute || volval > 0
                             {
@@ -394,7 +390,7 @@ pub async fn mpdcom_task(
                         }
                     }
 
-                    let ctx = &mut ctx.lock().unwrap();
+                    let mut ctx = arwlctx.write().await;
 
                     ctx.mpd_status_json =
                         match x
@@ -431,7 +427,7 @@ pub async fn mpdcom_task(
 
             if !status_ok
             {
-                let ctx = &mut ctx.lock().unwrap();
+                let mut ctx = arwlctx.write().await;
 
                 ctx.mpd_status_json =
                     match serde_json::to_string( &MpdComResult::Err( MpdComErr::new( -1 ) )  )
@@ -474,7 +470,7 @@ pub async fn mpdcom_task(
                                 let mut done = false;
 
                                 {
-                                    let ctx = &mut ctx.lock().unwrap();
+                                    let mut ctx = arwlctx.write().await;
 
                                     if ctx.mpd_mute
                                     {
@@ -534,7 +530,7 @@ pub async fn mpdcom_task(
                             }
                             else
                             {
-                                let ctx = &mut ctx.lock().unwrap();
+                                let ctx = arwlctx.read().await;
                                 String::from( "setvol " ) + &ctx.mpd_volume.to_string()
                             };
 
@@ -542,7 +538,7 @@ pub async fn mpdcom_task(
                         {
                             Ok(x) =>
                             {
-                                let ctx = &mut ctx.lock().unwrap();
+                                let mut ctx = arwlctx.write().await;
                                 ctx.mpd_mute = mute;
 
                                 recv.tx.send( x ).ok();
@@ -597,7 +593,5 @@ pub async fn mpdcom_task(
     }
 
     log::debug!( "mpdcom stop." );
-
-    Ok(())
 }
 
