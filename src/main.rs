@@ -30,7 +30,10 @@ use warp::{ Filter, filters, reply::Reply, reply::Response, reject::Rejection, h
 
 use headers::HeaderMapExt;
 
-use serde::de::DeserializeOwned;
+use warp::http::header::{ HeaderName, HeaderValue, CONTENT_TYPE };
+use warp::http::StatusCode;
+
+use serde::{ Serialize, Deserialize, de::DeserializeOwned };
 
 mod config;
 mod mpdcom;
@@ -125,6 +128,26 @@ type StrResult = Result< String, Rejection >;
 ///
 type RespResult = Result< Response, Rejection >;
 
+fn json_responce< T: ?Sized + Serialize >( t : &T ) -> Response
+{
+	let mut r = Response::new(
+		match serde_json::to_string( t )
+        {
+            Ok( x ) => { x }
+        ,   _       => { String::new() }
+        }.into()
+	);
+	r.headers_mut().insert( CONTENT_TYPE, HeaderValue::from_static( "application/json" ) );
+	r
+}
+
+fn internal_server_error( t : &str ) -> Response
+{
+	let mut r = Response::new( String::from( t ).into() );
+	*r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+	r
+}
+
 ///
 async fn make_file_response( path: &Path ) -> RespResult
 {
@@ -147,7 +170,7 @@ async fn make_file_response( path: &Path ) -> RespResult
 
 	        resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
 
-	        return RespResult::Ok( resp );
+	        return Ok( resp );
 	    }
 	,	Err( x ) =>
 		{
@@ -155,9 +178,10 @@ async fn make_file_response( path: &Path ) -> RespResult
 		}
 	}
 
-    RespResult::Err( warp::reject::not_found() )
+    Err( warp::reject::not_found() )
 }
 
+///
 fn check_path( path : &str )
 	-> Result< String, Rejection >
 {
@@ -183,6 +207,7 @@ fn check_path( path : &str )
     Ok( p.join( "/" ) )
 }
 
+///
 fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
 	-> impl Filter< Extract = ( T, ), Error = Rejection > + Copy
 {
@@ -202,29 +227,7 @@ fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
     .unify()
 }
 
-
-fn make_route_test()
-	-> impl Filter< Extract = ( impl Reply, ), Error = Rejection > + Copy
-{
-	let route = make_route_getpost::< HashMap< String, String > >();
-
-    let route = route.map( move | dic : HashMap< String, String > |
-		{
-			let mut ret = String::new();
-
-			for ( k, v ) in dic
-			{
-				ret += &format!( "{} = {} \n", k, v );
-			}
-
-			ret
-		}
-	);
-
-	route
-}
-
-async fn make_theme_file_response( arwlctx : ARWLContext, path: &str, is_common : bool, do_unshift : bool )
+async fn theme_file_response( arwlctx : ARWLContext, path : &str, is_common : bool, do_unshift : bool )
 	-> RespResult
 {
 	let path =
@@ -232,7 +235,7 @@ async fn make_theme_file_response( arwlctx : ARWLContext, path: &str, is_common 
 		if do_unshift
 		{
 			path.split( '/' )
-				.skip(1)
+				.skip( 1 )
 				.map( |x| x.to_string() )
 				.collect::< Vec< String > >()
 				.join( "/" )
@@ -268,77 +271,177 @@ async fn make_theme_file_response( arwlctx : ARWLContext, path: &str, is_common 
 }
 
 ///
+#[derive(Debug, Deserialize, Clone)]
+struct CmdParam
+{
+    cmd  : String
+,   arg1 : Option<String>
+,   arg2 : Option<String>
+,   arg3 : Option<String>
+}
+
+///
+impl CmdParam
+{
+    fn to_request( &self ) -> ( mpdcom::MpdComRequest, sync::oneshot::Receiver< mpdcom::MpdComResult > )
+    {
+        let mut cmd = self.cmd.trim_end().to_lowercase();
+
+        let reqval =
+            match cmd.as_str()
+            {
+                "setvol" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        mpdcom::MpdComRequestType::SetVol( String::from( self.arg1.as_ref().unwrap().as_str() ) )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
+            ,   "setmute" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        mpdcom::MpdComRequestType::SetMute( String::from( self.arg1.as_ref().unwrap().as_str() ) )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
+            ,   "" =>
+                {
+                    mpdcom::MpdComRequestType::Nop
+                }
+            ,   _ =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+                    }
+
+                    if self.arg2.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+                    }
+
+                    if self.arg3.is_some()
+                    {
+                        cmd += " ";
+                        cmd += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+                    }
+
+                    mpdcom::MpdComRequestType::Cmd( cmd )
+                }
+            };
+
+        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
+
+        req.req = reqval;
+
+        ( req, rx )
+    }
+}
+
+async fn cmd_response( arwlctx : ARWLContext, param : CmdParam )
+	-> RespResult
+{
+    log::debug!( "{:?}", &param );
+
+    let ( req, rx ) = param.to_request();
+
+    arwlctx.write().await.mpdcom_tx.send( req ).await;
+
+	Ok(
+	    match rx.await
+	    {
+	        Ok(x)  => json_responce( &x )
+	    ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
+	    }
+	)
+}
+
+async fn test_response( arwlctx : ARWLContext, param : HashMap< String, String > )
+	-> StrResult
+{
+	StrResult::Ok( String::new() )
+}
+
+///
 fn make_route( arwlctx : ARWLContext )
 	-> filters::BoxedFilter< ( impl Reply, ) >
 {
-	let x_arwlctx = arwlctx.clone();
+	let arwlctx_clone_filter = move ||
+		{
+			let x_arwlctx = arwlctx.clone();
+			warp::any().map( move || x_arwlctx.clone() )
+		};
+
 
     let r_root =
     	warp::path::end()
-    	.and( warp::any().map( move || x_arwlctx.clone() ) )
-    	.and_then( | arwlctx : ARWLContext  | async move
+    	.and( arwlctx_clone_filter() )
+    	.and_then( | arwlctx : ARWLContext | async move
 			{
-				make_theme_file_response( arwlctx, config::THEME_MAIN, false, false ).await
+				theme_file_response( arwlctx, config::THEME_MAIN, false, false ).await
 			}
     	);
 
-    let x_arwlctx = arwlctx.clone();
 
-    let r_favicon	= warp::path!( "favicon.ico" )
-        .and( warp::any().map( move || x_arwlctx.clone() ) )
-    	.and_then( | arwlctx : ARWLContext  | async move
+    let r_favicon =
+    	warp::path!( "favicon.ico" )
+        .and( arwlctx_clone_filter() )
+    	.and_then( | arwlctx : ARWLContext | async move
 			{
-				make_theme_file_response( arwlctx, "favicon.ico", false, false ).await
+				theme_file_response( arwlctx, "favicon.ico", false, false ).await
 			}
     	);
 
-    let x_arwlctx = arwlctx.clone();
-
-    let r_common = warp::path!( "common" / .. )
+    let r_common =
+    	warp::path!( "common" / .. )
+		.and( arwlctx_clone_filter() )
 		.and( warp::path::full() )
-		.and( warp::any().map( move || x_arwlctx.clone() ) )
-		.and_then( | x : warp::path::FullPath, arwlctx : ARWLContext  | async move
+		.and_then( | arwlctx : ARWLContext, path : warp::path::FullPath | async move
 			{
-				make_theme_file_response( arwlctx, x.as_str(), true, true ).await
+				theme_file_response( arwlctx, path.as_str(), true, true ).await
 			}
 		);
-
-    let x_arwlctx = arwlctx.clone();
 
     let r_theme =
     	warp::path!( "theme" / .. )
+		.and( arwlctx_clone_filter() )
 		.and( warp::path::full() )
-		.and( warp::any().map( move || x_arwlctx.clone() ) )
-		.and_then( | x : warp::path::FullPath, arwlctx : ARWLContext  | async move
+		.and_then( | arwlctx : ARWLContext, path : warp::path::FullPath | async move
 			{
-				make_theme_file_response( arwlctx, x.as_str(), false, true ).await
+				theme_file_response( arwlctx, path.as_str(), false, true ).await
 			}
 		);
 
-    let x_arwlctx = arwlctx.clone();
+    let r_cmd  =
+    	warp::path!( "cmd" )
+		.and( arwlctx_clone_filter() )
+    	.and( make_route_getpost::< CmdParam >() )
+		.and_then( cmd_response );
 
-    let r_cmd  = warp::path!( "cmd" )
-    	.and( make_route_getpost::< HashMap< String, String > >() )
-		.and( warp::any().map( move || x_arwlctx.clone() ) )
-		.and_then( | dic : HashMap< String, String >, arwlctx : ARWLContext  | async move
-			{
-				StrResult::Ok( String::new() )
-				/*
-				RespResult::Ok( Response::new( Body::empty() ) )
-				*/
-    		}
-    	);
+    let r_test =
+    	warp::path!( "test" )
+		.and( arwlctx_clone_filter() )
+	   	.and( make_route_getpost::< HashMap< String, String > >() )
+		.and_then( test_response );
 
-
-    let r_test = warp::path!( "test" ).and( make_route_test() );
-
-    let routes = r_root
-    			.or( r_favicon )
-    			.or( r_theme )
-    			.or( r_common )
-				.or( r_cmd )
-    			.or( r_test )
-				;
+    let routes =
+    	r_root
+		.or( r_favicon )
+		.or( r_theme )
+		.or( r_common )
+		.or( r_cmd )
+		.or( r_test )
+		;
 
 	let with_server = warp::reply::with::header( "server", "hidamari" );
     let with_log	= warp::log( "hidamari" );
