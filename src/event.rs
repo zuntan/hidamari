@@ -57,17 +57,13 @@ pub const EVENT_WAIT_TIMEOUT : Duration = Duration::from_millis( 15 );
 
 pub async fn event( rx : &mut EventReceiver ) -> Option< EventRequest >
 {
-    match timeout( EVENT_WAIT_TIMEOUT, rx.recv() ).await
+    if let Ok( r ) =  timeout( EVENT_WAIT_TIMEOUT, rx.recv() ).await
     {
-        Ok( recv ) =>
+        if let Some( recv ) = r
         {
-            let recv = recv.unwrap();
-
             log::debug!( "recv [{:?}]", recv.req );
-
             return Some( recv );
         }
-    ,   Err(_) => {}
     }
 
     None
@@ -77,11 +73,12 @@ pub async fn event_shutdown( rx : &mut EventReceiver ) -> bool
 {
     if let Some( recv ) = event( rx ).await
     {
-        recv.tx.send( EventResult{} ).ok();
-        true
+        if let EventRequestType::Shutdown = recv.req
+        {
+            recv.tx.send( EventResult{} ).ok();
+            return true;
+        }
     }
-    else
-    {
-        false
-    }
+
+    false
 }
