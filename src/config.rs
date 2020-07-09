@@ -24,13 +24,14 @@ pub const THEME_HIDE_DIR    : &str = "^[_.]";
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config
 {
-    pub config_dyn  : String
-,       bind_addr   : String
-,       mpd_addr    : String
-,   pub mpd_protolog: bool
-,   pub mpd_fifo    : String
-,   pub log_level   : String
-,   pub theme_dir   : String
+    pub config_dyn      : String
+,       bind_addr       : String
+,       mpd_addr        : String
+,   pub mpd_protolog    : bool
+,   pub mpd_fifo        : String
+,   pub mpd_fifo_fftmode: u32
+,   pub log_level       : String
+,   pub theme_dir       : String
 }
 
 

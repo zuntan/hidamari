@@ -61,7 +61,6 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
     options.custom_flags( libc::O_NONBLOCK | libc::O_RDONLY );
 
     let fifo = options.open( fifo_name )?;
-
 /*
     let fd = fifo.as_raw_fd();
 
@@ -87,14 +86,13 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
 
 
 const FIFO_ERROR_SLEEP  : Duration = Duration::from_millis( 1000 );
-const FIFO_STALL_SLEEP  : Duration = Duration::from_millis( 20 );
+const FIFO_STALL_SLEEP  : Duration = Duration::from_millis( 15 );
 const FIFO_STALL_RESET  : Duration = Duration::from_millis( 60 );
 const FIFO_STALL_REOPEN : Duration = Duration::from_millis( 1000 );
 
 const SAMPLING_RATE     : usize = 44100;
 const CHANNELS          : usize = 2;
-const F_BUF_SIZE        : usize = SAMPLING_RATE / 20;
-const F_BUF_SAMPLE_SZ   : usize = 2;
+const F_BUF_SIZE        : usize = 16384;
 
 const ENABLE_CORRECTION : bool  = true;
 const CORRECTION_1      : f32 = 4.0;
@@ -107,13 +105,19 @@ pub async fn mpdfifo_task(
 )
 -> io::Result< ()  >
 {
-    let mode : u32 = 3;
+    let mut fftmode : u32;
+
+    {
+        let ctx = arwlctx.read().await;
+
+        fftmode = ctx.config.mpd_fifo_fftmode;
+    }
 
     let fft_buf_size      : usize;
     let fft_buf_slide_size: usize;
     let oct_scale         : f32;
 
-    match mode
+    match fftmode
     {
         5 =>
         {
@@ -150,19 +154,25 @@ pub async fn mpdfifo_task(
             fft_buf_size        = 4096;
             fft_buf_slide_size  = 2048 * 1;
             oct_scale           = 2.0;
+
+            fftmode = 0;
         }
     }
 
-    log::info!( "fft_buf_size       : {}", fft_buf_size );
-    log::info!( "fft_buf_slide_size : {} ({:.2}fps)", fft_buf_slide_size, SAMPLING_RATE as f32 / fft_buf_slide_size as f32 );
-    log::info!( "oct_scale          : {}", oct_scale );
+    log::info!( "fftmode: {} / fft_buf_size: {} / fft_buf_slide_size: {} ({:.2}fps) / oct_scale: {}"
+        ,   fftmode
+        ,   fft_buf_size
+        ,   fft_buf_slide_size
+        ,   SAMPLING_RATE as f32 / fft_buf_slide_size as f32
+        ,   oct_scale
+    );
 
     let fft_spec_size     : usize   = fft_buf_size / 2;
     let fft_spec_hz_d     : f32     = SAMPLING_RATE as f32 / 2.0 / fft_spec_size as f32;
 
     let mut fft_engine_chfft = CFft1D::<f32>::with_len( fft_buf_size );
 
-    let mut f_buf = [ 0u8 ; F_BUF_SAMPLE_SZ * F_BUF_SIZE ];
+    let mut f_buf = [ 0u8 ;  F_BUF_SIZE ];
     let mut s_buf = VecDeque::< i16 >::with_capacity( fft_buf_size * 2 );
 
     let mut fft_i_l     : Vec::< Complex< f32 > > = vec![ Complex::new( 0.0, 0.0 ); fft_buf_size ];
@@ -325,8 +335,6 @@ pub async fn mpdfifo_task(
                         {
                             break;
                         }
-
-                        delay_for( FIFO_STALL_SLEEP ).await;
                     }
                 }
             }
@@ -418,6 +426,8 @@ pub async fn mpdfifo_task(
             delay_for( FIFO_STALL_SLEEP ).await;
         }
     }
+
+    log::debug!( "mpdfifo start." );
 
     loop
     {
