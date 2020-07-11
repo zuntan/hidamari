@@ -13,21 +13,6 @@ function()
 
 	var ws_open = function()
 	{
-		$.getJSON( "/spec_head" )
-			.always( function()
-				{
-					ws_spec_h = null;
-				}
-			)
-			.done( function( json )
-				{
-				    if( json.Ok && json.Ok.spec_h )
-				    {
-						ws_spec_h = json.Ok.spec_h
-					}
-				}
-			);
-
 		var ws_proto = location.protocol == 'https:' ? 'wss:' : 'ws:';
 	    var ws = new WebSocket( ws_proto + '//' + location.host + '/ws' );
 
@@ -63,6 +48,11 @@ function()
 					ws_spec_t = j_data.Ok.spec_t
 					ws_rms_l  = j_data.Ok.rms_l
 					ws_rms_r  = j_data.Ok.rms_r
+				}
+
+				if( j_data.Ok.spec_h )
+				{
+					ws_spec_h = j_data.Ok.spec_h
 				}
 			}
 		};

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::path::{ Path, PathBuf };
 use std::result::Result;
+use std::net::SocketAddr;
 
 use tokio::signal;
 use tokio::sync;
@@ -395,19 +396,19 @@ async fn cmd_response( arwlctx : ARWLContext, param : CmdParam ) -> RespResult
     )
 }
 
-async fn status_response( arwlctx : ARWLContext ) -> RespResult
+async fn status_response( arwlctx : ARWLContext ) -> StrResult
 {
-    Ok( json_response( &arwlctx.read().await.mpd_status_json ) )
+    Ok( String::from( &arwlctx.read().await.mpd_status_json ) )
 }
 
-async fn spec_head_response( arwlctx : ARWLContext ) -> RespResult
+async fn spec_head_response( arwlctx : ARWLContext ) -> StrResult
 {
-    Ok( json_response( &arwlctx.read().await.spec_head_json ) )
+    Ok( String::from( &arwlctx.read().await.spec_head_json ) )
 }
 
-async fn spec_data_response( arwlctx : ARWLContext ) -> RespResult
+async fn spec_data_response( arwlctx : ARWLContext ) -> StrResult
 {
-    Ok( json_response( &arwlctx.read().await.spec_data_json ) )
+    Ok( String::from( &arwlctx.read().await.spec_data_json ) )
 }
 
 ///
@@ -437,7 +438,7 @@ async fn config_response( arwlctx : ARWLContext, param : ConfigParam ) -> RespRe
     Ok( json_response( &config::make_config_dyn_output( &ctx.config, &ctx.config_dyn ) ) )
 }
 
-async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
+async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<SocketAddr> )
 {
     let (
         ws_sess_stop
@@ -457,7 +458,7 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
         ctx.ws_sess_no += 1;
 
         let ws_no = ctx.ws_sess_no;
-        let ws_sig = format!( "ws:{}:{:?}", ws_no, &ws );
+        let ws_sig = format!( "ws:{}:{:?}", ws_no, &addr );
 
         let ( ev_tx, ev_rx ) = event::make_channel();
 
@@ -619,8 +620,6 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
                 log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
                 break;
             }
-
-            log::debug!( "{}", last_spec_head_json );
         }
     }
 
@@ -724,9 +723,10 @@ fn make_route( arwlctx : ARWLContext )
         warp::path!( "ws" )
         .and( arwlctx_clone_filter() )
         .and( warp::ws() )
-        .map( | arwlctx : ARWLContext, ws: warp::ws::Ws |
+        .and( warp::addr::remote() )
+        .map( | arwlctx : ARWLContext, ws: warp::ws::Ws, addr: Option<SocketAddr> |
             {
-                ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws ) )
+                ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws, addr ) )
             }
         );
 
