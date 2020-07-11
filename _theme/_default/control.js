@@ -1512,8 +1512,8 @@ function()
 				}
 
 				var y = ( ( i + 1 ) % 2 ) * 12;
-				var xl = (  i + 1 ) * dw;
-				var xr = ( -i - 1 ) * dw;
+				var xl = ( -i - 1 ) * dw;
+				var xr = (  i + 1 ) * dw;
 
 				ctx.fillStyle = "#fff";
 
@@ -1677,7 +1677,7 @@ function()
 					ctx.save();
 
 					ctx.strokeStyle = clr( v );
-					ctx.lineWidth = 5;
+					ctx.lineWidth = spec.length <= 10 ? 10 : 5;
 
 					ctx.rotate( Math.PI * p );
 

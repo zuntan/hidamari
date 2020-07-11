@@ -34,7 +34,7 @@ use warp::{ Filter, filters, reply::Reply, reply::Response, reject::Rejection, h
 
 use headers::HeaderMapExt;
 
-use warp::http::header::{ HeaderValue, CONTENT_TYPE };
+use warp::http::header;
 use warp::http::StatusCode;
 use warp::ws::{ Message, WebSocket };
 
@@ -76,6 +76,7 @@ pub struct Context
 ,   ws_data_intv    : time::Duration
 ,   ws_send_intv    : time::Duration
 
+,   product         : String
 ,   version         : String
 }
 
@@ -85,6 +86,7 @@ impl Context
         config      : config::Config
     ,   config_dyn  : config::ConfigDyn
     ,   mpdcom_tx   : sync::mpsc::Sender< mpdcom::MpdComRequest >
+    ,   product     : &str
     ,   version     : &str
     ) -> Context
     {
@@ -105,6 +107,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
+        ,   product         : String::from( product )
         ,   version         : String::from( version )
         }
     }
@@ -167,7 +170,7 @@ fn json_response< T: ?Sized + Serialize >( t : &T ) -> Response
         ,   _       => { String::new() }
         }.into()
     );
-    r.headers_mut().insert( CONTENT_TYPE, HeaderValue::from_static( "application/json" ) );
+    r.headers_mut().insert( header::CONTENT_TYPE, header::HeaderValue::from_str( &mime::APPLICATION_JSON.to_string() ).unwrap() );
     r
 }
 
@@ -520,6 +523,42 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<Socket
         return;
     }
 
+    let ( mut ev_tx1, mut ev_rx1 ) = event::make_channel();
+
+    let ws_sig_rx = format!( "{}:RX", &ws_sig );
+
+    let h_rx = task::spawn( async move
+        {
+            loop
+            {
+                if event::event_shutdown( &mut ev_rx1 ).await
+                {
+                    break;
+                }
+
+                if let Ok( r ) =  time::timeout( event::EVENT_WAIT_TIMEOUT * 4, ws_rx.next() ).await
+                {
+                    if let Some( recv ) = r
+                    {
+                        match recv
+                        {
+                            Err( e ) =>
+                            {
+                                log::warn!( "web socket error. {:?} {:?}", &e, &ws_sig_rx );
+                            }
+                        ,   Ok( x ) =>
+                            {
+                                log::debug!( "web socket recv. {:?} {:?}", &x, &ws_sig_rx );
+                            }
+                        }
+                    }
+                }
+            }
+
+            log::debug!( "wss stop. {:?}", &ws_sig_rx );
+        }
+    );
+
     let mut last_check_status = time::Instant::now();
     let mut last_send_status  = time::Instant::now();
 
@@ -533,24 +572,6 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<Socket
         if event::event_shutdown( &mut ev_rx ).await
         {
             break;
-        }
-
-        if let Ok( r ) =  time::timeout( event::EVENT_WAIT_TIMEOUT, ws_rx.next() ).await
-        {
-            if let Some( recv ) = r
-            {
-                match recv
-                {
-                    Err( e ) =>
-                    {
-                        log::warn!( "web socket error. {:?} {:?}", &e, &ws_sig );
-                    }
-                ,   Ok( x ) =>
-                    {
-                        log::debug!( "web socket recv. {:?} {:?}", &x, &ws_sig );
-                    }
-                }
-            }
         }
 
         if last_check_status.elapsed() > ws_status_intv
@@ -623,6 +644,12 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<Socket
         }
     }
 
+    let ( mut req, rx ) = event::new_request();
+    req.req = event::EventRequestType::Shutdown;
+    let _ = ev_tx1.send( req ).await;
+    let _ = rx.await;
+    let _ = join!( h_rx );
+
     cleanup!();
 }
 
@@ -632,9 +659,12 @@ async fn test_response( arwlctx : ARWLContext, param : HashMap< String, String >
 }
 
 ///
-fn make_route( arwlctx : ARWLContext )
+async fn make_route( arwlctx : ARWLContext )
     -> filters::BoxedFilter< ( impl Reply, ) >
 {
+    let product = String::from( &arwlctx.read().await.product );
+    let version = String::from( &arwlctx.read().await.version );
+
     let arwlctx_clone_filter = move ||
         {
             let x_arwlctx = arwlctx.clone();
@@ -744,7 +774,7 @@ fn make_route( arwlctx : ARWLContext )
         .or( r_test )
         ;
 
-    let with_server = warp::reply::with::header( "server", "hidamari" );
+    let with_server = warp::reply::with::header( header::SERVER, format!( "{}/{}", &product, &version ) );
     let with_log    = warp::log( "hidamari" );
 
     routes.with( with_server ).with( with_log ).boxed()
@@ -780,7 +810,7 @@ async fn main() -> std::io::Result< () >
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                Context::new( config, config_dyn, mpdcom_tx, PKG_VERSION )
+                Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
             )
         );
 
@@ -801,7 +831,7 @@ async fn main() -> std::io::Result< () >
     let ( tx, rx ) = sync::oneshot::channel();
 
     let ( addr, server ) =
-        warp::serve( make_route( arwlctx.clone() ) )
+        warp::serve( make_route( arwlctx.clone() ).await )
         .bind_with_graceful_shutdown(
             bind_addr
         ,   async
@@ -844,7 +874,7 @@ async fn main() -> std::io::Result< () >
             log::debug!( "ws shutdown. {}", x.1 );
         }
 
-        log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
+        time::delay_for( time::Duration::from_millis( 250 ) ).await;
     }
 
     let _ = tx.send( () );
@@ -862,6 +892,8 @@ async fn main() -> std::io::Result< () >
     let _ = arwlctx.write().await.mpdcom_tx.send( req ).await;
     let _ = join!( h_mpdcom );
     log::info!( "mpdcom_task shutdown." );
+
+    log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
 
     let ctx = arwlctx.read().await;
     config::save_config_dyn( &ctx.config, &ctx.config_dyn );

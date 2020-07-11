@@ -53,7 +53,7 @@ pub fn new_request()
     )
 }
 
-pub const EVENT_WAIT_TIMEOUT : Duration = Duration::from_millis( 15 );
+pub const EVENT_WAIT_TIMEOUT : Duration = Duration::from_millis( 10 );
 
 pub async fn event( rx : &mut EventReceiver ) -> Option< EventRequest >
 {

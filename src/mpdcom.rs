@@ -339,6 +339,7 @@ pub async fn mpdcom_task(
                             let ctx = arwlctx.read().await;
 
                             x2.flds.push( ( String::from( "_x_time" ),              chrono::Local::now().to_rfc3339() ) );
+                            x2.flds.push( ( String::from( "_x_product" ),           String::from( &ctx.product ) ) );
                             x2.flds.push( ( String::from( "_x_version" ),           String::from( &ctx.version ) ) );
                             x2.flds.push( ( String::from( "_x_ws_status_intv" ),    format!( "{:?}", &ctx.ws_status_intv ) ) );
                             x2.flds.push( ( String::from( "_x_ws_data_intv" ),      format!( "{:?}", &ctx.ws_data_intv ) ) );

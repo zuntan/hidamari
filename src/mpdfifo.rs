@@ -13,7 +13,7 @@ use std::fs::File;
 
 use std::fs::OpenOptions;
 use std::os::unix::fs::OpenOptionsExt;
-/* use std::os::unix::io::{ AsRawFd }; */
+use std::os::unix::io::{ AsRawFd };
 use libc;
 
 use tokio::time::{ delay_for, Duration, Instant };
@@ -61,7 +61,7 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
     options.custom_flags( libc::O_NONBLOCK | libc::O_RDONLY );
 
     let fifo = options.open( fifo_name )?;
-/*
+
     let fd = fifo.as_raw_fd();
 
     let flags = unsafe { libc::fcntl( fd, libc::F_GETFL, 0 ) };
@@ -79,7 +79,6 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
     {
         return Err( io::Error::last_os_error() );
     }
-*/
 
     Ok( fifo )
 }
