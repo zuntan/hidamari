@@ -335,7 +335,15 @@ pub async fn mpdcom_task(
                 {
                     if let Ok( x2 ) = x.as_mut()
                     {
-                        x2.flds.push( ( String::from( "_x_time" ), chrono::Local::now().to_rfc3339() ) );
+                        {
+                            let ctx = arwlctx.read().await;
+
+                            x2.flds.push( ( String::from( "_x_time" ),              chrono::Local::now().to_rfc3339() ) );
+                            x2.flds.push( ( String::from( "_x_version" ),           String::from( &ctx.version ) ) );
+                            x2.flds.push( ( String::from( "_x_ws_status_intv" ),    format!( "{:?}", &ctx.ws_status_intv ) ) );
+                            x2.flds.push( ( String::from( "_x_ws_data_intv" ),      format!( "{:?}", &ctx.ws_data_intv ) ) );
+                            x2.flds.push( ( String::from( "_x_spec_enable" ),       String::from( if ctx.spec_enable { "1" } else { "0" } ) ) );
+                        }
 
                         let p = x2.flds.iter().position( |x| x.0 == "volume" );
 

@@ -63,9 +63,11 @@ pub struct Context
 ,   mpd_volume      : u8
 ,   mpd_mute        : bool
 
+,   spec_enable     : bool
 ,   spec_data_json  : String
 ,   spec_head_json  : String
 
+,   ws_sess_stop    : bool
 ,   ws_sess_no      : u64
 ,   ws_sessions     : WsSessions
 
@@ -93,8 +95,10 @@ impl Context
         ,   mpd_status_json : String::new()
         ,   mpd_volume      : 0
         ,   mpd_mute        : false
+        ,   spec_enable     : false
         ,   spec_data_json  : String::new()
         ,   spec_head_json  : String::new()
+        ,   ws_sess_stop    : false
         ,   ws_sess_no      : 0
         ,   ws_sessions     : WsSessions::new()
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
@@ -259,7 +263,7 @@ async fn theme_file_response( arwlctx : ARWLContext, path : &str, is_common : bo
         if do_unshift
         {
             path.split( '/' )
-                .skip( 1 )
+                .skip( 2 )
                 .map( |x| x.to_string() )
                 .collect::< Vec< String > >()
                 .join( "/" )
@@ -269,6 +273,8 @@ async fn theme_file_response( arwlctx : ARWLContext, path : &str, is_common : bo
             String::from( path )
         }
     };
+
+    log::debug!( "{} {}", do_unshift, &path );
 
     match check_path( &path )
     {
@@ -434,7 +440,8 @@ async fn config_response( arwlctx : ARWLContext, param : ConfigParam ) -> RespRe
 async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
 {
     let (
-        ws_no
+        ws_sess_stop
+    ,   ws_no
     ,   ws_sig
     ,   mut ev_rx
     ,   ws_status_intv
@@ -457,7 +464,8 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
         ctx.ws_sessions.insert( ws_no, WsSession{ ws_sig : String::from( &ws_sig ), ev_tx } );
 
         (
-            ws_no
+            ctx.ws_sess_stop
+        ,   ws_no
         ,   ws_sig
         ,   ev_rx
         ,   ctx.ws_status_intv
@@ -481,6 +489,12 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
             ctx.ws_sessions.remove( &ws_no );
         }
     };
+
+    if ws_sess_stop
+    {
+        cleanup!();
+        return;
+    }
 
     let ( mut ws_tx, mut ws_rx ) = ws.split();
 
@@ -510,6 +524,8 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
 
     let mut last_check_data   = time::Instant::now();
     let mut last_send_data    = time::Instant::now();
+
+    let mut last_send_head    = time::Instant::now();
 
     loop
     {
@@ -592,6 +608,19 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket )
                     break;
                 }
             }
+        }
+
+        if last_send_head.elapsed() > ws_send_intv
+        {
+            last_send_head = time::Instant::now();
+
+            if let Err(x) = ws_tx.send( Message::text( &last_spec_head_json ) ).await
+            {
+                log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+                break;
+            }
+
+            log::debug!( "{}", last_spec_head_json );
         }
     }
 
@@ -789,10 +818,6 @@ async fn main() -> std::io::Result< () >
 
     log::info!( "" );
 
-    let _ = tx.send( () );
-    let _ = join!( h_server );
-    log::info!( "http server shutdown." );
-
     {
         log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
 
@@ -800,6 +825,8 @@ async fn main() -> std::io::Result< () >
 
         {
             let mut ctx = arwlctx.write().await;
+
+            ctx.ws_sess_stop = true;
 
             for ( _, wss ) in ctx.ws_sessions.iter_mut()
             {
@@ -819,6 +846,10 @@ async fn main() -> std::io::Result< () >
 
         log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
     }
+
+    let _ = tx.send( () );
+    let _ = join!( h_server );
+    log::info!( "http server shutdown." );
 
     let ( mut req, _ ) = event::new_request();
     req.req = event::EventRequestType::Shutdown;

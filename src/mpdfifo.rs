@@ -281,6 +281,9 @@ pub async fn mpdfifo_task(
 
         log::info!( "spec_head : {}", &ctx.spec_head_json );
 
+        ctx.ws_data_intv = Duration::from_millis( ( 1000.0 * ( fft_buf_slide_size as f32 / SAMPLING_RATE as f32 ) ) as u64 );
+        ctx.spec_enable = ctx.config.mpd_fifo != "";
+
         String::from( &ctx.config.mpd_fifo )
     };
 
