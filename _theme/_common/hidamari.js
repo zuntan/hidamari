@@ -65,13 +65,13 @@ function()
 
 					var ws_reopen = function()
 					{
-						this.ws_status = null;
-						this.ws_spec_l = null;
-						this.ws_spec_r = null;
-						this.ws_rms_l  = null;
-						this.ws_rms_r  = null;
-						this.ws_spec_t = null;
-						setTimeout( this.open, 1000 );
+						that.ws_status = null;
+						that.ws_spec_l = null;
+						that.ws_spec_r = null;
+						that.ws_rms_l  = null;
+						that.ws_rms_r  = null;
+						that.ws_spec_t = null;
+						setTimeout( function() { that.open(); }, 1000 );
 					};
 
 					ws.onclose = ws_reopen;
@@ -162,10 +162,17 @@ function()
 					{
 						kv[ '_title_1' ] = n;
 
+						if( kv[ 'Name' ] && kv[ 'Name' ] != "" )
+						{
+							kv[ '_title_1' ] = kv[ 'Name' ];
+						}
+
 						var t = [];
 						if( kv[ 'Track' ] ) { t.push( kv[ 'Track' ] ); }
 						if( kv[ 'Album' ] ) { t.push( kv[ 'Album' ] ); }
 						if( kv[ 'Artist' ] ) { t.push( kv[ 'Artist' ] ); }
+
+						if( v.includes( "://" ) ){ t.push( v ); }
 
 						kv[ '_title_2' ] = t.join( " : " );
 
@@ -185,7 +192,7 @@ function()
 						kv[ '_id'  ] = kv[ 'Id' ]
 					}
 
-					kv[ '_name' ] = v;
+					kv[ '_path' ] = v;
 
 
 					list.push( [ k, n, kv ] );

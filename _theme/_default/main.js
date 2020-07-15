@@ -193,7 +193,7 @@ function()
 								var item_desc = $( ".x_liblist_file_item_desc", file_item );
 
 								item_desc.data( "x_name", kv[ '_name' ] );
-								item_desc.click( function() { show_description( $(this).data( "x_name" ) ); } );
+								item_desc.click( function() { show_description( $(this).data( "x_name" ), false ); } );
 
 								items.push( file_item );
 
@@ -570,7 +570,6 @@ function()
 								);
 
 
-
 								item_sel.data( "x_selected", true );
 								item_sel.click();
 
@@ -590,7 +589,7 @@ function()
 
 								var item_desc = $( ".x_playlist_item_desc", item );
 
-								item_desc.click( function() { show_description( $(this).data( "x_name" ) ); } );
+								item_desc.click( function() { show_description( $(this).data( "x_id" ), true ); } );
 
 								playlist_hr.before( item );
 							}
@@ -629,7 +628,7 @@ function()
 
 							var item_desc = $( ".x_playlist_item_desc", item );
 
-							item_desc.data( "x_name", kv[ '_name' ] );
+							item_desc.data( "x_id", kv[ '_id' ] );
 
 							item.data( "x_id",  kv[ '_id' ] );
 						}
@@ -983,9 +982,9 @@ function()
 		}
 	}
 
-	var show_description = function( _n )
+	var show_description = function( _n, pl )
 	{
-		$.getJSON( "/cmd", { cmd : "lsinfo", arg1 : _n } )
+		$.getJSON( "/cmd", { cmd : pl ? 'playlistid' : 'lsinfo', arg1 : _n } )
 			.done( function( json )
 				{
 					if( json.Ok )
@@ -1032,6 +1031,20 @@ function()
 								}
 							}
 
+							console.log( kv );
+
+							if( kv[ '_path' ] && kv[ '_path' ].includes( "://" ) )
+							{
+								var tr = tr_base.clone();
+
+								$( ".x_col_k", tr ).text( "URL" );
+								$( ".x_col_v", tr ).text( kv[ '_path' ] );
+
+								tr_base.before( tr );
+
+								tr.show();
+							}
+
 							$.getJSON( "/cmd", { cmd : "readpicture", arg1 : _n, arg2 : 0 } )
 								.done( function( json )
 									{
@@ -1059,12 +1072,161 @@ function()
 		}
 	)
 
+	// init top
+
+	// Config Load
+
+	var update_theme = function( json )
+	{
+		$( ".x_st_themes > option" ).remove();
+
+		if( json.themes )
+		{
+			var t = $( ".x_st_themes" );
+
+			for( var i = 0 ; i < json.themes.length ; ++i )
+			{
+				var h = "";
+				h += '<option value="' + json.themes[ i ]  + '" ';
+				h += ( json.themes[ i ] == json.theme ? ' selected="selected" ' : '' );
+				h += '>' + json.themes[ i ] + '</option>';
+
+				t.append( $( h ) );
+			}
+		}
+	}
+
+	var update_url = function( json )
+	{
+		$( ".x_url_list > a" ).remove();
+
+		if( json.url_list )
+		{
+			var t = $( ".x_url_list" );
+
+			var f = function()
+			{
+				$( ".x_url" ).val( $(this).text() );
+			};
+
+			for( var i = 0 ; i < json.url_list.length ; ++i )
+			{
+				var h = "";
+				h += '<a class="dropdown-item" href="#">' + json.url_list[ i ] + ' </a>';
+				h += '>' +  + '</option>';
+
+				var a = $( h );
+
+				a.click( f );
+
+				t.append( $( h ) );
+			}
+		}
+	}
+
+	$.getJSON( "/config" )
+		.always( function()
+			{
+				$( ".x_st_themes > option" ).remove();
+				$( ".x_url_list > a" ).remove();
+			}
+		)
+		.done( function( json )
+			{
+				update_theme( json );
+				update_url( json );
+			}
+		);
+
+	var url_add_error = function( url, msg )
+	{
+		var t = $( ".x_url_add_err_m" ).clone();
+
+		t.removeClass( "x_url_add_err_m" );
+		t.addClass( "x_url_add_err" );
+
+		$( ".x_url_add_err_url", t ).text( url );
+		$( ".x_url_add_err_msg", t ).text( msg );
+
+		$( ".x_url_add_err_m" ).after( t );
+
+		t.show();
+	}
+
+	$( ".x_url_add_err_m" ).hide();
+
+	$( ".x_url_add" ).click(
+		function()
+		{
+			$( ".x_url_add_err" ).remove();
+
+			var url = $( ".x_url" ).val();
+
+			$.getJSON( "/cmd", { cmd : "addid", arg1 : url } )
+				.done( function( json )
+					{
+						if( json.Ok )
+						{
+							var kv = $.hidamari.parse_flds( json.Ok.flds )
+
+							if( kv[ 'Id' ] )
+							{
+								$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+
+								$.getJSON( "/config" )
+									.always( function()
+										{
+											$( ".x_st_themes > option" ).remove();
+											$( ".x_url_list > a" ).remove();
+										}
+									)
+									.done( function( json )
+										{
+											update_theme( json );
+											update_url( json );
+										}
+									);
+							}
+
+							$( ".x_url" ).val( "" );
+						}
+						else if( json.Err && json.Err.msg_text )
+						{
+							url_add_error( url, json.Err.msg_text );
+						}
+					}
+				);
+		}
+	);
+
+	$( ".x_st_theme_apply" ).click(
+		function()
+		{
+			var theme = $( ".x_st_themes" ).val();
+
+			$.getJSON( "/config", { update : JSON.stringify( { theme : theme } ) } )
+				.always( function()
+					{
+						$( ".x_st_themes > option" ).remove();
+					}
+				)
+				.done( function( json )
+					{
+						update_theme( json );
+						location.href = "/";
+					}
+				);
+		}
+	);
+
 	$( ".x_setting_go" ).click(
 		function()
 		{
 			location.href = "/common/setting.html";
 		}
 	);
+
+	// websocket
 
 	$.hidamari.ajax_setup();
 

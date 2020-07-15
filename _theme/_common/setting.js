@@ -21,11 +21,6 @@ function()
 		}
 	}
 
-	var update_bluetooth = function( json )
-	{
-		$( ".x_st_bluetooth" ).prop( 'checked', !!json.bluetooth );
-	}
-
 	var update_anidelay = function( json )
 	{
 		$( ".x_st_anidelay" ).val( json.spec_delay )
@@ -42,7 +37,6 @@ function()
 			{
 				update_theme( json )
 				update_anidelay( json );
-				update_bluetooth( json );
 			}
 		);
 
