@@ -1031,8 +1031,6 @@ function()
 								}
 							}
 
-							console.log( kv );
-
 							if( kv[ '_path' ] && kv[ '_path' ].includes( "://" ) )
 							{
 								var tr = tr_base.clone();

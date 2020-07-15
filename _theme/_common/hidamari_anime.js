@@ -302,16 +302,18 @@ function()
 						ctx.save();
 						ctx.translate( w , h );
 
-						st.sqlv += 0.01 * ( rms < 0.01 ? -0.4 : 1 );
+						st.sqlv += 0.02 * ( rms < 0.01 ? -0.4 : 0.7 );
 						st.sqlv = Math.max( 0, st.sqlv );
-						st.sqlv = Math.min( 0.5, st.sqlv );
+						st.sqlv = Math.min( 1, st.sqlv );
 
 						var t1 = ( pnow % 60000 ) / 60000 ;
 						var t2 = ( pnow % 30000 ) / 30000 ;
 
-						var zm = 1.2 + Math.cos( 2 * Math.PI * t1 ) * st.sqlv;
+						var v = 0.5 * st.sqlv * jQuery.easing.swing( st.sqlv );
 
-						ctx.transform( zm, Math.cos( 2 * Math.PI * t1 ) * st.sqlv, Math.sin( 2 * Math.PI * t1 ) * st.sqlv, zm, 0, 0 );
+						var zm = 1.1 + Math.cos( 2 * Math.PI * t1 ) * v;
+
+						ctx.transform( zm, Math.cos( 2 * Math.PI * t1 ) * v, Math.sin( 2 * Math.PI * t1 ) * v, zm, 0, 0 );
 
 						if( isR )
 						{
