@@ -17,6 +17,8 @@ use std::net::{ SocketAddr, ToSocketAddrs };
 use tokio::sync;
 use tokio::time;
 
+use url::Url;
+
 use serde::{ Deserialize, Serialize };
 
 use crate::event;
@@ -30,21 +32,24 @@ pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
 
-pub const TESTSOUNDS_DIR    : &str = "sounds";
+pub const SOUNDS_DIR        : &str = "sounds";
 pub const TESTSOUNDS_NAME   : &str = r"^441-[12]-16-\d+s-(.+).mp3";
+
+pub const SOUNDS_URL_PATH   : &str = "sounds";
 
 ///
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config
 {
-    pub config_dyn      : String
-,       bind_addr       : String
-,       mpd_addr        : String
-,   pub mpd_protolog    : bool
-,   pub mpd_fifo        : String
-,   pub mpd_fifo_fftmode: u32
-,   pub log_level       : String
-,   pub contents_dir    : String
+    pub config_dyn          : String
+,       bind_addr           : String
+,       mpd_addr            : String
+,       self_url_for_mpd    : String
+,   pub mpd_protolog        : bool
+,   pub mpd_fifo            : String
+,   pub mpd_fifo_fftmode    : u32
+,   pub log_level           : String
+,   pub contents_dir        : String
 }
 
 
@@ -58,6 +63,61 @@ impl Config
     pub fn mpd_addr( &self ) -> SocketAddr
     {
         self.mpd_addr.to_socket_addrs().unwrap().next().unwrap()
+    }
+
+    pub fn self_url_for_mpd( &self ) -> Option< String >
+    {
+        let url =
+        {
+            if self.self_url_for_mpd == ""
+            {
+                String::from( "http://127.0.0.1" )
+            }
+            else
+            {
+                String::from( &self.self_url_for_mpd )
+            }
+        };
+
+        let mut url = match Url::parse( &url )
+        {
+            Ok(x) => x
+        ,   Err(x) => {
+                log::error!( "URL ParseError {:?}", x );
+                return None;
+            }
+        };
+
+        if url.port().is_none()
+        {
+            let bind_port =
+                match self.bind_addr()
+                {
+                    SocketAddr::V4( x ) => { x.port() }
+                ,   SocketAddr::V6( x ) => { x.port() }
+                };
+
+            match url.port_or_known_default()
+            {
+                Some( port ) =>
+                {
+                    if port != bind_port
+                    {
+                        url.set_port( Some( bind_port ) ).ok();
+                    }
+                }
+            ,   None =>
+                {
+                    url.set_port( Some( bind_port ) ).ok();
+                }
+            }
+        }
+
+        url.set_fragment( None );
+        url.set_path( "" );
+        url.set_query( None );
+
+        Some( url.into_string() )
     }
 }
 
@@ -235,7 +295,7 @@ impl Context
     {
         let mut path = self.get_contents_path();
 
-        path.push( TESTSOUNDS_DIR );
+        path.push( SOUNDS_DIR );
 
         path
     }
@@ -288,42 +348,46 @@ impl Context
         }
     }
 
-    pub fn testsounds( &self ) -> Vec< ( PathBuf, String ) >
+    pub fn testsound_url( &self ) -> Vec< String >
     {
-        let mut ts = Vec::< ( PathBuf, String ) >::new();
-
-        let mut path = self.get_contents_path();
-
-        path.push( TESTSOUNDS_DIR );
-
-        if let Ok( entries ) = fs::read_dir( path )
+        if let Some( self_url_for_mpd ) = self.config.self_url_for_mpd()
         {
-            for entry in entries
-            {
-                if let Ok( entry ) = entry
-                {
-                    if let Ok( entry_fn ) = entry.file_name().into_string()
-                    {
-                        lazy_static!
-                        {
-                            static ref RE : regex::Regex =
-                                regex::Regex::new( TESTSOUNDS_NAME ).unwrap();
-                        }
+            let mut path = self.get_contents_path();
 
-                        if let Some( cap ) = RE.captures( &entry_fn )
+            path.push( SOUNDS_DIR );
+
+            let mut ts = Vec::< String >::new();
+
+            if let Ok( entries ) = fs::read_dir( path )
+            {
+                for entry in entries
+                {
+                    if let Ok( entry ) = entry
+                    {
+                        if let Ok( entry_fn ) = entry.file_name().into_string()
                         {
-                            if let Ok( cpath ) = entry.path().canonicalize()
+                            lazy_static!
                             {
-                                ts.push( ( cpath, String::from( &cap[1] ) ) );
+                                static ref RE : regex::Regex =
+                                    regex::Regex::new( TESTSOUNDS_NAME ).unwrap();
+                            }
+
+                            if RE.is_match( &entry_fn )
+                            {
+                                ts.push( format!( "{}{}/{}", &self_url_for_mpd, SOUNDS_URL_PATH, entry_fn ) );
                             }
                         }
                     }
                 }
             }
-        }
 
-        ts.sort();
-        ts
+            ts.sort();
+            ts
+        }
+        else
+        {
+            Vec::< String >::new()
+        }
     }
 }
 

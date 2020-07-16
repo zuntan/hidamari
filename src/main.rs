@@ -84,7 +84,7 @@ fn internal_server_error( t : &str ) -> Response
 }
 
 ///
-struct FileRange
+struct FileRangeRead
 {
     file : Pin< Box< File > >
 ,   len  : u64
@@ -92,7 +92,7 @@ struct FileRange
 }
 
 ///
-impl FileRange
+impl FileRangeRead
 {
     async fn new( mut file : File, start : u64, end : u64 ) -> io::Result< Self >
     {
@@ -118,7 +118,7 @@ impl FileRange
 }
 
 ///
-impl AsyncRead for FileRange
+impl AsyncRead for FileRangeRead
 {
     fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
         -> Poll< std::io::Result< usize > >
@@ -165,6 +165,8 @@ impl AsyncRead for FileRange
 ///
 async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> RespResult
 {
+    log::debug!( "{:?}", headers );
+
     match File::open( path ).await
     {
         Ok( file ) =>
@@ -195,7 +197,7 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
 
                         if st < ed && ed <= max_len
                         {
-                            match FileRange::new( file, st, ed ).await
+                            match FileRangeRead::new( file, st, ed ).await
                             {
                                 Ok( filerange ) =>
                                 {
@@ -225,14 +227,12 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
                                 }
                             }
                         }
-                        else
-                        {
-                            let mut resp = Response::new(Body::empty());
-                            *resp.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
-                            resp.headers_mut().typed_insert( headers::ContentRange::unsatisfied_bytes( max_len ) );
 
-                            return Ok( resp );
-                        }
+                        let mut resp = Response::new(Body::empty());
+                        *resp.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
+                        resp.headers_mut().typed_insert( headers::ContentRange::unsatisfied_bytes( max_len ) );
+
+                        return Ok( resp );
                     }
                 }
             }
