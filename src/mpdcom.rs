@@ -102,6 +102,7 @@ pub enum MpdComRequestType
 ,   Cmd( String )
 ,   SetVol( String )
 ,   SetMute( String )
+,   TestSound
 ,   Shutdown
 }
 
@@ -138,6 +139,8 @@ pub fn quote_arg( arg: &str ) -> String
     {
         arg = String::from( "\"" ) + &arg + "\""
     }
+
+    log::debug!( "QA [{}]", &arg );
 
     arg
 }
@@ -563,6 +566,67 @@ pub async fn mpdcom_task(
 
                                 recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
                             }
+                        }
+                    }
+
+                ,   MpdComRequestType::TestSound =>
+                    {
+                        let testsounds =
+                        {
+                            let ctx = arwlctx.read().await;
+                            ctx.testsounds()
+                        };
+
+                        let mut ret_ok = MpdComOk::new();
+                        let mut ret_err : Option< MpdComErr > = None;
+
+                        for ( p, n ) in testsounds
+                        {
+                            if let Some( fname ) = p.to_str()
+                            {
+                                let url = String::from( "file://" ) + fname;
+                                let cmd = String::from( "addid " ) + &quote_arg( &url );
+
+                                log::debug!( "addid {}", &url );
+
+                                match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                                {
+                                    Ok( x ) =>
+                                    {
+                                        match x
+                                        {
+                                            Ok( mut x ) =>
+                                            {
+                                                ret_ok.flds.push( ( String::from( "file" ), String::from( &url ) ) );
+                                                ret_ok.flds.push( ( String::from( "Name" ), n ) );
+                                                ret_ok.flds.append( &mut x.flds );
+                                            }
+                                        ,   Err( x ) =>
+                                            {
+                                                log::warn!( "error [{:?}]", x );
+                                                ret_err = Some( x );
+                                                break;
+                                            }
+                                        }
+                                    }
+                                ,   Err(x) =>
+                                    {
+                                        log::warn!( "connection error [{:?}]", x );
+                                        conn.as_mut().unwrap().shutdown();
+                                        conn = None;
+                                        conn_try_time = Some( Instant::now() );
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some( x ) = ret_err
+                        {
+                            recv.tx.send( Err( x ) ).ok();
+                        }
+                        else
+                        {
+                            recv.tx.send( Ok( ret_ok ) ).ok();
                         }
                     }
 

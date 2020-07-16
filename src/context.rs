@@ -25,9 +25,13 @@ use crate::mpdcom;
 pub const CONTENTS_DIR      : &str = "_contents";
 pub const THEME_DIR         : &str = "theme";
 pub const THEME_MAIN        : &str = "main.html";
+pub const THEME_FAVICON_ICO : &str = "favicon.ico";
 pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
+
+pub const TESTSOUNDS_DIR    : &str = "sounds";
+pub const TESTSOUNDS_NAME   : &str = r"^441-[12]-16-\d+s-(.+).mp3";
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -227,6 +231,15 @@ impl Context
         path
     }
 
+    pub fn get_sounds_path( &self ) -> PathBuf
+    {
+        let mut path = self.get_contents_path();
+
+        path.push( TESTSOUNDS_DIR );
+
+        path
+    }
+
     pub fn make_config_dyn_output( &self ) -> ConfigDynOutput
     {
         let mut path = self.get_contents_path();
@@ -243,7 +256,7 @@ impl Context
             {
                 if let Ok( entry ) = entry
                 {
-                    if let Ok( entry_s ) = entry.file_name().into_string()
+                    if let Ok( entry_fn ) = entry.file_name().into_string()
                     {
                         lazy_static!
                         {
@@ -251,7 +264,7 @@ impl Context
                                 regex::Regex::new( THEME_HIDE_DIR ).unwrap();
                         }
 
-                        if !RE.is_match( &entry_s )
+                        if !RE.is_match( &entry_fn )
                         {
                             let mut path_main = entry.path();
 
@@ -259,7 +272,7 @@ impl Context
 
                             if path_main.is_file()
                             {
-                                themes.push( String::from( &entry_s ) );
+                                themes.push( String::from( &entry_fn ) );
                             }
                         }
                     }
@@ -273,6 +286,44 @@ impl Context
         ,   themes          : themes
         ,   spec_delay      : self.config_dyn.spec_delay
         }
+    }
+
+    pub fn testsounds( &self ) -> Vec< ( PathBuf, String ) >
+    {
+        let mut ts = Vec::< ( PathBuf, String ) >::new();
+
+        let mut path = self.get_contents_path();
+
+        path.push( TESTSOUNDS_DIR );
+
+        if let Ok( entries ) = fs::read_dir( path )
+        {
+            for entry in entries
+            {
+                if let Ok( entry ) = entry
+                {
+                    if let Ok( entry_fn ) = entry.file_name().into_string()
+                    {
+                        lazy_static!
+                        {
+                            static ref RE : regex::Regex =
+                                regex::Regex::new( TESTSOUNDS_NAME ).unwrap();
+                        }
+
+                        if let Some( cap ) = RE.captures( &entry_fn )
+                        {
+                            if let Ok( cpath ) = entry.path().canonicalize()
+                            {
+                                ts.push( ( cpath, String::from( &cap[1] ) ) );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ts.sort();
+        ts
     }
 }
 

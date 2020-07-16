@@ -18,6 +18,16 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::result::Result;
 use std::net::SocketAddr;
+use std::ops::Bound;
+use std::io;
+use std::pin::Pin;
+use std::boxed::Box;
+use std::task::Poll;
+use std::task::Context;
+
+/*
+use std::future::Future;
+*/
 
 use tokio::signal;
 use tokio::sync;
@@ -25,11 +35,12 @@ use tokio::time;
 use tokio::task;
 use tokio::join;
 use tokio::fs::File;
+use tokio::io::AsyncRead;
 use tokio_util::codec::{ BytesCodec, FramedRead };
 
 use futures::{ StreamExt, SinkExt };
 
-use warp::{ Filter, filters, reply::Reply, reply::Response, reject::Rejection, hyper::Body };
+use warp::{ Filter, http::HeaderMap, filters, reply::Reply, reply::Response, reject::Rejection, hyper::Body };
 
 use headers::HeaderMapExt;
 
@@ -50,6 +61,7 @@ type StrResult = Result< String, Rejection >;
 ///
 type RespResult = Result< Response, Rejection >;
 
+///
 fn json_response< T: ?Sized + Serialize >( t : &T ) -> Response
 {
     let mut r = Response::new(
@@ -63,6 +75,7 @@ fn json_response< T: ?Sized + Serialize >( t : &T ) -> Response
     r
 }
 
+///
 fn internal_server_error( t : &str ) -> Response
 {
     let mut r = Response::new( String::from( t ).into() );
@@ -71,7 +84,86 @@ fn internal_server_error( t : &str ) -> Response
 }
 
 ///
-async fn make_file_response( path: &std::path::Path ) -> RespResult
+struct FileRange
+{
+    file : Pin< Box< File > >
+,   len  : u64
+,   cur  : u64
+}
+
+///
+impl FileRange
+{
+    async fn new( mut file : File, start : u64, end : u64 ) -> io::Result< Self >
+    {
+        if let io::Result::Err( x ) = file.seek( std::io::SeekFrom::Start( start ) ).await
+        {
+            return io::Result::Err( x );
+        }
+
+        return io::Result::Ok(
+            Self
+            {
+                file    : Box::pin( file )
+            ,   len     : end - start
+            ,   cur     : 0
+            }
+        )
+    }
+
+    fn len( &self ) -> u64
+    {
+        self.len
+    }
+}
+
+///
+impl AsyncRead for FileRange
+{
+    fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
+        -> Poll< std::io::Result< usize > >
+    {
+        if self.cur >= self.len
+        {
+            Poll::Ready( Ok ( 0 ) )
+        }
+        else
+        {
+            match self.file.as_mut().poll_read( cx, dst )
+            {
+                Poll::Pending =>
+                {
+                    Poll::Pending
+                }
+            ,   Poll::Ready( x ) =>
+                {
+                    match x
+                    {
+                        Err( e ) =>
+                        {
+                            Poll::Ready( Err( e ) )
+                        }
+                    ,   Ok( n ) =>
+                        {
+                            let mut n = n as u64;
+
+                            if self.cur + n >= self.len
+                            {
+                                n = self.len - self.cur;
+                            }
+
+                            self.cur += n;
+                            Poll::Ready( Ok ( n as usize ) )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+///
+async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> RespResult
 {
     match File::open( path ).await
     {
@@ -79,20 +171,89 @@ async fn make_file_response( path: &std::path::Path ) -> RespResult
         {
             let metadata = file.metadata().await;
 
-            let stream = FramedRead::new( file, BytesCodec::new() );
-            let body = Body::wrap_stream( stream );
-            let mut resp = Response::new( body );
-
-            let mime = mime_guess::from_path( path ).first_or_octet_stream();
-
-            if let Ok( metadata ) = metadata
+            if let Some( range ) = headers.typed_get::<headers::Range>()
             {
-                resp.headers_mut().typed_insert( headers::ContentLength( metadata.len() ) );
+                if let Ok( metadata ) = metadata
+                {
+                    let max_len = metadata.len();
+
+                    if let Some( ( st, ed ) ) = range.iter().next()
+                    {
+                        let st = match st
+                        {
+                            Bound::Unbounded => 0,
+                            Bound::Included(s) => s,
+                            Bound::Excluded(s) => s + 1,
+                        };
+
+                        let ed = match ed
+                        {
+                            Bound::Unbounded => max_len,
+                            Bound::Included(s) => s + 1,
+                            Bound::Excluded(s) => s,
+                        };
+
+                        if st < ed && ed <= max_len
+                        {
+                            match FileRange::new( file, st, ed ).await
+                            {
+                                Ok( filerange ) =>
+                                {
+                                    let len = filerange.len();
+
+                                    let stream = FramedRead::new( filerange, BytesCodec::new() );
+
+                                    let body = Body::wrap_stream( stream );
+                                    let mut resp = Response::new( body );
+
+                                    let mime = mime_guess::from_path( path ).first_or_octet_stream();
+
+                                    resp.headers_mut().typed_insert( headers::ContentLength( len ) );
+                                    resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
+                                    resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+
+                                    *resp.status_mut() = StatusCode::PARTIAL_CONTENT;
+                                    resp.headers_mut().typed_insert(
+                                        headers::ContentRange::bytes( st..ed, len ).expect( "valid ContentRange" )
+                                    );
+
+                                    return Ok( resp );
+                                }
+                            ,   Err( x ) =>
+                                {
+                                    log::error!( "{:?}", x );
+                                }
+                            }
+                        }
+                        else
+                        {
+                            let mut resp = Response::new(Body::empty());
+                            *resp.status_mut() = StatusCode::RANGE_NOT_SATISFIABLE;
+                            resp.headers_mut().typed_insert( headers::ContentRange::unsatisfied_bytes( max_len ) );
+
+                            return Ok( resp );
+                        }
+                    }
+                }
             }
+            else
+            {
+                let stream = FramedRead::new( file, BytesCodec::new() );
+                let body = Body::wrap_stream( stream );
+                let mut resp = Response::new( body );
 
-            resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
+                let mime = mime_guess::from_path( path ).first_or_octet_stream();
 
-            return Ok( resp );
+                if let Ok( metadata ) = metadata
+                {
+                    resp.headers_mut().typed_insert( headers::ContentLength( metadata.len() ) );
+                }
+
+                resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
+                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+
+                return Ok( resp );
+            }
         }
     ,   Err( x ) =>
         {
@@ -130,27 +291,44 @@ fn check_path( path : &str )
 }
 
 ///
-fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
-    -> impl Filter< Extract = ( T, ), Error = Rejection > + Copy
+enum FileResponse
 {
-    warp::get()
-    .and(
-        warp::query::< T >()
-    )
-    .or(
-        warp::post()
-        .and(
-            warp::body::content_length_limit( 1024 * 32 )  // Limit the body to 32kb...
-        )
-        .and(
-            warp::body::form::< T >()
-        )
-    )
-    .unify()
+    Main
+,   Favicon
+,   Common( String )
+,   Theme( String )
+,   Sounds( String )
 }
 
-async fn theme_file_response( arwlctx : context::ARWLContext, path : &str, is_common : bool, do_unshift : bool ) -> RespResult
+///
+async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap, target_path : FileResponse ) -> RespResult
 {
+    let mut path_base = match target_path
+    {
+        FileResponse::Main | FileResponse::Favicon | FileResponse::Theme(_) =>
+        {
+            arwlctx.read().await.get_theme_path()
+        }
+    ,   FileResponse::Common(_) => { arwlctx.read().await.get_common_path() }
+    ,   FileResponse::Sounds(_) => { arwlctx.read().await.get_sounds_path()  }
+    };
+
+    let do_unshift = match target_path
+    {
+        FileResponse::Main | FileResponse::Favicon  => { false }
+    ,   _                                           => { true }
+    };
+
+
+    let path = match target_path
+    {
+        FileResponse::Main      => { String::from( context::THEME_MAIN ) }
+    ,   FileResponse::Favicon   => { String::from( context::THEME_FAVICON_ICO ) }
+    ,   FileResponse::Common(x) => { x }
+    ,   FileResponse::Theme(x)  => { x }
+    ,   FileResponse::Sounds(x) => { x }
+    };
+
     let path =
     {
         if do_unshift
@@ -163,7 +341,7 @@ async fn theme_file_response( arwlctx : context::ARWLContext, path : &str, is_co
         }
         else
         {
-            String::from( path )
+            path
         }
     };
 
@@ -174,21 +352,8 @@ async fn theme_file_response( arwlctx : context::ARWLContext, path : &str, is_co
         Err( x ) => { RespResult::Err( x ) }
     ,   Ok( path ) =>
         {
-            let mut path_base =
-            {
-                if is_common
-                {
-                    arwlctx.read().await.get_common_path()
-                }
-                else
-                {
-                    arwlctx.read().await.get_theme_path()
-                }
-            };
-
             path_base.push( &path );
-
-            make_file_response( &path_base ).await
+            make_file_response( headers, &path_base ).await
         }
     }
 }
@@ -235,6 +400,10 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+            ,   "testsound" =>
+                {
+                    mpdcom::MpdComRequestType::TestSound
+                }
             ,   "" =>
                 {
                     mpdcom::MpdComRequestType::Nop
@@ -243,20 +412,38 @@ impl CmdParam
                 {
                     if self.arg1.is_some()
                     {
-                        cmd += " ";
-                        cmd += &mpdcom::quote_arg( self.arg1.as_ref().unwrap().as_str() );
+                        if let Some( x ) = self.arg1.as_ref()
+                        {
+                            if x.trim() != ""
+                            {
+                                cmd += " ";
+                                cmd += &mpdcom::quote_arg( &x );
+                            }
+                        }
                     }
 
                     if self.arg2.is_some()
                     {
-                        cmd += " ";
-                        cmd += &mpdcom::quote_arg( self.arg2.as_ref().unwrap().as_str() );
+                        if let Some( x ) = self.arg2.as_ref()
+                        {
+                            if x.trim() != ""
+                            {
+                                cmd += " ";
+                                cmd += &mpdcom::quote_arg( &x );
+                            }
+                        }
                     }
 
                     if self.arg3.is_some()
                     {
-                        cmd += " ";
-                        cmd += &mpdcom::quote_arg( self.arg3.as_ref().unwrap().as_str() );
+                        if let Some( x ) = self.arg3.as_ref()
+                        {
+                            if x.trim() != ""
+                            {
+                                cmd += " ";
+                                cmd += &mpdcom::quote_arg( &x );
+                            }
+                        }
                     }
 
                     mpdcom::MpdComRequestType::Cmd( cmd )
@@ -271,6 +458,7 @@ impl CmdParam
     }
 }
 
+///
 async fn cmd_response( arwlctx : context::ARWLContext, param : CmdParam ) -> RespResult
 {
     log::debug!( "{:?}", &param );
@@ -288,16 +476,19 @@ async fn cmd_response( arwlctx : context::ARWLContext, param : CmdParam ) -> Res
     )
 }
 
+///
 async fn status_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.mpd_status_json ) )
 }
 
+///
 async fn spec_head_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_head_json ) )
 }
 
+///
 async fn spec_data_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_data_json ) )
@@ -330,6 +521,7 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
     Ok( json_response( &ctx.make_config_dyn_output() ) )
 }
 
+///
 async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Option< SocketAddr > )
 {
     let (
@@ -542,9 +734,30 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     cleanup!();
 }
 
+///
 async fn test_response( _arwlctx : context::ARWLContext, _param : HashMap< String, String > ) -> StrResult
 {
     StrResult::Ok( String::new() )
+}
+
+///
+fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
+    -> impl Filter< Extract = ( T, ), Error = Rejection > + Copy
+{
+    warp::get()
+    .and(
+        warp::query::< T >()
+    )
+    .or(
+        warp::post()
+        .and(
+            warp::body::content_length_limit( 1024 * 32 )  // Limit the body to 32kb...
+        )
+        .and(
+            warp::body::form::< T >()
+        )
+    )
+    .unify()
 }
 
 ///
@@ -564,9 +777,10 @@ async fn make_route( arwlctx : context::ARWLContext )
         warp::path::end()
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : context::ARWLContext | async move
+        .and( warp::header::headers_cloned() )
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap | async move
             {
-                theme_file_response( arwlctx, context::THEME_MAIN, false, false ).await
+                theme_file_response( arwlctx, headers, FileResponse::Main ).await
             }
         );
 
@@ -574,9 +788,10 @@ async fn make_route( arwlctx : context::ARWLContext )
         warp::path!( "favicon.ico" )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : context::ARWLContext | async move
+        .and( warp::header::headers_cloned() )
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap | async move
             {
-                theme_file_response( arwlctx, "favicon.ico", false, false ).await
+                theme_file_response( arwlctx, headers, FileResponse::Favicon ).await
             }
         );
 
@@ -584,10 +799,11 @@ async fn make_route( arwlctx : context::ARWLContext )
         warp::path!( "common" / .. )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
+        .and( warp::header::headers_cloned() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : context::ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, path.as_str(), true, true ).await
+                theme_file_response( arwlctx, headers, FileResponse::Common( String::from( path.as_str() ) ) ).await
             }
         );
 
@@ -595,10 +811,23 @@ async fn make_route( arwlctx : context::ARWLContext )
         warp::path!( "theme" / .. )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
+        .and( warp::header::headers_cloned() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : context::ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, path.as_str(), false, true ).await
+                theme_file_response( arwlctx, headers, FileResponse::Theme( String::from( path.as_str() ) ) ).await
+            }
+        );
+
+    let r_sounds =
+        warp::path!( "sounds" / .. )
+        .and( arwlctx_clone_filter() )
+        .and( warp::get() )
+        .and( warp::header::headers_cloned() )
+        .and( warp::path::full() )
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
+            {
+                theme_file_response( arwlctx, headers, FileResponse::Sounds( String::from( path.as_str() ) ) ).await
             }
         );
 
@@ -654,6 +883,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_favicon )
         .or( r_theme )
         .or( r_common )
+        .or( r_sounds )
         .or( r_cmd )
         .or( r_status )
         .or( r_spec_head )
@@ -669,8 +899,11 @@ async fn make_route( arwlctx : context::ARWLContext )
     routes.with( with_server ).with( with_log ).boxed()
 }
 
+///
 const PKG_NAME :    &'static str = env!( "CARGO_PKG_NAME" );
+///
 const PKG_VERSION : &'static str = env!( "CARGO_PKG_VERSION") ;
+///
 const _PKG_AUTHORS : &'static str = env!( "CARGO_PKG_AUTHORS" );
 
 ///
