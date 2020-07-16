@@ -33,7 +33,7 @@ pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
 
 pub const SOUNDS_DIR        : &str = "sounds";
-pub const TESTSOUNDS_NAME   : &str = r"^441-[12]-16-\d+s-(.+).mp3";
+pub const TESTSOUNDS_NAME   : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
 
 pub const SOUNDS_URL_PATH   : &str = "sounds";
 
