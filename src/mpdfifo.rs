@@ -24,7 +24,7 @@ use serde::{ Serialize, /* Deserialize */ };
 use chfft::CFft1D;
 use num_complex::Complex;
 
-use crate::config;
+use crate::context;
 use crate::event;
 
 #[derive(Debug, Serialize, Clone)]
@@ -100,7 +100,7 @@ const CORRECTION_2      : f32 = 10.0;
 const CORRECTION_3      : f32 = 20.0;
 
 pub async fn mpdfifo_task(
-    arwlctx : config::ARWLContext
+    arwlctx : context::ARWLContext
 ,   mut rx  : mpsc::Receiver< event::EventRequest >
 )
 -> io::Result< ()  >

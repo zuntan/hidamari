@@ -39,7 +39,7 @@ use warp::ws::{ Message, WebSocket };
 
 use serde::{ Serialize, Deserialize, de::DeserializeOwned };
 
-mod config;
+mod context;
 mod mpdcom;
 mod mpdfifo;
 mod event;
@@ -149,7 +149,7 @@ fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
     .unify()
 }
 
-async fn theme_file_response( arwlctx : config::ARWLContext, path : &str, is_common : bool, do_unshift : bool ) -> RespResult
+async fn theme_file_response( arwlctx : context::ARWLContext, path : &str, is_common : bool, do_unshift : bool ) -> RespResult
 {
     let path =
     {
@@ -271,7 +271,7 @@ impl CmdParam
     }
 }
 
-async fn cmd_response( arwlctx : config::ARWLContext, param : CmdParam ) -> RespResult
+async fn cmd_response( arwlctx : context::ARWLContext, param : CmdParam ) -> RespResult
 {
     log::debug!( "{:?}", &param );
 
@@ -288,17 +288,17 @@ async fn cmd_response( arwlctx : config::ARWLContext, param : CmdParam ) -> Resp
     )
 }
 
-async fn status_response( arwlctx : config::ARWLContext ) -> StrResult
+async fn status_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.mpd_status_json ) )
 }
 
-async fn spec_head_response( arwlctx : config::ARWLContext ) -> StrResult
+async fn spec_head_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_head_json ) )
 }
 
-async fn spec_data_response( arwlctx : config::ARWLContext ) -> StrResult
+async fn spec_data_response( arwlctx : context::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_data_json ) )
 }
@@ -311,7 +311,7 @@ struct ConfigParam
 }
 
 ///
-async fn config_response( arwlctx : config::ARWLContext, param : ConfigParam ) -> RespResult
+async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) -> RespResult
 {
     if param.update.is_some()
     {
@@ -330,7 +330,7 @@ async fn config_response( arwlctx : config::ARWLContext, param : ConfigParam ) -
     Ok( json_response( &ctx.make_config_dyn_output() ) )
 }
 
-async fn ws_response( arwlctx : config::ARWLContext, ws : WebSocket, addr: Option< SocketAddr > )
+async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Option< SocketAddr > )
 {
     let (
         ws_sess_stop
@@ -354,7 +354,7 @@ async fn ws_response( arwlctx : config::ARWLContext, ws : WebSocket, addr: Optio
 
         let ( ev_tx, ev_rx ) = event::make_channel();
 
-        ctx.ws_sessions.insert( ws_no, config::WsSession{ ws_sig : String::from( &ws_sig ), ev_tx } );
+        ctx.ws_sessions.insert( ws_no, context::WsSession{ ws_sig : String::from( &ws_sig ), ev_tx } );
 
         (
             ctx.ws_sess_stop
@@ -542,13 +542,13 @@ async fn ws_response( arwlctx : config::ARWLContext, ws : WebSocket, addr: Optio
     cleanup!();
 }
 
-async fn test_response( _arwlctx : config::ARWLContext, _param : HashMap< String, String > ) -> StrResult
+async fn test_response( _arwlctx : context::ARWLContext, _param : HashMap< String, String > ) -> StrResult
 {
     StrResult::Ok( String::new() )
 }
 
 ///
-async fn make_route( arwlctx : config::ARWLContext )
+async fn make_route( arwlctx : context::ARWLContext )
     -> filters::BoxedFilter< ( impl Reply, ) >
 {
     let product = String::from( &arwlctx.read().await.product );
@@ -564,9 +564,9 @@ async fn make_route( arwlctx : config::ARWLContext )
         warp::path::end()
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : config::ARWLContext | async move
+        .and_then( | arwlctx : context::ARWLContext | async move
             {
-                theme_file_response( arwlctx, config::THEME_MAIN, false, false ).await
+                theme_file_response( arwlctx, context::THEME_MAIN, false, false ).await
             }
         );
 
@@ -574,7 +574,7 @@ async fn make_route( arwlctx : config::ARWLContext )
         warp::path!( "favicon.ico" )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : config::ARWLContext | async move
+        .and_then( | arwlctx : context::ARWLContext | async move
             {
                 theme_file_response( arwlctx, "favicon.ico", false, false ).await
             }
@@ -585,7 +585,7 @@ async fn make_route( arwlctx : config::ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : config::ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : context::ARWLContext, path : warp::path::FullPath | async move
             {
                 theme_file_response( arwlctx, path.as_str(), true, true ).await
             }
@@ -596,7 +596,7 @@ async fn make_route( arwlctx : config::ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : config::ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : context::ARWLContext, path : warp::path::FullPath | async move
             {
                 theme_file_response( arwlctx, path.as_str(), false, true ).await
             }
@@ -643,7 +643,7 @@ async fn make_route( arwlctx : config::ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::ws() )
         .and( warp::addr::remote() )
-        .map( | arwlctx : config::ARWLContext, ws: warp::ws::Ws, addr: Option< SocketAddr > |
+        .map( | arwlctx : context::ARWLContext, ws: warp::ws::Ws, addr: Option< SocketAddr > |
             {
                 ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws, addr ) )
             }
@@ -681,7 +681,7 @@ async fn main() -> std::io::Result< () >
 
     pretty_env_logger::init();
 
-    let config = config::get_config();
+    let config = context::get_config();
 
     if config.is_none()
     {
@@ -689,7 +689,7 @@ async fn main() -> std::io::Result< () >
     }
 
     let config = config.unwrap();
-    let config_dyn = config::get_config_dyn( &config );
+    let config_dyn = context::get_config_dyn( &config );
 
     let bind_addr   = config.bind_addr();
     let mpd_addr    = config.mpd_addr();
@@ -699,7 +699,7 @@ async fn main() -> std::io::Result< () >
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                config::Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
+                context::Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
             )
         );
 
@@ -785,7 +785,7 @@ async fn main() -> std::io::Result< () >
     log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
 
     let ctx = arwlctx.read().await;
-    config::save_config_dyn( &ctx.config, &ctx.config_dyn );
+    context::save_config_dyn( &ctx.config, &ctx.config_dyn );
 
     Ok(())
 }
