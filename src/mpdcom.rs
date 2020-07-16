@@ -18,6 +18,8 @@ use tokio::prelude::*;
 
 use serde::{ Serialize, /* Deserialize */ };
 
+use crate::config;
+
 ///
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComOk
@@ -254,7 +256,7 @@ async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
 
 ///
 pub async fn mpdcom_task(
-    arwlctx   : crate::ARWLContext
+    arwlctx : config::ARWLContext
 ,   mut rx  : mpsc::Receiver< MpdComRequest >
 )
 {

@@ -16,7 +16,6 @@ extern crate lazy_static;
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use std::path::{ Path, PathBuf };
 use std::result::Result;
 use std::net::SocketAddr;
 
@@ -45,116 +44,6 @@ mod mpdcom;
 mod mpdfifo;
 mod event;
 
-type WsSessions = HashMap< u64, WsSession >;
-
-struct WsSession
-{
-    ws_sig  : String
-,   ev_tx   : event::EventSender
-}
-
-pub struct Context
-{
-    config          : config::Config
-,   config_dyn      : config::ConfigDyn
-
-,   mpdcom_tx       : sync::mpsc::Sender< mpdcom::MpdComRequest >
-,   mpd_status_json : String
-
-,   mpd_volume      : u8
-,   mpd_mute        : bool
-
-,   spec_enable     : bool
-,   spec_data_json  : String
-,   spec_head_json  : String
-
-,   ws_sess_stop    : bool
-,   ws_sess_no      : u64
-,   ws_sessions     : WsSessions
-
-,   ws_status_intv  : time::Duration
-,   ws_data_intv    : time::Duration
-,   ws_send_intv    : time::Duration
-
-,   product         : String
-,   version         : String
-}
-
-impl Context
-{
-    fn new(
-        config      : config::Config
-    ,   config_dyn  : config::ConfigDyn
-    ,   mpdcom_tx   : sync::mpsc::Sender< mpdcom::MpdComRequest >
-    ,   product     : &str
-    ,   version     : &str
-    ) -> Context
-    {
-        Context
-        {
-            config
-        ,   config_dyn
-        ,   mpdcom_tx
-        ,   mpd_status_json : String::new()
-        ,   mpd_volume      : 0
-        ,   mpd_mute        : false
-        ,   spec_enable     : false
-        ,   spec_data_json  : String::new()
-        ,   spec_head_json  : String::new()
-        ,   ws_sess_stop    : false
-        ,   ws_sess_no      : 0
-        ,   ws_sessions     : WsSessions::new()
-        ,   ws_status_intv  : time::Duration::from_millis( 200 )
-        ,   ws_data_intv    : time::Duration::from_millis( 200 )
-        ,   ws_send_intv    : time::Duration::from_secs( 3 )
-        ,   product         : String::from( product )
-        ,   version         : String::from( version )
-        }
-    }
-
-    fn get_theme_path( &self ) -> PathBuf
-    {
-        let mut path = PathBuf::new();
-
-        if self.config.theme_dir != ""
-        {
-            path.push( &self.config.theme_dir );
-        }
-        else
-        {
-            path.push( config::THEME_DIR );
-        }
-
-        if self.config_dyn.theme != ""
-        {
-            path.push( &self.config_dyn.theme );
-        }
-
-        path
-    }
-
-    fn get_common_path( &self ) -> PathBuf
-    {
-        let mut path = PathBuf::new();
-
-        if self.config.theme_dir != ""
-        {
-            path.push( &self.config.theme_dir );
-        }
-        else
-        {
-            path.push( config::THEME_DIR );
-        }
-
-        path.push( config::THEME_COMMON_DIR );
-
-        path
-    }
-}
-
-///
-type ARWLContext = Arc< sync::RwLock< Context > >;
-
 ///
 type StrResult = Result< String, Rejection >;
 
@@ -182,7 +71,7 @@ fn internal_server_error( t : &str ) -> Response
 }
 
 ///
-async fn make_file_response( path: &Path ) -> RespResult
+async fn make_file_response( path: &std::path::Path ) -> RespResult
 {
     match File::open( path ).await
     {
@@ -260,7 +149,7 @@ fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
     .unify()
 }
 
-async fn theme_file_response( arwlctx : ARWLContext, path : &str, is_common : bool, do_unshift : bool ) -> RespResult
+async fn theme_file_response( arwlctx : config::ARWLContext, path : &str, is_common : bool, do_unshift : bool ) -> RespResult
 {
     let path =
     {
@@ -382,7 +271,7 @@ impl CmdParam
     }
 }
 
-async fn cmd_response( arwlctx : ARWLContext, param : CmdParam ) -> RespResult
+async fn cmd_response( arwlctx : config::ARWLContext, param : CmdParam ) -> RespResult
 {
     log::debug!( "{:?}", &param );
 
@@ -399,17 +288,17 @@ async fn cmd_response( arwlctx : ARWLContext, param : CmdParam ) -> RespResult
     )
 }
 
-async fn status_response( arwlctx : ARWLContext ) -> StrResult
+async fn status_response( arwlctx : config::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.mpd_status_json ) )
 }
 
-async fn spec_head_response( arwlctx : ARWLContext ) -> StrResult
+async fn spec_head_response( arwlctx : config::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_head_json ) )
 }
 
-async fn spec_data_response( arwlctx : ARWLContext ) -> StrResult
+async fn spec_data_response( arwlctx : config::ARWLContext ) -> StrResult
 {
     Ok( String::from( &arwlctx.read().await.spec_data_json ) )
 }
@@ -422,7 +311,7 @@ struct ConfigParam
 }
 
 ///
-async fn config_response( arwlctx : ARWLContext, param : ConfigParam ) -> RespResult
+async fn config_response( arwlctx : config::ARWLContext, param : ConfigParam ) -> RespResult
 {
     if param.update.is_some()
     {
@@ -438,10 +327,10 @@ async fn config_response( arwlctx : ARWLContext, param : ConfigParam ) -> RespRe
 
     let ctx = arwlctx.read().await;
 
-    Ok( json_response( &config::make_config_dyn_output( &ctx.config, &ctx.config_dyn ) ) )
+    Ok( json_response( &ctx.make_config_dyn_output() ) )
 }
 
-async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<SocketAddr> )
+async fn ws_response( arwlctx : config::ARWLContext, ws : WebSocket, addr: Option< SocketAddr > )
 {
     let (
         ws_sess_stop
@@ -465,7 +354,7 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<Socket
 
         let ( ev_tx, ev_rx ) = event::make_channel();
 
-        ctx.ws_sessions.insert( ws_no, WsSession{ ws_sig : String::from( &ws_sig ), ev_tx } );
+        ctx.ws_sessions.insert( ws_no, config::WsSession{ ws_sig : String::from( &ws_sig ), ev_tx } );
 
         (
             ctx.ws_sess_stop
@@ -653,13 +542,13 @@ async fn ws_response( arwlctx : ARWLContext, ws : WebSocket, addr: Option<Socket
     cleanup!();
 }
 
-async fn test_response( arwlctx : ARWLContext, param : HashMap< String, String > ) -> StrResult
+async fn test_response( _arwlctx : config::ARWLContext, _param : HashMap< String, String > ) -> StrResult
 {
     StrResult::Ok( String::new() )
 }
 
 ///
-async fn make_route( arwlctx : ARWLContext )
+async fn make_route( arwlctx : config::ARWLContext )
     -> filters::BoxedFilter< ( impl Reply, ) >
 {
     let product = String::from( &arwlctx.read().await.product );
@@ -675,7 +564,7 @@ async fn make_route( arwlctx : ARWLContext )
         warp::path::end()
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : ARWLContext | async move
+        .and_then( | arwlctx : config::ARWLContext | async move
             {
                 theme_file_response( arwlctx, config::THEME_MAIN, false, false ).await
             }
@@ -685,7 +574,7 @@ async fn make_route( arwlctx : ARWLContext )
         warp::path!( "favicon.ico" )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
-        .and_then( | arwlctx : ARWLContext | async move
+        .and_then( | arwlctx : config::ARWLContext | async move
             {
                 theme_file_response( arwlctx, "favicon.ico", false, false ).await
             }
@@ -696,7 +585,7 @@ async fn make_route( arwlctx : ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : config::ARWLContext, path : warp::path::FullPath | async move
             {
                 theme_file_response( arwlctx, path.as_str(), true, true ).await
             }
@@ -707,7 +596,7 @@ async fn make_route( arwlctx : ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : ARWLContext, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : config::ARWLContext, path : warp::path::FullPath | async move
             {
                 theme_file_response( arwlctx, path.as_str(), false, true ).await
             }
@@ -754,7 +643,7 @@ async fn make_route( arwlctx : ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::ws() )
         .and( warp::addr::remote() )
-        .map( | arwlctx : ARWLContext, ws: warp::ws::Ws, addr: Option<SocketAddr> |
+        .map( | arwlctx : config::ARWLContext, ws: warp::ws::Ws, addr: Option< SocketAddr > |
             {
                 ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws, addr ) )
             }
@@ -782,7 +671,7 @@ async fn make_route( arwlctx : ARWLContext )
 
 const PKG_NAME :    &'static str = env!( "CARGO_PKG_NAME" );
 const PKG_VERSION : &'static str = env!( "CARGO_PKG_VERSION") ;
-const PKG_AUTHORS : &'static str = env!( "CARGO_PKG_AUTHORS" );
+const _PKG_AUTHORS : &'static str = env!( "CARGO_PKG_AUTHORS" );
 
 ///
 #[tokio::main]
@@ -810,7 +699,7 @@ async fn main() -> std::io::Result< () >
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
+                config::Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
             )
         );
 

@@ -8,14 +8,23 @@
 ///
 use std::io;
 use std::io::prelude::*;
-use std::path;
+use std::path::{ PathBuf };
+use std::sync::Arc;
+use std::collections::HashMap;
 use std::fs;
 use std::net::{ SocketAddr, ToSocketAddrs };
 
+use tokio::sync;
+use tokio::time;
+
 use serde::{ Deserialize, Serialize };
 
+use crate::event;
+use crate::mpdcom;
+
+pub const CONTENTS_DIR      : &str = "_contents";
+pub const THEME_DIR         : &str = "theme";
 pub const THEME_MAIN        : &str = "main.html";
-pub const THEME_DIR         : &str = "_theme";
 pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
@@ -31,7 +40,7 @@ pub struct Config
 ,   pub mpd_fifo        : String
 ,   pub mpd_fifo_fftmode: u32
 ,   pub log_level       : String
-,   pub theme_dir       : String
+,   pub contents_dir    : String
 }
 
 
@@ -111,60 +120,164 @@ pub struct ConfigDynInput
 ,   pub spec_delay : Option< u32 >
 }
 
-pub fn make_config_dyn_output( config : &Config, config_dyn : &ConfigDyn ) -> ConfigDynOutput
+pub struct WsSession
 {
-    let mut path = path::PathBuf::new();
+  pub   ws_sig  : String
+, pub   ev_tx   : event::EventSender
+}
 
-    if config.theme_dir != ""
+pub type WsSessions = HashMap< u64, WsSession >;
+
+pub struct Context
+{
+  pub   config          : Config
+, pub   config_dyn      : ConfigDyn
+
+, pub   mpdcom_tx       : sync::mpsc::Sender< mpdcom::MpdComRequest >
+, pub   mpd_status_json : String
+
+, pub   mpd_volume      : u8
+, pub   mpd_mute        : bool
+
+, pub   spec_enable     : bool
+, pub   spec_data_json  : String
+, pub   spec_head_json  : String
+
+, pub   ws_sess_stop    : bool
+, pub   ws_sess_no      : u64
+, pub   ws_sessions     : WsSessions
+
+, pub   ws_status_intv  : time::Duration
+, pub   ws_data_intv    : time::Duration
+, pub   ws_send_intv    : time::Duration
+
+, pub   product         : String
+, pub   version         : String
+}
+
+impl Context
+{
+    pub fn new(
+        config      : Config
+    ,   config_dyn  : ConfigDyn
+    ,   mpdcom_tx   : sync::mpsc::Sender< mpdcom::MpdComRequest >
+    ,   product     : &str
+    ,   version     : &str
+    ) -> Context
     {
-        path.push( &config.theme_dir );
-    }
-    else
-    {
-        path.push( THEME_DIR );
-    }
-
-    let mut themes = Vec::< String >::new();
-
-    themes.push( String::from( THEME_DEFAULT_DIR ) );
-
-    if let Ok( entries ) = fs::read_dir( path )
-    {
-        for entry in entries
+        Context
         {
-            if let Ok( entry ) = entry
+            config
+        ,   config_dyn
+        ,   mpdcom_tx
+        ,   mpd_status_json : String::new()
+        ,   mpd_volume      : 0
+        ,   mpd_mute        : false
+        ,   spec_enable     : false
+        ,   spec_data_json  : String::new()
+        ,   spec_head_json  : String::new()
+        ,   ws_sess_stop    : false
+        ,   ws_sess_no      : 0
+        ,   ws_sessions     : WsSessions::new()
+        ,   ws_status_intv  : time::Duration::from_millis( 200 )
+        ,   ws_data_intv    : time::Duration::from_millis( 200 )
+        ,   ws_send_intv    : time::Duration::from_secs( 3 )
+        ,   product         : String::from( product )
+        ,   version         : String::from( version )
+        }
+    }
+
+    pub fn get_contents_path( &self ) -> PathBuf
+    {
+        let mut path = PathBuf::new();
+
+        if self.config.contents_dir != ""
+        {
+            path.push( &self.config.contents_dir );
+        }
+        else
+        {
+            path.push( CONTENTS_DIR );
+        }
+
+        path
+    }
+
+    pub fn get_theme_path( &self ) -> PathBuf
+    {
+        let mut path = self.get_contents_path();
+
+        path.push( THEME_DIR );
+
+        if self.config_dyn.theme != ""
+        {
+            path.push( &self.config_dyn.theme );
+        }
+
+        path
+    }
+
+    pub fn get_common_path( &self ) -> PathBuf
+    {
+        let mut path = self.get_contents_path();
+
+        path.push( THEME_DIR );
+        path.push( THEME_COMMON_DIR );
+
+        path
+    }
+
+    pub fn make_config_dyn_output( &self ) -> ConfigDynOutput
+    {
+        let mut path = self.get_contents_path();
+
+        path.push( THEME_DIR );
+
+        let mut themes = Vec::< String >::new();
+
+        themes.push( String::from( THEME_DEFAULT_DIR ) );
+
+        if let Ok( entries ) = fs::read_dir( path )
+        {
+            for entry in entries
             {
-                if let Ok( entry_s ) = entry.file_name().into_string()
+                if let Ok( entry ) = entry
                 {
-                    lazy_static!
+                    if let Ok( entry_s ) = entry.file_name().into_string()
                     {
-                        static ref RE : regex::Regex =
-                            regex::Regex::new( THEME_HIDE_DIR ).unwrap();
-                    }
-
-                    if !RE.is_match( &entry_s )
-                    {
-                        let mut path_main = entry.path();
-
-                        path_main.push( THEME_MAIN );
-
-                        if path_main.is_file()
+                        lazy_static!
                         {
-                            themes.push( String::from( &entry_s ) );
+                            static ref RE : regex::Regex =
+                                regex::Regex::new( THEME_HIDE_DIR ).unwrap();
+                        }
+
+                        if !RE.is_match( &entry_s )
+                        {
+                            let mut path_main = entry.path();
+
+                            path_main.push( THEME_MAIN );
+
+                            if path_main.is_file()
+                            {
+                                themes.push( String::from( &entry_s ) );
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    ConfigDynOutput
-    {
-        theme           : String::from( &config_dyn.theme )
-    ,   themes          : themes
-    ,   spec_delay      : config_dyn.spec_delay
+        ConfigDynOutput
+        {
+            theme           : String::from( &self.config_dyn.theme )
+        ,   themes          : themes
+        ,   spec_delay      : self.config_dyn.spec_delay
+        }
     }
 }
+
+///
+pub type ARWLContext = Arc< sync::RwLock< Context > >;
 
 ///
 pub fn get_config() -> Option< Config >
