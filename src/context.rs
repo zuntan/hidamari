@@ -419,12 +419,14 @@ impl Context
 
                 if let Some( x ) = nv.url_list
                 {
+                    let x = x.iter().map( | x | x.trim() ).find( | x | x.trim() != "" ).collect();
                     log::debug!( "update dyn url_list {:?}", x );
                     self.config_dyn.url_list = x;
                 }
 
                 if let Some( x ) = nv.aux_in
                 {
+                    let x = x.iter().map( | x | x.trim() ).find( | x | x.trim() != "" ).collect();
                     log::debug!( "update dyn aux_in {:?}", x );
                     self.config_dyn.aux_in  = x;
                 }
