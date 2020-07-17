@@ -549,13 +549,16 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
 
         if newval != ""
         {
-            ctx.update_config_dyn( &newval );
+            if let Some( err ) = ctx.update_config_dyn( &newval )
+            {
+                return Ok( json_response( &context::ConfigDynOutputResult::Err( err ) ) )
+            }
         }
     }
 
     let ctx = arwlctx.read().await;
 
-    Ok( json_response( &ctx.make_config_dyn_output() ) )
+    Ok( json_response( &context::ConfigDynOutputResult::Ok( ctx.make_config_dyn_output() ) ) )
 }
 
 ///

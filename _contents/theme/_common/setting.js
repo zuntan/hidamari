@@ -3,18 +3,83 @@ function()
 {
 	// Config Load
 
+	$( ".x_main_return" ).click(
+		function()
+		{
+			location.href = "/";
+		}
+	);
+
+	$( ".x_err_m"	).hide();
+	$( ".x_ok_m"	).hide();
+
+	var clear_all_error = function()
+	{
+		$( ".x_err" ).remove();
+	}
+
+	var update_error = function( json, pos )
+	{
+		$( ".x_err", $( pos ) ).remove();
+
+		if( json.Err )
+		{
+			var t = $( ".x_err_m" ).clone();
+
+			t.removeClass( "x_err_m" );
+			t.addClass( "x_err" );
+
+			$( ".x_err_msg", t ).text( json.Err.err_msg );
+			$( pos ).append( t );
+			t.slideDown();
+		}
+	}
+
+	var update_ok = function( json, pos )
+	{
+		$( ".x_ok", $( pos ) ).remove();
+
+		if( json.Ok )
+		{
+			var t = $( ".x_ok_m" ).clone();
+
+			t.removeClass( "x_ok_m" );
+			t.addClass( "x_ok" );
+
+			$( pos ).append( t );
+			t.show();
+			setTimeout( function() { t.fadeOut( 'slow' ) }, 1000 );
+		}
+	}
+
+	var update_url_list = function( json )
+	{
+		if( json.Ok && json.Ok.url_list )
+		{
+			$( ".x_st_url_list" ).val( json.Ok.url_list.join( "\n" ) + "\n" );
+		}
+	}
+
+	var update_aux_in = function( json )
+	{
+		if( json.Ok && json.Ok.aux_in )
+		{
+			$( ".x_st_aux_in" ).val( json.Ok.aux_in.join( "\n" ) + "\n" );
+		}
+	}
+
 	var update_theme = function( json )
 	{
-		if( json.themes )
+		if( json.Ok && json.Ok.themes )
 		{
 			var t = $( ".x_st_themes" );
 
-			for( var i = 0 ; i < json.themes.length ; ++i )
+			for( var i = 0 ; i < json.Ok.themes.length ; ++i )
 			{
 				var h = "";
-				h += '<option value="' + json.themes[ i ]  + '" ';
-				h += ( json.themes[ i ] == json.theme ? ' selected="selected" ' : '' );
-				h += '>' + json.themes[ i ] + '</option>';
+				h += '<option value="' + json.Ok.themes[ i ]  + '" ';
+				h += ( json.Ok.themes[ i ] == json.Ok.theme ? ' selected="selected" ' : '' );
+				h += '>' + json.Ok.themes[ i ] + '</option>';
 
 				t.append( $( h ) );
 			}
@@ -23,8 +88,19 @@ function()
 
 	var update_anidelay = function( json )
 	{
-		$( ".x_st_anidelay" ).val( json.spec_delay )
-		$( ".x_st_anidelay_val" ).text( json.spec_delay )
+		if( json.Ok )
+		{
+			$( ".x_st_anidelay" ).val( json.Ok.spec_delay )
+			$( ".x_st_anidelay_val" ).text( json.Ok.spec_delay )
+		}
+	}
+
+	var update_all = function( json )
+	{
+		update_url_list( json );
+		update_aux_in( json );
+		update_theme( json );
+		update_anidelay( json );
 	}
 
 	$.getJSON( "/config" )
@@ -35,10 +111,48 @@ function()
 		)
 		.done( function( json )
 			{
-				update_theme( json )
-				update_anidelay( json );
+				update_all( json );
 			}
 		);
+
+	$( ".x_st_url_list_update" ).click(
+		function()
+		{
+			var url_list = $( ".x_st_url_list" ).val().split( "\n" );
+
+			$.getJSON( "/config", { update : JSON.stringify( { url_list : url_list } ) } )
+				.always( function()
+					{
+					}
+				)
+				.done( function( json )
+					{
+						update_error( json, ".x_st_url_list_err" );
+						update_ok( json, ".x_st_url_list_ok" );
+						update_url_list( json );
+					}
+				);
+		}
+	);
+
+	$( ".x_st_aux_in_update" ).click(
+		function()
+		{
+			var aux_in = $( ".x_st_aux_in" ).val().split( "\n" );
+
+			$.getJSON( "/config", { update : JSON.stringify( { aux_in : aux_in } ) } )
+				.always( function()
+					{
+					}
+				)
+				.done( function( json )
+					{
+						update_error( json, ".x_st_aux_in_err" );
+						update_aux_in( json );
+					}
+				);
+		}
+	);
 
 	$( ".x_st_anidelay" ).change(
 		function()
@@ -152,6 +266,53 @@ function()
 				.done( function( json )
 					{
 						x.val( JSON.stringify( json ) );
+					}
+				);
+		}
+	);
+
+	$( ".x_st_dev_config_get" ).click(
+		function()
+		{
+			$.getJSON( "/config" )
+				.always( function()
+					{
+						$( ".x_st_dev_config_get_result" ).val( "" );
+					}
+				)
+				.done( function( json )
+					{
+						update_error( json, ".x_st_dev_config_update_err" );
+
+						if( json.Ok )
+						{
+							$( ".x_st_dev_config_get_result" ).val( JSON.stringify( json ) );
+							update_all( json );
+						}
+					}
+				);
+		}
+	);
+
+	$( ".x_st_dev_config_update" ).click(
+		function()
+		{
+			var update_values = $( ".x_st_dev_config_get_result" ).val();
+
+			$.getJSON( "/config", { update : update_values } )
+				.always( function()
+					{
+					}
+				)
+				.done( function( json )
+					{
+						update_error( json, ".x_st_dev_config_update_err" );
+
+						if( json.Ok )
+						{
+							$( ".x_st_dev_config_get_result" ).val( JSON.stringify( json ) );
+							update_all( json );
+						}
 					}
 				);
 		}

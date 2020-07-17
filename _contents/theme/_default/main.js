@@ -1079,16 +1079,16 @@ function()
 	{
 		$( ".x_st_themes > option" ).remove();
 
-		if( json.themes )
+		if( json.Ok && json.Ok.themes )
 		{
 			var t = $( ".x_st_themes" );
 
-			for( var i = 0 ; i < json.themes.length ; ++i )
+			for( var i = 0 ; i < json.Ok.themes.length ; ++i )
 			{
 				var h = "";
-				h += '<option value="' + json.themes[ i ]  + '" ';
-				h += ( json.themes[ i ] == json.theme ? ' selected="selected" ' : '' );
-				h += '>' + json.themes[ i ] + '</option>';
+				h += '<option value="' + json.Ok.themes[ i ]  + '" ';
+				h += ( json.Ok.themes[ i ] == json.Ok.themes ? ' selected="selected" ' : '' );
+				h += '>' + json.Ok.themes[ i ] + '</option>';
 
 				t.append( $( h ) );
 			}
@@ -1099,7 +1099,7 @@ function()
 	{
 		$( ".x_url_list > a" ).remove();
 
-		if( json.url_list )
+		if( json.Ok && json.Ok.url_list )
 		{
 			var t = $( ".x_url_list" );
 
@@ -1108,10 +1108,10 @@ function()
 				$( ".x_url" ).val( $(this).text() );
 			};
 
-			for( var i = 0 ; i < json.url_list.length ; ++i )
+			for( var i = 0 ; i < json.Ok.url_list.length ; ++i )
 			{
 				var h = "";
-				h += '<a class="dropdown-item" href="#">' + json.url_list[ i ] + ' </a>';
+				h += '<a class="dropdown-item" href="#">' + json.Ok.url_list[ i ] + ' </a>';
 
 				var a = $( h );
 
@@ -1126,20 +1126,20 @@ function()
 	{
 		$( ".x_aux_in_add" ).remove();
 
-		if( json.aux_in && $.isArray( json.aux_in ) )
+		if( json.Ok && json.Ok.aux_in && $.isArray( json.Ok.aux_in ) )
 		{
 			var m = $( ".x_aux_in_add_m" );
 
-			for( var i = 0 ; i < json.aux_in.length ; ++i )
+			for( var i = 0 ; i < json.Ok.aux_in.length ; ++i )
 			{
-				if( json.aux_in[ i ] && json.aux_in[ i ] != "" )
+				if( json.Ok.aux_in[ i ] && json.Ok.aux_in[ i ] != "" )
 				{
 					var t = m.clone();
 					t.removeClass( "x_aux_in_add_m" );
 					t.addClass( "x_aux_in_add" );
 
-					t.text( "AUX_IN_" + ( i + 1 ) );
-					t.data( "url", json.aux_in[ i ] );
+					t.text( "AUX IN " + ( i + 1 ) );
+					t.data( "url", json.Ok.aux_in[ i ] );
 					m.before( t );
 					t.show();
 				}

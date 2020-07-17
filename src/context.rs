@@ -167,6 +167,14 @@ pub struct ConfigDynOutput
 ,   pub aux_in      : Vec< String >
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct ConfigDynOutputError
+{
+    pub err_msg     : String
+}
+
+pub type ConfigDynOutputResult = Result< ConfigDynOutput, ConfigDynOutputError >;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConfigDynInput
 {
@@ -342,7 +350,30 @@ impl Context
         }
     }
 
-    pub fn update_config_dyn( &mut self, newval : &str )
+    fn check_url_list( list : &Vec< String > ) -> Option< ConfigDynOutputError >
+    {
+        for url in list
+        {
+            let url = url.trim();
+
+            if url != ""
+            {
+                if let Err( x ) = Url::parse( &url )
+                {
+                    return Some(
+                        ConfigDynOutputError
+                        {
+                            err_msg : String::from( format!( "URL ParseError {:?} [{}]", x, &url ) )
+                        }
+                    );
+                };
+            }
+        }
+
+        None
+    }
+
+    pub fn update_config_dyn( &mut self, newval : &str ) -> Option< ConfigDynOutputError >
     {
         let newval : serde_json::Result< ConfigDynInput > = serde_json::from_str( newval );
 
@@ -350,6 +381,30 @@ impl Context
         {
             Ok( nv ) =>
             {
+                // check
+
+                if let Some( ref x ) = nv.url_list
+                {
+                    let ret = Self::check_url_list( x );
+
+                    if ret.is_some()
+                    {
+                        return ret;
+                    }
+                }
+
+                if let Some( ref x ) = nv.aux_in
+                {
+                    let ret = Self::check_url_list( x );
+
+                    if ret.is_some()
+                    {
+                        return ret;
+                    }
+                }
+
+                // update
+
                 if let Some( x ) = nv.theme
                 {
                     log::debug!( "update dyn theme {}", &x );
@@ -364,7 +419,7 @@ impl Context
 
                 if let Some( x ) = nv.url_list
                 {
-                    log::debug!( "update dyn aux_in {:?}", x );
+                    log::debug!( "update dyn url_list {:?}", x );
                     self.config_dyn.url_list = x;
                 }
 
@@ -376,9 +431,16 @@ impl Context
             }
         ,   Err( x ) =>
             {
-                log::error!( "{:?}", x );
+                return Some(
+                    ConfigDynOutputError
+                    {
+                        err_msg : String::from( format!( "{:?}", x ) )
+                    }
+                );
             }
         }
+
+        None
     }
 
     pub fn append_url( &mut self, url : &str )
