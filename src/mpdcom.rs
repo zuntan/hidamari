@@ -16,6 +16,8 @@ use tokio::time::{ timeout, Duration, Instant };
 use tokio::sync::{ oneshot, mpsc };
 use tokio::prelude::*;
 
+use url::Url;
+
 use serde::{ Serialize, /* Deserialize */ };
 
 use crate::context;
@@ -102,6 +104,7 @@ pub enum MpdComRequestType
 ,   Cmd( String )
 ,   SetVol( String )
 ,   SetMute( String )
+,   AddUrl( ( String, String ) )
 ,   TestSound
 ,   Shutdown
 }
@@ -565,6 +568,55 @@ pub async fn mpdcom_task(
                                 conn_try_time = Some( Instant::now() );
 
                                 recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                            }
+                        }
+                    }
+
+                ,   MpdComRequestType::AddUrl( ( url, append ) ) =>
+                    {
+                        let append = match append.to_lowercase().as_str()
+                            {
+                                "1" | "true" | "on" => true
+                            ,   _                   => false
+                            };
+
+                        match Url::parse( &url )
+                        {
+                            Ok(_) =>
+                            {
+                                let cmd = String::from( "addid " ) + &quote_arg( &url );
+
+                                log::debug!( "addid {}", &url );
+
+                                match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                                {
+                                    Ok(x) =>
+                                    {
+                                        if append
+                                        {
+                                            arwlctx.write().await.append_url( &url );
+                                        }
+
+                                        recv.tx.send( x ).ok();
+                                    }
+                                ,   Err(x) =>
+                                    {
+                                        log::warn!( "connection error [{:?}]", x );
+                                        conn.as_mut().unwrap().shutdown();
+                                        conn = None;
+                                        conn_try_time = Some( Instant::now() );
+
+                                        recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                                    }
+                                }
+                            }
+                        ,   Err(x) =>
+                            {
+                                let mut err = MpdComErr::new( -4 );
+
+                                err.msg_text = String::from( format!( "{:?}", x ) );
+
+                                recv.tx.send( Err( err ) ).ok();
                             }
                         }
                     }

@@ -942,6 +942,7 @@ function()
 
 			if( current_songid != d[ 'songid' ] )
 			{
+				playlist_update();
 				playlist_select_song( d[ 'songid' ] )
 			}
 
@@ -1111,30 +1112,74 @@ function()
 			{
 				var h = "";
 				h += '<a class="dropdown-item" href="#">' + json.url_list[ i ] + ' </a>';
-				h += '>' +  + '</option>';
 
 				var a = $( h );
 
 				a.click( f );
 
-				t.append( $( h ) );
+				t.append( a );
 			}
 		}
 	}
 
-	$.getJSON( "/config" )
-		.always( function()
+	var update_aux_in = function( json )
+	{
+		$( ".x_aux_in_add" ).remove();
+
+		if( json.aux_in && $.isArray( json.aux_in ) )
+		{
+			var m = $( ".x_aux_in_add_m" );
+
+			for( var i = 0 ; i < json.aux_in.length ; ++i )
 			{
-				$( ".x_st_themes > option" ).remove();
-				$( ".x_url_list > a" ).remove();
+				if( json.aux_in[ i ] && json.aux_in[ i ] != "" )
+				{
+					var t = m.clone();
+					t.removeClass( "x_aux_in_add_m" );
+					t.addClass( "x_aux_in_add" );
+
+					t.text( "AUX_IN_" + ( i + 1 ) );
+					t.data( "url", json.aux_in[ i ] );
+					m.before( t );
+					t.show();
+				}
 			}
-		)
-		.done( function( json )
-			{
-				update_theme( json );
-				update_url( json );
-			}
-		);
+
+			$( ".x_aux_in_add" ).click(
+				function()
+				{
+					add_url( $( this ).data( "url" ), false );
+				}
+			);
+		}
+	}
+
+	$( ".x_aux_in_add_m" ).hide();
+
+	var update_config = function()
+	{
+		$.getJSON( "/config" )
+			.always( function()
+				{
+					$( ".x_st_themes > option" ).remove();
+					$( ".x_url_list > a" ).remove();
+				}
+			)
+			.done( function( json )
+				{
+					update_theme( json );
+					update_url( json );
+					update_aux_in( json );
+				}
+			);
+	}
+
+	$( ".x_navbar_toggler" ).click(
+		function()
+		{
+			update_config();
+		}
+	);
 
 	var url_add_error = function( url, msg )
 	{
@@ -1153,14 +1198,11 @@ function()
 
 	$( ".x_url_add_err_m" ).hide();
 
-	$( ".x_url_add" ).click(
-		function()
+	var add_url = function( url, append )
+	{
+		if( url )
 		{
-			$( ".x_url_add_err" ).remove();
-
-			var url = $( ".x_url" ).val();
-
-			$.getJSON( "/cmd", { cmd : "addid", arg1 : url } )
+			$.getJSON( "/cmd", { cmd : "addurl", arg1 : url, arg2 : append } )
 				.done( function( json )
 					{
 						if( json.Ok )
@@ -1170,23 +1212,11 @@ function()
 							if( kv[ 'Id' ] )
 							{
 								$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
-
-								$.getJSON( "/config" )
-									.always( function()
-										{
-											$( ".x_st_themes > option" ).remove();
-											$( ".x_url_list > a" ).remove();
-										}
-									)
-									.done( function( json )
-										{
-											update_theme( json );
-											update_url( json );
-										}
-									);
 							}
 
 							$( ".x_url" ).val( "" );
+
+							update_config();
 						}
 						else if( json.Err && json.Err.msg_text )
 						{
@@ -1194,6 +1224,14 @@ function()
 						}
 					}
 				);
+		}
+	}
+
+	$( ".x_url_add" ).click(
+		function()
+		{
+			$( ".x_url_add_err" ).remove();
+			add_url( $( ".x_url" ).val(), true );
 		}
 	);
 

@@ -37,6 +37,18 @@ pub const TESTSOUNDS_NAME   : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
 
 pub const SOUNDS_URL_PATH   : &str = "sounds";
 
+pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
+
+pub const _HEADER_SHOUTCAST_ICY_METADATA_KEY    : &str = "icy-metadata";
+pub const _HEADER_SHOUTCAST_ICY_METADATA_VAL    : &str = "1";
+pub const _HEADER_SHOUTCAST_ICY_NAME_KEY        : &str = "icy-name";
+pub const _HEADER_SHOUTCAST_ICY_GENRE_KEY       : &str = "icy-genre";
+pub const _HEADER_SHOUTCAST_ICY_URL_KEY         : &str = "icy-url";
+pub const _HEADER_SHOUTCAST_ICY_BR_KEY          : &str = "icy-br";
+pub const _HEADER_SHOUTCAST_ICY_PUB_KEY         : &str = "icy-pub";
+pub const _HEADER_SHOUTCAST_ICY_PUB_VAL         : &str = "1";
+pub const _HEADER_SHOUTCAST_ICY_DESC_KEY        : &str = "icy-description";
+
 ///
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config
@@ -51,7 +63,6 @@ pub struct Config
 ,   pub log_level           : String
 ,   pub contents_dir        : String
 }
-
 
 impl Config
 {
@@ -125,8 +136,10 @@ impl Config
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConfigDyn
 {
-    pub theme           : String
-,   pub spec_delay      : u32
+    pub theme       : String
+,   pub spec_delay  : u32
+,   pub url_list    : Vec< String >
+,   pub aux_in      : Vec< String >
 }
 
 ///
@@ -136,35 +149,10 @@ impl ConfigDyn
     {
         ConfigDyn
         {
-            theme           : String::from( THEME_DEFAULT_DIR )
-        ,   spec_delay      : 500
-        }
-    }
-
-    pub fn update( &mut self, newval : &str )
-    {
-        let newval : serde_json::Result< ConfigDynInput > = serde_json::from_str( newval );
-
-        match newval
-        {
-            Ok( nv ) =>
-            {
-                if let Some( x ) = nv.theme
-                {
-                    log::debug!( "update dyn theme {}", &x );
-                    self.theme = String::from( &x );
-                }
-
-                if let Some( x ) = nv.spec_delay
-                {
-                    log::debug!( "update dyn spec_delay {}", x );
-                    self.spec_delay = x;
-                }
-            }
-        ,   Err( x ) =>
-            {
-                log::error!( "{:?}", x );
-            }
+            theme       : String::from( THEME_DEFAULT_DIR )
+        ,   spec_delay  : 50
+        ,   url_list    : Vec::< String >::new()
+        ,   aux_in      : Vec::< String >::new()
         }
     }
 }
@@ -175,13 +163,17 @@ pub struct ConfigDynOutput
     pub theme       : String
 ,   pub themes      : Vec< String >
 ,   pub spec_delay  : u32
+,   pub url_list    : Vec< String >
+,   pub aux_in      : Vec< String >
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConfigDynInput
 {
-    pub theme      : Option< String >
-,   pub spec_delay : Option< u32 >
+    pub theme       : Option< String >
+,   pub spec_delay  : Option< u32 >
+,   pub url_list    : Option< Vec< String > >
+,   pub aux_in      : Option< Vec< String > >
 }
 
 pub struct WsSession
@@ -345,6 +337,57 @@ impl Context
             theme           : String::from( &self.config_dyn.theme )
         ,   themes          : themes
         ,   spec_delay      : self.config_dyn.spec_delay
+        ,   url_list        : self.config_dyn.url_list  .iter().map( | x | String::from( x ) ).collect()
+        ,   aux_in          : self.config_dyn.aux_in    .iter().map( | x | String::from( x ) ).collect()
+        }
+    }
+
+    pub fn update_config_dyn( &mut self, newval : &str )
+    {
+        let newval : serde_json::Result< ConfigDynInput > = serde_json::from_str( newval );
+
+        match newval
+        {
+            Ok( nv ) =>
+            {
+                if let Some( x ) = nv.theme
+                {
+                    log::debug!( "update dyn theme {}", &x );
+                    self.config_dyn.theme = String::from( &x );
+                }
+
+                if let Some( x ) = nv.spec_delay
+                {
+                    log::debug!( "update dyn spec_delay {}", x );
+                    self.config_dyn.spec_delay = x;
+                }
+
+                if let Some( x ) = nv.url_list
+                {
+                    log::debug!( "update dyn aux_in {:?}", x );
+                    self.config_dyn.url_list = x;
+                }
+
+                if let Some( x ) = nv.aux_in
+                {
+                    log::debug!( "update dyn aux_in {:?}", x );
+                    self.config_dyn.aux_in  = x;
+                }
+            }
+        ,   Err( x ) =>
+            {
+                log::error!( "{:?}", x );
+            }
+        }
+    }
+
+    pub fn append_url( &mut self, url : &str )
+    {
+        let url = String::from( url.trim() );
+
+        if !self.config_dyn.url_list.contains( &url )
+        {
+            self.config_dyn.url_list.push( url );
         }
     }
 

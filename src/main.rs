@@ -165,7 +165,23 @@ impl AsyncRead for FileRangeRead
 ///
 async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> RespResult
 {
-    log::debug!( "{:?}", headers );
+
+    if log::log_enabled!( log::Level::Debug )
+    {
+        if let Some( ua ) = headers.typed_get::< headers::UserAgent >()
+        {
+            lazy_static!
+            {
+                static ref RE : regex::Regex =
+                    regex::Regex::new( context::MPD_USER_AGENT ).unwrap();
+            }
+
+            if RE.is_match( ua.as_str() )
+            {
+                log::debug!( "{:?}", &headers );
+            }
+        }
+    }
 
     match File::open( path ).await
     {
@@ -257,7 +273,7 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
         }
     ,   Err( x ) =>
         {
-            log::warn!( "{:?}", x );
+            log::error!( "{:?}", x );
         }
     }
 
@@ -345,8 +361,6 @@ async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap
         }
     };
 
-    log::debug!( "{} {}", do_unshift, &path );
-
     match check_path( &path )
     {
         Err( x ) => { RespResult::Err( x ) }
@@ -394,6 +408,29 @@ impl CmdParam
                     if self.arg1.is_some()
                     {
                         mpdcom::MpdComRequestType::SetMute( String::from( self.arg1.as_ref().unwrap().as_str() ) )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
+            ,   "addurl" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        let url = String::from( self.arg1.as_ref().unwrap().as_str() );
+
+                        let arg =
+                            if self.arg2.is_some()
+                            {
+                                String::from( self.arg2.as_ref().unwrap().as_str() )
+                            }
+                            else
+                            {
+                                String::new()
+                            };
+
+                        mpdcom::MpdComRequestType::AddUrl( ( url, arg ) )
                     }
                     else
                     {
@@ -512,7 +549,7 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
 
         if newval != ""
         {
-            ctx.config_dyn.update( &newval );
+            ctx.update_config_dyn( &newval );
         }
     }
 

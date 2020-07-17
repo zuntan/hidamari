@@ -162,6 +162,11 @@ function()
 					{
 						kv[ '_title_1' ] = n;
 
+						if( kv[ 'Title' ] && kv[ 'Title' ] != "" )
+						{
+							kv[ '_title_1' ] = kv[ 'Title' ];
+						}
+
 						if( kv[ 'Name' ] && kv[ 'Name' ] != "" )
 						{
 							kv[ '_title_1' ] = kv[ 'Name' ];
@@ -188,8 +193,9 @@ function()
 
 						kv[ '_time' ] = d;
 
-						kv[ '_pos' ] = parseInt( kv[ 'Pos' ] );
-						kv[ '_id'  ] = kv[ 'Id' ]
+						kv[ '_pos'   ] = parseInt( kv[ 'Pos' ] );
+						kv[ '_id'    ] = kv[ 'Id' ];
+						kv[ '_name'  ] = v;
 					}
 
 					kv[ '_path' ] = v;
