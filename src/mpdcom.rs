@@ -9,14 +9,13 @@
 
 use std::fmt;
 use std::str::FromStr;
+use std::net::SocketAddr;
 
 use tokio::io::BufReader;
 use tokio::net::TcpStream;
 use tokio::time::{ timeout, Duration, Instant };
 use tokio::sync::{ oneshot, mpsc };
 use tokio::prelude::*;
-
-use url::Url;
 
 use serde::{ Serialize, /* Deserialize */ };
 
@@ -106,6 +105,7 @@ pub enum MpdComRequestType
 ,   SetMute( String )
 ,   AddUrl( ( String, String ) )
 ,   TestSound
+,   UpdateConfigDyn
 ,   Shutdown
 }
 
@@ -143,121 +143,144 @@ pub fn quote_arg( arg: &str ) -> String
         arg = String::from( "\"" ) + &arg + "\""
     }
 
-    log::debug!( "QA [{}]", &arg );
-
     arg
 }
 
-///
-async fn mpdcon_exec( cmd : String, conn : &mut TcpStream, protolog : bool )
--> io::Result< MpdComResult >
+struct MpdcomExec
 {
-    if protolog
+    addr        : SocketAddr
+,   conn        : Option< TcpStream >
+,   aux_names   : context::AuxNameDic
+}
+
+///
+impl MpdcomExec
+{
+    async fn exec( &mut self, cmd : String, protolog : bool )
+    -> io::Result< MpdComResult >
     {
-        log::debug!( "> {}", cmd );
-    }
-
-    conn.write( cmd.as_bytes() ).await?;
-    conn.write( &[0x0a] ).await?;
-    conn.flush().await?;
-
-    let mut is_ok = false;
-    let mut ret_ok = MpdComOk::new();
-    let mut ret_err = MpdComErr::new( -1 );
-
-    let mut reader = BufReader::new( conn );
-    let mut buf = String::new();
-
-    'outer: loop
-    {
-        buf.clear();
-
-        if let Ok( x ) = reader.read_line( &mut buf ).await
-        {
-            if x == 0
-            {
-                break 'outer;
-            }
-        }
-
         if protolog
         {
-            log::debug!( "< {}", buf.trim_end() );
+            log::debug!( "> {}", cmd );
         }
 
-        if buf == "OK\n"
+        let conn = self.conn.as_mut().unwrap();
+
+        conn.write( cmd.as_bytes() ).await?;
+        conn.write( &[0x0a] ).await?;
+        conn.flush().await?;
+
+        let mut is_ok = false;
+        let mut ret_ok = MpdComOk::new();
+        let mut ret_err = MpdComErr::new( -1 );
+
+        let mut reader = BufReader::new( conn );
+        let mut buf = String::new();
+
+        'outer: loop
         {
-            is_ok = true;
-            break 'outer;
-        }
-        else if buf.starts_with( "ACK [" )
-        {
-            lazy_static!
+            buf.clear();
+
+            if let Ok( x ) = reader.read_line( &mut buf ).await
             {
-                static ref RE : regex::Regex =
-                    regex::Regex::new( r"^ACK\s*\[(\d+)@(\d+)\]\s+\{([^}]*)\}\s*(.*)\n" ).unwrap();
+                if x == 0
+                {
+                    break 'outer;
+                }
             }
 
-            if let Some( x ) = RE.captures( &buf )
+            if protolog
             {
-                ret_err.err_code    = x[1].parse().unwrap();
-                ret_err.cmd_index   = x[2].parse().unwrap();
-                ret_err.cur_cmd     = String::from( &x[3] );
-                ret_err.msg_text    = String::from( &x[4] );
+                log::debug!( "< {}", buf.trim_end() );
+            }
 
+            if buf == "OK\n"
+            {
+                is_ok = true;
                 break 'outer;
             }
-        }
-        else
-        {
-            lazy_static!
+            else if buf.starts_with( "ACK [" )
             {
-                static ref RE : regex::Regex =
-                    regex::Regex::new( r"^([^:]*):\s*(.*)\n" ).unwrap();
-            }
-
-            if let Some( x ) = RE.captures( &buf )
-            {
-                if &x[1] == "binary"
+                lazy_static!
                 {
-                    let binlen : usize = x[2].parse().unwrap();
-                    let mut bin = Vec::<u8>::with_capacity( binlen );
+                    static ref RE : regex::Regex =
+                        regex::Regex::new( r"^ACK\s*\[(\d+)@(\d+)\]\s+\{([^}]*)\}\s*(.*)\n" ).unwrap();
+                }
 
-                    let mut buf = [0u8; 2048];
+                if let Some( x ) = RE.captures( &buf )
+                {
+                    ret_err.err_code    = x[1].parse().unwrap();
+                    ret_err.cmd_index   = x[2].parse().unwrap();
+                    ret_err.cur_cmd     = String::from( &x[3] );
+                    ret_err.msg_text    = String::from( &x[4] );
 
-                    if let Ok( x ) = reader.read( &mut buf ).await
+                    break 'outer;
+                }
+            }
+            else
+            {
+                lazy_static!
+                {
+                    static ref RE : regex::Regex =
+                        regex::Regex::new( r"^([^:]*):\s*(.*)\n" ).unwrap();
+                }
+
+                if let Some( x ) = RE.captures( &buf )
+                {
+                    if &x[1] == "binary"
                     {
-                        if x == 0
+                        let binlen : usize = x[2].parse().unwrap();
+                        let mut bin = Vec::<u8>::with_capacity( binlen );
+
+                        let mut buf = [0u8; 2048];
+
+                        if let Ok( x ) = reader.read( &mut buf ).await
                         {
-                            break 'outer;
+                            if x == 0
+                            {
+                                break 'outer;
+                            }
+                            else
+                            {
+                                bin.extend_from_slice( &buf[0..x] );
+                            }
                         }
-                        else
+
+                        ret_ok.bin = Some( bin );
+                    }
+                    else
+                    {
+                        ret_ok.flds.push(
+                            (
+                                String::from( x[1].trim() )
+                            ,   String::from( x[2].trim() )
+                            )
+                        );
+
+                        if( x[1].trim() ) == "file"
                         {
-                            bin.extend_from_slice( &buf[0..x] );
+                            if let Some( name ) = self.aux_names.get( x[2].trim() )
+                            {
+                                ret_ok.flds.push(
+                                    (
+                                        String::from( "Name" )
+                                    ,   String::from( name )
+                                    )
+                                );
+                            }
                         }
                     }
-
-                    ret_ok.bin = Some( bin );
-                }
-                else
-                {
-                    ret_ok.flds.push(
-                        (
-                            String::from( x[1].trim() )
-                        ,   String::from( x[2].trim() )
-                        )
-                    );
                 }
             }
         }
-    }
 
-    if protolog && !is_ok
-    {
-        log::error!( "< {:?}", ret_err );
-    }
+        if protolog && !is_ok
+        {
+            log::error!( "< {:?}", ret_err );
+        }
 
-    Ok( if is_ok { Ok( ret_ok ) } else { Err( ret_err ) } )
+        Ok( if is_ok { Ok( ret_ok ) } else { Err( ret_err ) } )
+    }
 }
 
 ///
@@ -268,16 +291,21 @@ pub async fn mpdcom_task(
 {
     log::debug!( "mpdcom starting." );
 
-    let mpd_addr;
-    let mpd_protolog;
+    let ( mut mpd_exec, mpd_protolog ) =
     {
         let ctx = arwlctx.read().await;
 
-        mpd_addr = ctx.config.mpd_addr();
-        mpd_protolog = ctx.config.mpd_protolog;
+        (
+            MpdcomExec
+            {
+                addr        : ctx.config.mpd_addr()
+            ,   conn        : None
+            ,   aux_names   : ctx.aux_names()
+            }
+        ,   ctx.config.mpd_protolog
+        )
     };
 
-    let mut conn : Option< TcpStream > = None;
     let mut conn_try_time : Option< Instant > = None;
     let     conn_err_retry = Duration::from_secs( 10 );
 
@@ -288,11 +316,11 @@ pub async fn mpdcom_task(
     let mut status_try_time : Option< Instant > = None;
     let status_time_out = Duration::from_millis( 250 );
 
-    log::debug!( "mpdcom {:?} protolog {:?}", mpd_addr, mpd_protolog );
+    log::debug!( "mpdcom {:?} protolog {:?}", mpd_exec.addr, mpd_protolog );
 
     loop
     {
-        if conn.is_none() &&
+        if mpd_exec.conn.is_none() &&
             (   conn_try_time.is_none()
             ||  conn_try_time.unwrap().elapsed() > conn_err_retry
             )
@@ -301,7 +329,7 @@ pub async fn mpdcom_task(
 
             conn_try_time = Some( Instant::now() );
 
-            match TcpStream::connect( &mpd_addr ).await
+            match TcpStream::connect( &mpd_exec.addr ).await
             {
                 Ok( mut x ) =>
                 {
@@ -319,7 +347,7 @@ pub async fn mpdcom_task(
                     }
                     else
                     {
-                        conn = Some( x );
+                        mpd_exec.conn = Some( x );
                         _mpd_version = Some( String::from( buf[7..].trim() ) )
                     }
                 }
@@ -330,14 +358,14 @@ pub async fn mpdcom_task(
             }
         }
 
-        if conn.is_some() &&
+        if mpd_exec.conn.is_some() &&
             (   status_try_time.is_none()
             ||  status_try_time.unwrap().elapsed() > status_time_out
             )
         {
             let mut status_ok = false;
 
-            match mpdcon_exec( String::from( "status" ), conn.as_mut().unwrap(), false ).await
+            match mpd_exec.exec( String::from( "status" ), false ).await
             {
                 Ok(mut x) =>
                 {
@@ -393,7 +421,7 @@ pub async fn mpdcom_task(
                     {
                         for si in songids
                         {
-                            match mpdcon_exec( format!( "playlistid {}", si ), conn.as_mut().unwrap(), false ).await
+                            match mpd_exec.exec( format!( "playlistid {}", si ), false ).await
                             {
                                 Ok( x1 ) =>
                                 {
@@ -436,8 +464,8 @@ pub async fn mpdcom_task(
             ,   Err(x) =>
                 {
                     log::warn!( "connection error [{:?}]", x );
-                    conn.as_mut().unwrap().shutdown();
-                    conn = None;
+                    mpd_exec.conn.as_mut().unwrap().shutdown();
+                    mpd_exec.conn = None;
                     conn_try_time = Some( Instant::now() );
                 }
             }
@@ -468,14 +496,21 @@ pub async fn mpdcom_task(
                 {
                     MpdComRequestType::Shutdown =>
                     {
-                        if conn.is_some()
+                        if mpd_exec.conn.is_some()
                         {
                             log::info!( "connection close" );
-                            conn.as_mut().unwrap().shutdown();
+                            mpd_exec.conn.as_mut().unwrap().shutdown();
                         }
 
                         recv.tx.send( Ok( MpdComOk::new() ) ).ok();
                         break;
+                    }
+
+                ,   MpdComRequestType::UpdateConfigDyn =>
+                    {
+                        mpd_exec.aux_names = arwlctx.read().await.aux_names();
+
+                        log::debug!( "aux_names {:?}", mpd_exec.aux_names );
                     }
 
                 ,   MpdComRequestType::SetVol( volume ) =>
@@ -500,7 +535,7 @@ pub async fn mpdcom_task(
                                 {
                                     let cmd = String::from( "setvol " ) + &vol.to_string();
 
-                                    match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                                    match mpd_exec.exec( cmd, mpd_protolog ).await
                                     {
                                         Ok(x) =>
                                         {
@@ -509,8 +544,8 @@ pub async fn mpdcom_task(
                                     ,   Err(x) =>
                                         {
                                             log::warn!( "connection error [{:?}]", x );
-                                            conn.as_mut().unwrap().shutdown();
-                                            conn = None;
+                                            mpd_exec.conn.as_mut().unwrap().shutdown();
+                                            mpd_exec.conn = None;
                                             conn_try_time = Some( Instant::now() );
 
                                             recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
@@ -551,7 +586,7 @@ pub async fn mpdcom_task(
                                 String::from( "setvol " ) + &ctx.mpd_volume.to_string()
                             };
 
-                        match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                        match mpd_exec.exec( cmd, mpd_protolog ).await
                         {
                             Ok(x) =>
                             {
@@ -563,8 +598,8 @@ pub async fn mpdcom_task(
                         ,   Err(x) =>
                             {
                                 log::warn!( "connection error [{:?}]", x );
-                                conn.as_mut().unwrap().shutdown();
-                                conn = None;
+                                mpd_exec.conn.as_mut().unwrap().shutdown();
+                                mpd_exec.conn = None;
                                 conn_try_time = Some( Instant::now() );
 
                                 recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
@@ -580,7 +615,7 @@ pub async fn mpdcom_task(
                             ,   _                   => false
                             };
 
-                        match Url::parse( &url )
+                        match context::check_url( &url )
                         {
                             Ok(_) =>
                             {
@@ -588,7 +623,7 @@ pub async fn mpdcom_task(
 
                                 log::debug!( "addid {}", &url );
 
-                                match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                                match mpd_exec.exec( cmd, mpd_protolog ).await
                                 {
                                     Ok(x) =>
                                     {
@@ -602,8 +637,8 @@ pub async fn mpdcom_task(
                                 ,   Err(x) =>
                                     {
                                         log::warn!( "connection error [{:?}]", x );
-                                        conn.as_mut().unwrap().shutdown();
-                                        conn = None;
+                                        mpd_exec.conn.as_mut().unwrap().shutdown();
+                                        mpd_exec.conn = None;
                                         conn_try_time = Some( Instant::now() );
 
                                         recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
@@ -638,7 +673,7 @@ pub async fn mpdcom_task(
 
                             log::debug!( "addid {}", &url );
 
-                            match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                            match mpd_exec.exec( cmd, mpd_protolog ).await
                             {
                                 Ok( x ) =>
                                 {
@@ -660,8 +695,8 @@ pub async fn mpdcom_task(
                             ,   Err(x) =>
                                 {
                                     log::warn!( "connection error [{:?}]", x );
-                                    conn.as_mut().unwrap().shutdown();
-                                    conn = None;
+                                    mpd_exec.conn.as_mut().unwrap().shutdown();
+                                    mpd_exec.conn = None;
                                     conn_try_time = Some( Instant::now() );
                                 }
                             }
@@ -679,9 +714,9 @@ pub async fn mpdcom_task(
 
                 ,   MpdComRequestType::Cmd( cmd ) =>
                     {
-                        if cmd != "close" && conn.is_some()
+                        if cmd != "close" && mpd_exec.conn.is_some()
                         {
-                            match mpdcon_exec( cmd, conn.as_mut().unwrap(), mpd_protolog ).await
+                            match mpd_exec.exec( cmd, mpd_protolog ).await
                             {
                                 Ok(x) =>
                                 {
@@ -690,8 +725,8 @@ pub async fn mpdcom_task(
                             ,   Err(x) =>
                                 {
                                     log::warn!( "connection error [{:?}]", x );
-                                    conn.as_mut().unwrap().shutdown();
-                                    conn = None;
+                                    mpd_exec.conn.as_mut().unwrap().shutdown();
+                                    mpd_exec.conn = None;
                                     conn_try_time = Some( Instant::now() );
 
                                     recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();

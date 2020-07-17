@@ -553,10 +553,17 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
             {
                 return Ok( json_response( &context::ConfigDynOutputResult::Err( err ) ) )
             }
+            else
+            {
+                let ( mut req, _ ) = mpdcom::MpdComRequest::new();
+                req.req = mpdcom::MpdComRequestType::UpdateConfigDyn;
+                let _ = ctx.mpdcom_tx.send( req ).await;
+            }
         }
     }
 
     let ctx = arwlctx.read().await;
+
 
     Ok( json_response( &context::ConfigDynOutputResult::Ok( ctx.make_config_dyn_output() ) ) )
 }

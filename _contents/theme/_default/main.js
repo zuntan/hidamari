@@ -1235,6 +1235,13 @@ function()
 		}
 	);
 
+	$( ".x_testsound_add" ).click(
+		function()
+		{
+			$.getJSON( "/cmd", { cmd : "testsound" } );
+		}
+	);
+
 	$( ".x_st_theme_apply" ).click(
 		function()
 		{

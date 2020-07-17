@@ -311,7 +311,7 @@ function()
 
 						var v = 0.5 * st.sqlv * jQuery.easing.swing( st.sqlv );
 
-						var zm = 1.1 + Math.cos( 2 * Math.PI * t1 ) * v;
+						var zm = 1.2 + Math.cos( 2 * Math.PI * t1 ) * v;
 
 						ctx.transform( zm, Math.cos( 2 * Math.PI * t1 ) * v, Math.sin( 2 * Math.PI * t1 ) * v, zm, 0, 0 );
 
@@ -386,7 +386,7 @@ function()
 							ctx.save();
 
 							ctx.strokeStyle = clr( v );
-							ctx.lineWidth = spec.length <= 10 ? 9 : 5;
+							ctx.lineWidth = spec.length <= 10 ? 9 : 4;
 
 							ctx.rotate( Math.PI * p );
 

@@ -48,7 +48,8 @@ function()
 
 			$( pos ).append( t );
 			t.show();
-			setTimeout( function() { t.fadeOut( 'slow' ) }, 1000 );
+
+			$.hidamari.flush_and_hide_item( t );
 		}
 	}
 
@@ -148,6 +149,7 @@ function()
 				.done( function( json )
 					{
 						update_error( json, ".x_st_aux_in_err" );
+						update_ok( json, ".x_st_aux_in_ok" );
 						update_aux_in( json );
 					}
 				);
@@ -174,6 +176,7 @@ function()
 				)
 				.done( function( json )
 					{
+						update_ok( json, ".x_st_theme_ok" );
 						update_theme( json );
 					}
 				);
@@ -192,6 +195,7 @@ function()
 				)
 				.done( function( json )
 					{
+						update_ok( json, ".x_st_anidelay_ok" );
 						update_anidelay( json );
 					}
 				);
@@ -306,6 +310,7 @@ function()
 				)
 				.done( function( json )
 					{
+						update_ok( json, ".x_st_dev_config_update_ok" );
 						update_error( json, ".x_st_dev_config_update_err" );
 
 						if( json.Ok )

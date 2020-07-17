@@ -7,6 +7,11 @@
 
     <style type="text/css"><!--
 
+.x_flush
+{
+    filter : contrast(1.3) brightness(1.3);
+}
+
 --></style>
 
     <title>Hidamari Setting</title>
@@ -74,7 +79,7 @@
             <h6 class="x_st_url_list_ok">URL List</h6>
 
              <div class="container-fluid d-flex align-items-start">
-                <textarea class="flex-fill            x_st_url_list"></textarea>
+                <textarea class="flex-fill            x_st_url_list" rows="3"></textarea>
                 <button class="btn btn-primary btn-sm x_st_url_list_update" type="button">URL list update</button>
              </div>
 
@@ -84,10 +89,10 @@
         </div>
 
         <div class="container-fluid my-2">
-            <h6>AUX list</h6>
+            <h6 class="x_st_aux_in_ok">AUX list</h6>
 
              <div class="container-fluid d-flex align-items-start">
-                <textarea class="flex-fill            x_st_aux_in"></textarea>
+                <textarea class="flex-fill            x_st_aux_in" rows="3"></textarea>
                 <button class="btn btn-primary btn-sm x_st_aux_in_update" type="button">AUX list update</button>
             </div>
             <div class="container-fluid d-flex align-items-start">
@@ -128,7 +133,7 @@
     </div>
 
     <div class="container-fluid mt-5">
-        <h5>Theme Settings</h5>
+        <h5 class="x_st_theme_ok">Theme Settings</h5>
 
         <div class="input-group input-group-sm">
 
@@ -149,7 +154,7 @@
     </div>
 
     <div class="container-fluid mt-5">
-        <h5>Animation Settings</h5>
+        <h5 class="x_st_anidelay_ok">Animation Settings</h5>
 
         <div class="input-group input-group-sm mt-2">
 
@@ -236,11 +241,11 @@
             </div>
 
             <div class="container-fluid mt-3">
-                <h6>Hidamari Config</h6>
+                <h6 class="x_st_dev_config_update_ok">Hidamari Config</h6>
 
                 <div class="container-fluid d-flex align-items-start">
                     <button class="btn btn-primary btn-sm x_st_dev_config_get" type="button">Config get</button>
-                    <textarea class="flex-fill            x_st_dev_config_get_result"></textarea>
+                    <textarea class="flex-fill            x_st_dev_config_get_result" rows="3"></textarea>
                     <button class="btn btn-primary btn-sm x_st_dev_config_update" type="button">Config Update</button>
                 </div>
                 <div class="container-fluid d-flex align-items-start">

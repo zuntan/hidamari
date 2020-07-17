@@ -244,6 +244,50 @@ function()
 			}
 		}
 
+	,	flush_and_hide_item : function()
+		{
+			var flush_item_impl = function( _f, _a )
+			{
+				return function()
+				{
+					$.each( _a
+					,	function( i, v )
+						{
+							$(v).toggleClass( "x_flush", _f );
+						}
+					);
+				};
+			}
+
+			var hide_item_impl = function( _a )
+			{
+				return function()
+				{
+					$.each( _a
+					,	function( i, v )
+						{
+							$(v).hide( 'fast' )
+						}
+					);
+				};
+			}
+
+			var i = 0;
+
+			for( ; i < 4 ; ++i )
+			{
+				setTimeout(
+					flush_item_impl( i % 2, arguments )
+				,	i * 75
+				);
+			}
+
+			setTimeout(
+				hide_item_impl( arguments )
+			,	( 10 ) * 75
+			);
+		}
+
 	,	select_item : function( /* bool, array */ )
 		{
 			var _a = Array.from( arguments );

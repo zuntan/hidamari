@@ -10,7 +10,7 @@ use std::io;
 use std::io::prelude::*;
 use std::path::{ PathBuf };
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{ HashMap, HashSet };
 use std::fs;
 use std::net::{ SocketAddr, ToSocketAddrs };
 
@@ -48,6 +48,8 @@ pub const _HEADER_SHOUTCAST_ICY_BR_KEY          : &str = "icy-br";
 pub const _HEADER_SHOUTCAST_ICY_PUB_KEY         : &str = "icy-pub";
 pub const _HEADER_SHOUTCAST_ICY_PUB_VAL         : &str = "1";
 pub const _HEADER_SHOUTCAST_ICY_DESC_KEY        : &str = "icy-description";
+
+pub const PROTP_ALSA : &str = "alsa://";
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -219,6 +221,8 @@ pub struct Context
 , pub   version         : String
 }
 
+pub type AuxNameDic = HashMap< String, String >;
+
 impl Context
 {
     pub fn new(
@@ -350,28 +354,6 @@ impl Context
         }
     }
 
-    fn check_url_list( list : &Vec< String > ) -> Option< ConfigDynOutputError >
-    {
-        for url in list
-        {
-            let url = url.trim();
-
-            if url != ""
-            {
-                if let Err( x ) = Url::parse( &url )
-                {
-                    return Some(
-                        ConfigDynOutputError
-                        {
-                            err_msg : String::from( format!( "URL ParseError {:?} [{}]", x, &url ) )
-                        }
-                    );
-                };
-            }
-        }
-
-        None
-    }
 
     pub fn update_config_dyn( &mut self, newval : &str ) -> Option< ConfigDynOutputError >
     {
@@ -385,7 +367,7 @@ impl Context
 
                 if let Some( ref x ) = nv.url_list
                 {
-                    let ret = Self::check_url_list( x );
+                    let ret = check_url_list( x );
 
                     if ret.is_some()
                     {
@@ -395,7 +377,7 @@ impl Context
 
                 if let Some( ref x ) = nv.aux_in
                 {
-                    let ret = Self::check_url_list( x );
+                    let ret = check_url_list( x );
 
                     if ret.is_some()
                     {
@@ -419,14 +401,14 @@ impl Context
 
                 if let Some( x ) = nv.url_list
                 {
-                    let x = x.iter().map( | x | x.trim() ).find( | x | x.trim() != "" ).collect();
+                    let x = make_uniq_list( &x );
                     log::debug!( "update dyn url_list {:?}", x );
                     self.config_dyn.url_list = x;
                 }
 
                 if let Some( x ) = nv.aux_in
                 {
-                    let x = x.iter().map( | x | x.trim() ).find( | x | x.trim() != "" ).collect();
+                    let x = make_uniq_list( &x );
                     log::debug!( "update dyn aux_in {:?}", x );
                     self.config_dyn.aux_in  = x;
                 }
@@ -496,6 +478,66 @@ impl Context
             Vec::< String >::new()
         }
     }
+
+    pub fn aux_names( &self ) -> AuxNameDic
+    {
+        let mut ret = HashMap::< String, String >::new();
+
+        for ( i, n ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
+        {
+            ret.insert( String::from( n ), String::from( format!( "AUX IN {}", i + 1 ) ) );
+        }
+
+        ret
+    }
+}
+
+pub fn check_url_list( list : &Vec< String > ) -> Option< ConfigDynOutputError >
+{
+    for url in make_uniq_list( list ).iter().filter( | x | !x.starts_with( PROTP_ALSA ) )
+    {
+        if let Err( x ) = check_url( &url )
+        {
+            return Some(
+                ConfigDynOutputError
+                {
+                    err_msg : String::from( format!( "URL ParseError {:?} [{}]", x, &url ) )
+                }
+            );
+        };
+    }
+
+    None
+}
+
+pub fn check_url( url : &str ) -> Result< (), url::ParseError >
+{
+    if !url.starts_with( PROTP_ALSA )
+    {
+        if let Err( x ) = Url::parse( &url )
+        {
+            return Err( x );
+        }
+    }
+
+    Ok( () )
+}
+
+pub fn make_uniq_list( list : &Vec< String > ) -> Vec< String >
+{
+    let mut dic = HashSet::< String >::new();
+    let mut ret = Vec::< String >::new();
+
+    for t in list.iter().map( | x | String::from( x.trim() ) ).filter( | x | x != "" )
+    {
+        if !dic.contains( &t )
+        {
+            dic.insert( String::from( &t ) );
+            ret.push( String::from( &t ) )
+        }
+    }
+
+    ret
 }
 
 ///
