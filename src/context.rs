@@ -34,6 +34,7 @@ pub const THEME_HIDE_DIR    : &str = "^[_.]";
 
 pub const SOUNDS_DIR        : &str = "sounds";
 pub const TESTSOUNDS_NAME   : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
+//pub const TESTSOUNDS_NAME   : &str = r"^test-44100-1-16-10s-cord_a.mp3";
 
 pub const SOUNDS_URL_PATH   : &str = "sounds";
 
@@ -221,7 +222,7 @@ pub struct Context
 , pub   version         : String
 }
 
-pub type AuxNameDic = HashMap< String, String >;
+pub type UrlNameList = Vec< ( String, String ) >;
 
 impl Context
 {
@@ -437,7 +438,7 @@ impl Context
         }
     }
 
-    pub fn testsound_url( &self ) -> Vec< String >
+    pub fn testsound_url( &self ) -> UrlNameList
     {
         if let Some( self_url_for_mpd ) = self.config.self_url_for_mpd()
         {
@@ -445,7 +446,7 @@ impl Context
 
             path.push( SOUNDS_DIR );
 
-            let mut ts = Vec::< String >::new();
+            let mut ts = UrlNameList::new();
 
             if let Ok( entries ) = fs::read_dir( path )
             {
@@ -463,7 +464,46 @@ impl Context
 
                             if RE.is_match( &entry_fn )
                             {
-                                ts.push( format!( "{}{}/{}", &self_url_for_mpd, SOUNDS_URL_PATH, entry_fn ) );
+                                let mut title = String::new();
+
+                                match mp3_metadata::read_from_file( entry.path() )
+                                {
+                                    Ok( mp3md ) =>
+                                    {
+                                        if let Some( x ) = mp3md.optional_info.iter().rev().find( |x| x.title.is_some() )
+                                        {
+                                            if let Some( ref x ) = x.title
+                                            {
+                                                title = String::from( x );
+                                            }
+                                        }
+
+                                        if title == ""
+                                        {
+                                            if let Some( x ) = mp3md.tag
+                                            {
+                                                title = x.title;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            title = String::from( title.trim_matches( | c | c == ' ' || c == '\u{0}' ) );
+                                        }
+                                    }
+                                ,   Err( x ) =>
+                                    {
+                                        log::error!( "mp3_metadata error {:?}", x );
+                                    }
+                                }
+
+                                let entry = (
+                                    format!( "{}{}/{}", &self_url_for_mpd, SOUNDS_URL_PATH, entry_fn )
+                                ,   title
+                                );
+
+                                log::debug!( "mp3_metadata {:?}", &entry );
+
+                                ts.push( entry );
                             }
                         }
                     }
@@ -475,17 +515,17 @@ impl Context
         }
         else
         {
-            Vec::< String >::new()
+            UrlNameList::new()
         }
     }
 
-    pub fn aux_names( &self ) -> AuxNameDic
+    pub fn aux_names( &self ) -> UrlNameList
     {
-        let mut ret = HashMap::< String, String >::new();
+        let mut ret = UrlNameList::new();
 
         for ( i, n ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
         {
-            ret.insert( String::from( n ), String::from( format!( "AUX IN {}", i + 1 ) ) );
+            ret.push( ( String::from( n ), String::from( format!( "AUX IN {}", i + 1 ) ) ) );
         }
 
         ret

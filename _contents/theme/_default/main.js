@@ -303,7 +303,9 @@ function()
 	$( ".x_playlist_remove" ).click(
 		function()
 		{
-			$.each( $( ".x_playlist_item_select" ),
+			var t = $( ".x_playlist_item_select" );
+
+			$.each( t.get().reverse(),
 				function( i, v )
 				{
 					if( !!( $(v).data( "x_selected" ) ) )
@@ -963,11 +965,26 @@ function()
 				{
 					var aa = d[ 'audio' ].split( ':' );
 
-					a += " " + aa[ 0 ] + "Hz";
-					a += " " + aa[ 1 ] + "bit";
-					a += " " + aa[ 2 ] + "ch";
+					if( aa[ 0 ].match( /[0-9]+/ )  && aa[ 0 ] > 0 )
+					{
+						a += " " + aa[ 0 ] + "Hz";
+					}
+
+					if( aa[ 1 ].match( /[0-9]+/ ) && aa[ 1 ] > 0 )
+					{
+						a += " " + aa[ 1 ] + "bit";
+					}
+
+					if( aa[ 2 ].match( /[0-9]+/ ) && aa[ 2 ] > 0 )
+					{
+						a += " " + aa[ 2 ] + "ch";
+					}
 				}
-				if( d[ 'bitrate' ] ) { a += " bitrate: " + d[ 'bitrate' ] + "Kb"; }
+
+				if( d[ 'bitrate' ] && d[ 'bitrate' ].match( /[0-9]+/ ) && d[ 'bitrate' ] > 0 )
+				{
+					a += " bitrate: " + d[ 'bitrate' ] + "Kb";
+				}
 
 				$( ".x_player_title_3" ).text( a );
 			}
@@ -1139,7 +1156,8 @@ function()
 					t.addClass( "x_aux_in_add" );
 
 					t.text( "AUX IN " + ( i + 1 ) );
-					t.data( "url", json.Ok.aux_in[ i ] );
+					t.data( "x_aux_val", json.Ok.aux_in[ i ] );
+					t.data( "x_aux_id", ( i + 1 ) );
 					m.before( t );
 					t.show();
 				}
@@ -1148,7 +1166,30 @@ function()
 			$( ".x_aux_in_add" ).click(
 				function()
 				{
-					add_url( $( this ).data( "url" ), false );
+					var id = $( this ).data( "x_aux_id" );
+
+					if( id )
+					{
+						$.getJSON( "/cmd", { cmd : "addauxin", arg1 : id } )
+							.done( function( json )
+								{
+									if( json.Ok )
+									{
+										var kv = $.hidamari.parse_flds( json.Ok.flds )
+
+										if( kv[ 'Id' ] )
+										{
+											$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+										}
+									}
+									else if( json.Err && json.Err.msg_text )
+									{
+										url_add_error( url, json.Err.msg_text );
+									}
+								}
+							);
+					}
+
 				}
 			);
 		}
@@ -1198,40 +1239,38 @@ function()
 
 	$( ".x_url_add_err_m" ).hide();
 
-	var add_url = function( url, append )
-	{
-		if( url )
-		{
-			$.getJSON( "/cmd", { cmd : "addurl", arg1 : url, arg2 : append } )
-				.done( function( json )
-					{
-						if( json.Ok )
-						{
-							var kv = $.hidamari.parse_flds( json.Ok.flds )
-
-							if( kv[ 'Id' ] )
-							{
-								$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
-							}
-
-							$( ".x_url" ).val( "" );
-
-							update_config();
-						}
-						else if( json.Err && json.Err.msg_text )
-						{
-							url_add_error( url, json.Err.msg_text );
-						}
-					}
-				);
-		}
-	}
-
 	$( ".x_url_add" ).click(
 		function()
 		{
 			$( ".x_url_add_err" ).remove();
-			add_url( $( ".x_url" ).val(), true );
+
+			var url = $( ".x_url" ).val();
+
+			if( url )
+			{
+				$.getJSON( "/cmd", { cmd : "addurl", arg1 : url, arg2 : true } )
+					.done( function( json )
+						{
+							if( json.Ok )
+							{
+								var kv = $.hidamari.parse_flds( json.Ok.flds )
+
+								if( kv[ 'Id' ] )
+								{
+									$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+								}
+
+								$( ".x_url" ).val( "" );
+
+								update_config();
+							}
+							else if( json.Err && json.Err.msg_text )
+							{
+								url_add_error( url, json.Err.msg_text );
+							}
+						}
+					);
+			}
 		}
 	);
 

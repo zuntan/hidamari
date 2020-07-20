@@ -104,8 +104,8 @@ pub enum MpdComRequestType
 ,   SetVol( String )
 ,   SetMute( String )
 ,   AddUrl( ( String, String ) )
+,   AddAuxIn( String )
 ,   TestSound
-,   UpdateConfigDyn
 ,   Shutdown
 }
 
@@ -146,11 +146,16 @@ pub fn quote_arg( arg: &str ) -> String
     arg
 }
 
+///
+pub fn quote_arg_f( arg: &str ) -> String
+{
+    String::from( "\"" ) + &String::from( arg.replace( '\\', r"\\" ).replace( '"', r#"\""# ) ) + "\""
+}
+
 struct MpdcomExec
 {
     addr        : SocketAddr
 ,   conn        : Option< TcpStream >
-,   aux_names   : context::AuxNameDic
 }
 
 ///
@@ -256,19 +261,6 @@ impl MpdcomExec
                             ,   String::from( x[2].trim() )
                             )
                         );
-
-                        if( x[1].trim() ) == "file"
-                        {
-                            if let Some( name ) = self.aux_names.get( x[2].trim() )
-                            {
-                                ret_ok.flds.push(
-                                    (
-                                        String::from( "Name" )
-                                    ,   String::from( name )
-                                    )
-                                );
-                            }
-                        }
                     }
                 }
             }
@@ -300,7 +292,6 @@ pub async fn mpdcom_task(
             {
                 addr        : ctx.config.mpd_addr()
             ,   conn        : None
-            ,   aux_names   : ctx.aux_names()
             }
         ,   ctx.config.mpd_protolog
         )
@@ -506,13 +497,6 @@ pub async fn mpdcom_task(
                         break;
                     }
 
-                ,   MpdComRequestType::UpdateConfigDyn =>
-                    {
-                        mpd_exec.aux_names = arwlctx.read().await.aux_names();
-
-                        log::debug!( "aux_names {:?}", mpd_exec.aux_names );
-                    }
-
                 ,   MpdComRequestType::SetVol( volume ) =>
                     {
                         if let Ok( vol ) = u8::from_str( &volume )
@@ -656,6 +640,117 @@ pub async fn mpdcom_task(
                         }
                     }
 
+                ,   MpdComRequestType::AddAuxIn( no ) =>
+                    {
+                        let aux_names =
+                        {
+                            arwlctx.read().await.aux_names()
+                        };
+
+                        let mut ret_ok = MpdComOk::new();
+                        let mut ret_err : Option< MpdComErr > = None;
+
+                        match usize::from_str( &no )
+                        {
+                            Ok( no ) if no >= 1 && no <= aux_names.len() =>
+                            {
+                                let no = no - 1;
+
+                                let url = String::from( &aux_names[ no ].0 );
+                                let cmd = String::from( "addid " ) + &quote_arg( &url );
+
+                                log::debug!( "addauxin {}", &cmd );
+
+                                match mpd_exec.exec( cmd, mpd_protolog ).await
+                                {
+                                    Ok( x ) =>
+                                    {
+                                        match x
+                                        {
+                                            Ok( mut x ) =>
+                                            {
+                                                ret_ok.flds.push( ( String::from( "file" ), String::from( &url ) ) );
+                                                ret_ok.flds.append( &mut x.flds );
+
+                                                if let Some( x ) = ret_ok.flds.iter().find( | x | x.0 == "Id" )
+                                                {
+                                                    let id = &x.1;
+
+                                                    let cmd = String::from( "addtagid " ) + &quote_arg( id ) + r#" "Title" "# + &quote_arg_f( &aux_names[ no ].1 );
+
+                                                    log::debug!( "addauxin [{}]", &cmd );
+
+                                                    match mpd_exec.exec( cmd, mpd_protolog ).await
+                                                    {
+                                                        Ok( x ) =>
+                                                        {
+                                                            match x
+                                                            {
+                                                                Ok( _ ) =>
+                                                                {
+                                                                    ret_ok.flds.push( ( String::from( "Title" ), String::from( &aux_names[ no ].1 ) ) );
+                                                                }
+                                                            ,   Err( x ) =>
+                                                                {
+                                                                    log::warn!( "error [{:?}]", x );
+                                                                    ret_err = Some( x );
+                                                                }
+                                                            }
+                                                        }
+                                                    ,   Err(x) =>
+                                                        {
+                                                            log::warn!( "connection error [{:?}]", x );
+                                                            mpd_exec.conn.as_mut().unwrap().shutdown();
+                                                            mpd_exec.conn = None;
+                                                            conn_try_time = Some( Instant::now() );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ,   Err( x ) =>
+                                            {
+                                                log::warn!( "error [{:?}]", x );
+                                                ret_err = Some( x );
+                                            }
+                                        }
+                                    }
+                                ,   Err(x) =>
+                                    {
+                                        log::warn!( "connection error [{:?}]", x );
+                                        mpd_exec.conn.as_mut().unwrap().shutdown();
+                                        mpd_exec.conn = None;
+                                        conn_try_time = Some( Instant::now() );
+                                    }
+                                }
+
+                                if let Some( x ) = ret_err
+                                {
+                                    recv.tx.send( Err( x ) ).ok();
+                                }
+                                else
+                                {
+                                    recv.tx.send( Ok( ret_ok ) ).ok();
+                                }
+                            }
+                        ,   Ok( x ) =>
+                            {
+                                let mut err = MpdComErr::new( -4 );
+
+                                err.msg_text = String::from( format!( "Range error [{:?}]", x ) );
+
+                                recv.tx.send( Err( err ) ).ok();
+                            }
+                        ,   Err( x ) =>
+                            {
+                                let mut err = MpdComErr::new( -4 );
+
+                                err.msg_text = String::from( format!( "{:?}", x ) );
+
+                                recv.tx.send( Err( err ) ).ok();
+                            }
+                        }
+                    }
+
                 ,   MpdComRequestType::TestSound =>
                     {
                         let testsound_url =
@@ -667,11 +762,11 @@ pub async fn mpdcom_task(
                         let mut ret_ok = MpdComOk::new();
                         let mut ret_err : Option< MpdComErr > = None;
 
-                        for url in testsound_url
+                        for ( url, title ) in testsound_url
                         {
                             let cmd = String::from( "addid " ) + &quote_arg( &url );
 
-                            log::debug!( "addid {}", &url );
+                            log::debug!( "testsound {} {}", &url, title );
 
                             match mpd_exec.exec( cmd, mpd_protolog ).await
                             {
@@ -681,8 +776,54 @@ pub async fn mpdcom_task(
                                     {
                                         Ok( mut x ) =>
                                         {
+                                            let id =
+                                                if let Some( x ) = x.flds.iter().find( | x | x.0 == "Id" )
+                                                {
+                                                    Some( String::from( &x.1 ) )
+                                                }
+                                                else
+                                                {
+                                                    None
+                                                };
+
                                             ret_ok.flds.push( ( String::from( "file" ), String::from( &url ) ) );
                                             ret_ok.flds.append( &mut x.flds );
+
+                                            if title != ""
+                                            {
+                                                if let Some( id ) = id
+                                                {
+                                                    let cmd = String::from( "addtagid " ) + &quote_arg( &id ) + r#" "Title" "# + &quote_arg_f( &title );
+
+                                                    log::debug!( "testsound [{}]", &cmd );
+
+                                                    match mpd_exec.exec( cmd, mpd_protolog ).await
+                                                    {
+                                                        Ok( x ) =>
+                                                        {
+                                                            match x
+                                                            {
+                                                                Ok( _ ) =>
+                                                                {
+                                                                    ret_ok.flds.push( ( String::from( "Title" ), String::from( &title ) ) );
+                                                                }
+                                                            ,   Err( x ) =>
+                                                                {
+                                                                    log::warn!( "error [{:?}]", x );
+                                                                    ret_err = Some( x );
+                                                                }
+                                                            }
+                                                        }
+                                                    ,   Err(x) =>
+                                                        {
+                                                            log::warn!( "connection error [{:?}]", x );
+                                                            mpd_exec.conn.as_mut().unwrap().shutdown();
+                                                            mpd_exec.conn = None;
+                                                            conn_try_time = Some( Instant::now() );
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     ,   Err( x ) =>
                                         {

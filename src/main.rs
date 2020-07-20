@@ -437,6 +437,19 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+            ,   "addauxin" =>
+                {
+                    if self.arg1.is_some()
+                    {
+                        let no = String::from( self.arg1.as_ref().unwrap().as_str() );
+
+                        mpdcom::MpdComRequestType::AddAuxIn( no )
+                    }
+                    else
+                    {
+                        mpdcom::MpdComRequestType::Nop
+                    }
+                }
             ,   "testsound" =>
                 {
                     mpdcom::MpdComRequestType::TestSound
@@ -552,12 +565,6 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
             if let Some( err ) = ctx.update_config_dyn( &newval )
             {
                 return Ok( json_response( &context::ConfigDynOutputResult::Err( err ) ) )
-            }
-            else
-            {
-                let ( mut req, _ ) = mpdcom::MpdComRequest::new();
-                req.req = mpdcom::MpdComRequestType::UpdateConfigDyn;
-                let _ = ctx.mpdcom_tx.send( req ).await;
             }
         }
     }
