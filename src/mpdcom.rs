@@ -642,9 +642,9 @@ pub async fn mpdcom_task(
 
                 ,   MpdComRequestType::AddAuxIn( no ) =>
                     {
-                        let aux_names =
+                        let aux_in_urllist =
                         {
-                            arwlctx.read().await.aux_names()
+                            arwlctx.read().await.aux_in_urllist()
                         };
 
                         let mut ret_ok = MpdComOk::new();
@@ -652,11 +652,11 @@ pub async fn mpdcom_task(
 
                         match usize::from_str( &no )
                         {
-                            Ok( no ) if no >= 1 && no <= aux_names.len() =>
+                            Ok( no ) if no >= 1 && no <= aux_in_urllist.len() =>
                             {
                                 let no = no - 1;
 
-                                let url = String::from( &aux_names[ no ].0 );
+                                let url = String::from( &aux_in_urllist[ no ].0 );
                                 let cmd = String::from( "addid " ) + &quote_arg( &url );
 
                                 log::debug!( "addauxin {}", &cmd );
@@ -676,7 +676,7 @@ pub async fn mpdcom_task(
                                                 {
                                                     let id = &x.1;
 
-                                                    let cmd = String::from( "addtagid " ) + &quote_arg( id ) + r#" "Title" "# + &quote_arg_f( &aux_names[ no ].1 );
+                                                    let cmd = String::from( "addtagid " ) + &quote_arg( id ) + r#" "Title" "# + &quote_arg_f( &aux_in_urllist[ no ].1 );
 
                                                     log::debug!( "addauxin [{}]", &cmd );
 
@@ -688,7 +688,7 @@ pub async fn mpdcom_task(
                                                             {
                                                                 Ok( _ ) =>
                                                                 {
-                                                                    ret_ok.flds.push( ( String::from( "Title" ), String::from( &aux_names[ no ].1 ) ) );
+                                                                    ret_ok.flds.push( ( String::from( "Title" ), String::from( &aux_in_urllist[ no ].1 ) ) );
                                                                 }
                                                             ,   Err( x ) =>
                                                                 {
@@ -753,16 +753,15 @@ pub async fn mpdcom_task(
 
                 ,   MpdComRequestType::TestSound =>
                     {
-                        let testsound_url =
+                        let testsound_urllist =
                         {
-                            let ctx = arwlctx.read().await;
-                            ctx.testsound_url()
+                            arwlctx.read().await.testsound_urllist()
                         };
 
                         let mut ret_ok = MpdComOk::new();
                         let mut ret_err : Option< MpdComErr > = None;
 
-                        for ( url, title ) in testsound_url
+                        for ( url, title ) in testsound_urllist
                         {
                             let cmd = String::from( "addid " ) + &quote_arg( &url );
 

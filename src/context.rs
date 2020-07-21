@@ -6,6 +6,7 @@
 
 ///
 ///
+
 use std::io;
 use std::io::prelude::*;
 use std::path::{ PathBuf };
@@ -32,11 +33,11 @@ pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
 
-pub const SOUNDS_DIR        : &str = "sounds";
-pub const TESTSOUNDS_NAME   : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
-//pub const TESTSOUNDS_NAME   : &str = r"^test-44100-1-16-10s-cord_a.mp3";
+pub const TESTSOUND_DIR     : &str = "tsound";
+pub const TESTSOUND_NAME    : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
+//pub const TESTSOUND_NAME  : &str = r"^test-44100-1-16-10s-cord_a.mp3";
 
-pub const SOUNDS_URL_PATH   : &str = "sounds";
+pub const TESTSOUND_URL_PATH    : &str = "tsound";
 
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
 
@@ -222,7 +223,7 @@ pub struct Context
 , pub   version         : String
 }
 
-pub type UrlNameList = Vec< ( String, String ) >;
+pub type UrlTitleList = Vec< ( String, String ) >;
 
 impl Context
 {
@@ -296,11 +297,11 @@ impl Context
         path
     }
 
-    pub fn get_sounds_path( &self ) -> PathBuf
+    pub fn get_tsound_path( &self ) -> PathBuf
     {
         let mut path = self.get_contents_path();
 
-        path.push( SOUNDS_DIR );
+        path.push( TESTSOUND_DIR );
 
         path
     }
@@ -368,7 +369,7 @@ impl Context
 
                 if let Some( ref x ) = nv.url_list
                 {
-                    let ret = check_url_list( x );
+                    let ret = check_urls( x );
 
                     if ret.is_some()
                     {
@@ -378,7 +379,7 @@ impl Context
 
                 if let Some( ref x ) = nv.aux_in
                 {
-                    let ret = check_url_list( x );
+                    let ret = check_urls( x );
 
                     if ret.is_some()
                     {
@@ -438,15 +439,15 @@ impl Context
         }
     }
 
-    pub fn testsound_url( &self ) -> UrlNameList
+    pub fn testsound_urllist( &self ) -> UrlTitleList
     {
         if let Some( self_url_for_mpd ) = self.config.self_url_for_mpd()
         {
             let mut path = self.get_contents_path();
 
-            path.push( SOUNDS_DIR );
+            path.push( TESTSOUND_DIR );
 
-            let mut ts = UrlNameList::new();
+            let mut ts = UrlTitleList::new();
 
             if let Ok( entries ) = fs::read_dir( path )
             {
@@ -459,7 +460,7 @@ impl Context
                             lazy_static!
                             {
                                 static ref RE : regex::Regex =
-                                    regex::Regex::new( TESTSOUNDS_NAME ).unwrap();
+                                    regex::Regex::new( TESTSOUND_NAME ).unwrap();
                             }
 
                             if RE.is_match( &entry_fn )
@@ -497,7 +498,7 @@ impl Context
                                 }
 
                                 let entry = (
-                                    format!( "{}{}/{}", &self_url_for_mpd, SOUNDS_URL_PATH, entry_fn )
+                                    format!( "{}{}/{}", &self_url_for_mpd, TESTSOUND_URL_PATH, entry_fn )
                                 ,   title
                                 );
 
@@ -515,13 +516,13 @@ impl Context
         }
         else
         {
-            UrlNameList::new()
+            UrlTitleList::new()
         }
     }
 
-    pub fn aux_names( &self ) -> UrlNameList
+    pub fn aux_in_urllist( &self ) -> UrlTitleList
     {
-        let mut ret = UrlNameList::new();
+        let mut ret = UrlTitleList::new();
 
         for ( i, n ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
         {
@@ -532,7 +533,7 @@ impl Context
     }
 }
 
-pub fn check_url_list( list : &Vec< String > ) -> Option< ConfigDynOutputError >
+pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
 {
     for url in make_uniq_list( list ).iter().filter( | x | !x.starts_with( PROTP_ALSA ) )
     {

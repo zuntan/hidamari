@@ -5,6 +5,7 @@
 */
 
 ///
+///
 
 extern crate pretty_env_logger;
 extern crate tokio;
@@ -19,15 +20,6 @@ use std::collections::HashMap;
 use std::result::Result;
 use std::net::SocketAddr;
 use std::ops::Bound;
-use std::io;
-use std::pin::Pin;
-use std::boxed::Box;
-use std::task::Poll;
-use std::task::Context;
-
-/*
-use std::future::Future;
-*/
 
 use tokio::signal;
 use tokio::sync;
@@ -35,7 +27,6 @@ use tokio::time;
 use tokio::task;
 use tokio::join;
 use tokio::fs::File;
-use tokio::io::AsyncRead;
 use tokio_util::codec::{ BytesCodec, FramedRead };
 
 use futures::{ StreamExt, SinkExt };
@@ -54,6 +45,7 @@ mod context;
 mod mpdcom;
 mod mpdfifo;
 mod event;
+mod utils;
 
 ///
 type StrResult = Result< String, Rejection >;
@@ -83,83 +75,27 @@ fn internal_server_error( t : &str ) -> Response
     r
 }
 
+
 ///
-struct FileRangeRead
+#[derive(Debug, Deserialize, Clone)]
+struct AsoundParam
 {
-    file : Pin< Box< File > >
-,   len  : u64
-,   cur  : u64
+    rate    : Option<u32>
+,   ch      : Option<u8>
+,   bt      : Option<u32>
+,   pt      : Option<u32>
 }
 
-///
-impl FileRangeRead
+async fn asound_response( arwlctx : context::ARWLContext, headers: HeaderMap, dev : String, param : AsoundParam  ) -> StrResult
 {
-    async fn new( mut file : File, start : u64, end : u64 ) -> io::Result< Self >
-    {
-        if let io::Result::Err( x ) = file.seek( std::io::SeekFrom::Start( start ) ).await
-        {
-            return io::Result::Err( x );
-        }
 
-        return io::Result::Ok(
-            Self
-            {
-                file    : Box::pin( file )
-            ,   len     : end - start
-            ,   cur     : 0
-            }
-        )
-    }
 
-    fn len( &self ) -> u64
-    {
-        self.len
-    }
-}
 
-///
-impl AsyncRead for FileRangeRead
-{
-    fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
-        -> Poll< std::io::Result< usize > >
-    {
-        if self.cur >= self.len
-        {
-            Poll::Ready( Ok ( 0 ) )
-        }
-        else
-        {
-            match self.file.as_mut().poll_read( cx, dst )
-            {
-                Poll::Pending =>
-                {
-                    Poll::Pending
-                }
-            ,   Poll::Ready( x ) =>
-                {
-                    match x
-                    {
-                        Err( e ) =>
-                        {
-                            Poll::Ready( Err( e ) )
-                        }
-                    ,   Ok( n ) =>
-                        {
-                            let mut n = n as u64;
 
-                            if self.cur + n >= self.len
-                            {
-                                n = self.len - self.cur;
-                            }
 
-                            self.cur += n;
-                            Poll::Ready( Ok ( n as usize ) )
-                        }
-                    }
-                }
-            }
-        }
-    }
+
+
+    Err( warp::reject::not_found() )
 }
 
 ///
@@ -213,7 +149,7 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
 
                         if st < ed && ed <= max_len
                         {
-                            match FileRangeRead::new( file, st, ed ).await
+                            match utils::FileRangeRead::new( file, st, ed ).await
                             {
                                 Ok( filerange ) =>
                                 {
@@ -313,7 +249,7 @@ enum FileResponse
 ,   Favicon
 ,   Common( String )
 ,   Theme( String )
-,   Sounds( String )
+,   Tsound( String )
 }
 
 ///
@@ -326,7 +262,7 @@ async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap
             arwlctx.read().await.get_theme_path()
         }
     ,   FileResponse::Common(_) => { arwlctx.read().await.get_common_path() }
-    ,   FileResponse::Sounds(_) => { arwlctx.read().await.get_sounds_path()  }
+    ,   FileResponse::Tsound(_) => { arwlctx.read().await.get_tsound_path()  }
     };
 
     let do_unshift = match target_path
@@ -342,7 +278,7 @@ async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap
     ,   FileResponse::Favicon   => { String::from( context::THEME_FAVICON_ICO ) }
     ,   FileResponse::Common(x) => { x }
     ,   FileResponse::Theme(x)  => { x }
-    ,   FileResponse::Sounds(x) => { x }
+    ,   FileResponse::Tsound(x) => { x }
     };
 
     let path =
@@ -873,15 +809,28 @@ async fn make_route( arwlctx : context::ARWLContext )
             }
         );
 
-    let r_sounds =
-        warp::path!( "sounds" / .. )
+    let r_tsound =
+        warp::path!( "tsound" / .. )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::header::headers_cloned() )
         .and( warp::path::full() )
         .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, headers, FileResponse::Sounds( String::from( path.as_str() ) ) ).await
+                theme_file_response( arwlctx, headers, FileResponse::Tsound( String::from( path.as_str() ) ) ).await
+            }
+        );
+
+
+    let r_asound =
+        warp::path!( "asound" / String )
+        .and( arwlctx_clone_filter() )
+        .and( warp::get() )
+        .and( warp::header::headers_cloned() )
+        .and( warp::query::< AsoundParam >() )
+        .and_then( | path : String, arwlctx : context::ARWLContext, headers: HeaderMap, param : AsoundParam | async move
+            {
+                asound_response( arwlctx, headers, path, param ).await
             }
         );
 
@@ -937,7 +886,8 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_favicon )
         .or( r_theme )
         .or( r_common )
-        .or( r_sounds )
+        .or( r_tsound )
+        .or( r_asound )
         .or( r_cmd )
         .or( r_status )
         .or( r_spec_head )
