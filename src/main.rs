@@ -80,20 +80,48 @@ fn internal_server_error( t : &str ) -> Response
 #[derive(Debug, Deserialize, Clone)]
 struct AsoundParam
 {
-    rate    : Option<u32>
-,   ch      : Option<u8>
-,   bt      : Option<u32>
-,   pt      : Option<u32>
+    a_rate      : Option<u32>
+,   a_channels  : Option<u8>
+,   a_buffer_t  : Option<u32>
+,   a_period_t  : Option<u32>
+/*
+,   lm_brate    : Option<u32>
+,   lm_a_brate  : Option<u32>
+*/
 }
 
-async fn asound_response( arwlctx : context::ARWLContext, headers: HeaderMap, dev : String, param : AsoundParam  ) -> StrResult
+async fn asound_response( _arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
 {
+    let aclep = utils::AlsaCaptureLameEncodeParam
+    {
+        a_rate      : param.a_rate
+    ,   a_channels  : param.a_channels
+    ,   a_buffer_t  : param.a_buffer_t
+    ,   a_period_t  : param.a_period_t
+    ,   lm_brate    : None
+    ,   lm_a_brate  : None
+    };
 
+    match utils::AlsaCaptureLameEncode::new( dev, aclep )
+    {
+        Ok( acle ) =>
+        {
+            let stream = FramedRead::new( acle, BytesCodec::new() );
+            let body = Body::wrap_stream( stream );
+            let mut resp = Response::new( body );
 
+            let mime = mime_guess::from_ext( "mp3" ).first_or_octet_stream();
 
+            resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
+            resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
 
-
-
+            return Ok( resp );
+        }
+    ,   Err( x ) =>
+        {
+            log::error!( "asound_response error. {:?}", x );
+        }
+    }
 
     Err( warp::reject::not_found() )
 }
