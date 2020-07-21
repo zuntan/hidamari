@@ -75,7 +75,6 @@ fn internal_server_error( t : &str ) -> Response
     r
 }
 
-
 ///
 #[derive(Debug, Deserialize, Clone)]
 struct AsoundParam
@@ -127,9 +126,8 @@ async fn asound_response( _arwlctx : context::ARWLContext, _headers: HeaderMap, 
 }
 
 ///
-async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> RespResult
+async fn make_file_response( _arwlctx : context::ARWLContext, headers: HeaderMap, path: &std::path::Path ) -> RespResult
 {
-
     if log::log_enabled!( log::Level::Debug )
     {
         if let Some( ua ) = headers.typed_get::< headers::UserAgent >()
@@ -153,12 +151,12 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
         {
             let metadata = file.metadata().await;
 
-            if let Some( range ) = headers.typed_get::<headers::Range>()
+            if let Ok( metadata ) = metadata
             {
-                if let Ok( metadata ) = metadata
-                {
-                    let max_len = metadata.len();
+                let max_len = metadata.len();
 
+                if let Some( range ) = headers.typed_get::<headers::Range>()
+                {
                     if let Some( ( st, ed ) ) = range.iter().next()
                     {
                         let st = match st
@@ -215,24 +213,30 @@ async fn make_file_response( headers: HeaderMap, path: &std::path::Path ) -> Res
                         return Ok( resp );
                     }
                 }
-            }
-            else
-            {
-                let stream = FramedRead::new( file, BytesCodec::new() );
-                let body = Body::wrap_stream( stream );
-                let mut resp = Response::new( body );
-
-                let mime = mime_guess::from_path( path ).first_or_octet_stream();
-
-                if let Ok( metadata ) = metadata
+                else
                 {
-                    resp.headers_mut().typed_insert( headers::ContentLength( metadata.len() ) );
+                    match utils::FileRangeRead::new( file, 0, max_len ).await
+                    {
+                        Ok( filerange ) =>
+                        {
+                            let stream = FramedRead::new( filerange, BytesCodec::new() );
+                            let body = Body::wrap_stream( stream );
+                            let mut resp = Response::new( body );
+
+                            let mime = mime_guess::from_path( path ).first_or_octet_stream();
+
+                            resp.headers_mut().typed_insert( headers::ContentLength( max_len ) );
+                            resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
+                            resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+
+                            return Ok( resp );
+                        }
+                    ,   Err( x ) =>
+                        {
+                            log::error!( "{:?}", x );
+                        }
+                    }
                 }
-
-                resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
-                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
-
-                return Ok( resp );
             }
         }
     ,   Err( x ) =>
@@ -331,7 +335,7 @@ async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap
     ,   Ok( path ) =>
         {
             path_base.push( &path );
-            make_file_response( headers, &path_base ).await
+            make_file_response( arwlctx, headers, &path_base ).await
         }
     }
 }
@@ -999,6 +1003,10 @@ async fn main() -> std::io::Result< () >
     let h_server : task::JoinHandle< _ > = task::spawn( server );
 
     signal::ctrl_c().await?;
+
+    {
+        arwlctx.write().await.shutdown = true;
+    }
 
     log::info!( "" );
 

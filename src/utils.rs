@@ -19,7 +19,7 @@ use std::sync::atomic::{ AtomicUsize, Ordering };
 
 use tokio::fs::File;
 use tokio::io::AsyncRead;
-use tokio::time::{ delay_for, Duration, Instant };
+use tokio::time::{ delay_for, Duration /*, Instant */ };
 use tokio::task;
 
 use alsa::{ Direction, ValueOr };
@@ -29,13 +29,15 @@ use lame_sys;
 
 use std::os::raw::c_int;
 
+//  use crate::context;
+
 ///
 #[derive(Debug)]
 pub struct FileRangeRead
 {
-    pub file : Pin< Box< File > >
-,   pub len  : u64
-,   pub cur  : u64
+    file    : Pin< Box< File > >
+,   len     : u64
+,   cur     : u64
 }
 
 ///
@@ -152,9 +154,11 @@ pub struct AlsaCaptureLameEncode
     id      : usize
 ,   dev     : String
 ,   pcm     : PCM
+,   ch      : usize
 ,   gfp     : lame_sys::lame_t
 ,   buf     : VecDeque< u8 >
 ,   abuf_len: usize
+,   abuf_rem: usize
 ,   abuf    : *mut i16
 ,   lbuf_len: usize
 ,   lbuf    : *mut u8
@@ -245,11 +249,7 @@ impl AlsaCaptureLameEncode
                 }
                 else
                 {
-                    let gfp =
-                    unsafe
-                    {
-                        lame_sys::lame_init()
-                    };
+                    let gfp = unsafe{ lame_sys::lame_init() };
 
                     if gfp == ptr::null_mut()
                     {
@@ -312,9 +312,11 @@ impl AlsaCaptureLameEncode
                                 id          : ALSA_CAPTURE_LAME_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
                             ,   dev
                             ,   pcm
+                            ,   ch          : ch as usize
                             ,   gfp
                             ,   buf         : VecDeque::< u8 >::new()
                             ,   abuf_len
+                            ,   abuf_rem    : 0
                             ,   abuf        : unsafe{ alloc::< i16 >( abuf_len ) }
                             ,   lbuf_len
                             ,   lbuf        : unsafe{ alloc::< u8 >( lbuf_len ) }
@@ -367,24 +369,53 @@ impl AsyncRead for AlsaCaptureLameEncode
         {
             match
             {
-                let abuf = unsafe{ slice_mut( self.abuf, self.abuf_len ) };
+
+                let abuf =
+                    unsafe
+                    {
+                        let ( t_abuf, t_abuf_len ) =
+                        {
+                            ( self.abuf.add( self.abuf_rem * self.ch ), self.abuf_len - self.abuf_rem * self.ch )
+                        };
+
+                        slice_mut( t_abuf, t_abuf_len )
+                    };
+
                 let io = self.pcm.io_i16().unwrap();
+
                 io.readi( abuf )
             }
             {
-                Ok( alen ) =>
+                Ok( mut alen ) =>
                 {
+                    let fnum0 =
+                        unsafe
+                        {
+                            lame_sys::lame_get_frameNum( self.gfp )
+                        };
+
+                    alen += self.abuf_rem;
+                    self.abuf_rem = 0;
+
                     let llen =
-                    unsafe
-                    {
-                        lame_sys::lame_encode_buffer_interleaved(
-                            self.gfp
-                        ,   self.abuf
-                        ,   alen as c_int
-                        ,   self.lbuf
-                        ,   self.lbuf_len as c_int
-                        )
-                    };
+                        unsafe
+                        {
+                            lame_sys::lame_encode_buffer_interleaved(
+                                self.gfp
+                            ,   self.abuf
+                            ,   alen as c_int
+                            ,   self.lbuf
+                            ,   self.lbuf_len as c_int
+                            )
+                        };
+
+                    let fnum1 =
+                        unsafe
+                        {
+                            lame_sys::lame_get_frameNum( self.gfp )
+                        };
+
+                    log::debug!( "lame frame_total:{:?} diff:{:?}", fnum1, fnum1 - fnum0 );
 
                     if llen > 0
                     {
@@ -396,6 +427,10 @@ impl AsyncRead for AlsaCaptureLameEncode
                             self.buf.extend( lbuf );
                         }
                     }
+                    else if llen == 0
+                    {
+                        self.abuf_rem = alen;
+                    }
                     else
                     {
                         log::debug!( "lame error alen:{:?} llen:{:?}", alen, llen );
@@ -403,7 +438,21 @@ impl AsyncRead for AlsaCaptureLameEncode
                 }
             ,   Err( x ) =>
                 {
-                    log::debug!( "alsa error {:?}", x );
+                    if let nix::Error::Sys( errno ) = x.nix_error()
+                    {
+                        match errno
+                        {
+                            nix::errno::Errno::EAGAIN => {}          /* nop */
+                        ,   _ =>
+                            {
+                                log::debug!( "alsa error {:?}", x );
+                            }
+                        }
+                    }
+                    else
+                    {
+                        log::debug!( "alsa error {:?}", x );
+                    }
                 }
             }
         }
@@ -417,7 +466,7 @@ impl AsyncRead for AlsaCaptureLameEncode
             task::spawn(
                 async
                 {
-                    delay_for( Duration::from_millis( 100 ) ).await;
+                    delay_for( Duration::from_millis( 150 ) ).await;
                     waker.wake()
                 }
             );

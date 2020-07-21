@@ -188,6 +188,7 @@ pub struct ConfigDynInput
 ,   pub aux_in      : Option< Vec< String > >
 }
 
+#[derive(Debug)]
 pub struct WsSession
 {
   pub   ws_sig  : String
@@ -196,6 +197,7 @@ pub struct WsSession
 
 pub type WsSessions = HashMap< u64, WsSession >;
 
+#[derive(Debug)]
 pub struct Context
 {
   pub   config          : Config
@@ -219,6 +221,7 @@ pub struct Context
 , pub   ws_data_intv    : time::Duration
 , pub   ws_send_intv    : time::Duration
 
+, pub   shutdown        : bool
 , pub   product         : String
 , pub   version         : String
 }
@@ -252,6 +255,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
+        ,   shutdown        : false
         ,   product         : String::from( product )
         ,   version         : String::from( version )
         }
