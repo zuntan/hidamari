@@ -14,9 +14,13 @@ use std::task::Poll;
 use std::task::Context;
 use std::ptr;
 use std::collections::VecDeque;
+use std::fmt;
+use std::sync::atomic::{ AtomicUsize, Ordering };
 
 use tokio::fs::File;
 use tokio::io::AsyncRead;
+use tokio::time::{ delay_for, Duration, Instant };
+use tokio::task;
 
 use alsa::{ Direction, ValueOr };
 use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
@@ -26,6 +30,7 @@ use lame_sys;
 use std::os::raw::c_int;
 
 ///
+#[derive(Debug)]
 pub struct FileRangeRead
 {
     pub file : Pin< Box< File > >
@@ -105,6 +110,7 @@ impl AsyncRead for FileRangeRead
 }
 
 ///
+#[derive(Debug)]
 pub struct AlsaCaptureLameEncodeParam
 {
     pub a_rate      : Option<u32>
@@ -138,10 +144,14 @@ unsafe fn slice<'a, T>( raw: *mut T, len : usize ) -> &'a [T]
     std::slice::from_raw_parts( raw, len )
 }
 
+static ALSA_CAPTURE_LAME_ENCODE_COUNTER : AtomicUsize = AtomicUsize::new( 0 );
+
 ///
 pub struct AlsaCaptureLameEncode
 {
-    pcm     : PCM
+    id      : usize
+,   dev     : String
+,   pcm     : PCM
 ,   gfp     : lame_sys::lame_t
 ,   buf     : VecDeque< u8 >
 ,   abuf_len: usize
@@ -150,10 +160,20 @@ pub struct AlsaCaptureLameEncode
 ,   lbuf    : *mut u8
 }
 
+impl fmt::Debug for AlsaCaptureLameEncode
+{
+    fn fmt( &self, f: &mut fmt::Formatter<'_> ) -> fmt::Result
+    {
+        write!( f, "AlsaCaptureLameEncode:[{:?}] dev:[{}]", &self.id, &self.dev )
+    }
+}
+
 impl AlsaCaptureLameEncode
 {
     pub fn new( dev : String, param : AlsaCaptureLameEncodeParam ) -> io::Result< Self >
     {
+        log::debug!( "AlsaCaptureLameEncode::new [{}]", dev );
+
         match PCM::new( &dev, Direction::Capture, true )
         {
             Ok( pcm ) =>
@@ -289,7 +309,9 @@ impl AlsaCaptureLameEncode
                         Ok(
                             AlsaCaptureLameEncode
                             {
-                                pcm
+                                id          : ALSA_CAPTURE_LAME_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
+                            ,   dev
+                            ,   pcm
                             ,   gfp
                             ,   buf         : VecDeque::< u8 >::new()
                             ,   abuf_len
@@ -315,6 +337,8 @@ impl Drop for AlsaCaptureLameEncode
 {
     fn drop( &mut self )
     {
+        log::debug!( "AlsaCaptureLameEncode drop [{:?}]", &self );
+
         unsafe
         {
             lame_sys::lame_close( self.gfp );
@@ -329,12 +353,76 @@ unsafe impl Send for AlsaCaptureLameEncode {}
 ///
 impl AsyncRead for AlsaCaptureLameEncode
 {
-    fn poll_read( mut self : Pin< &mut Self >, _cx : &mut Context<'_> , dst: &mut [u8] )
+    fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
         -> Poll< std::io::Result< usize > >
     {
+        log::debug!( "AlsaCaptureLameEncode::poll_read [{:?}] state:[{:?}]", &self, self.pcm.state() );
+
         if self.pcm.state() == alsa::pcm::State::Disconnected
         {
-            Poll::Ready( Ok( 0 ) )
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        if self.buf.is_empty()
+        {
+            match
+            {
+                let abuf = unsafe{ slice_mut( self.abuf, self.abuf_len ) };
+                let io = self.pcm.io_i16().unwrap();
+                io.readi( abuf )
+            }
+            {
+                Ok( alen ) =>
+                {
+                    let llen =
+                    unsafe
+                    {
+                        lame_sys::lame_encode_buffer_interleaved(
+                            self.gfp
+                        ,   self.abuf
+                        ,   alen as c_int
+                        ,   self.lbuf
+                        ,   self.lbuf_len as c_int
+                        )
+                    };
+
+                    if llen > 0
+                    {
+                        let llen = llen as usize;
+
+                        if llen < self.lbuf_len
+                        {
+                            let lbuf = unsafe{ slice( self.lbuf, llen ) };
+                            self.buf.extend( lbuf );
+                        }
+                    }
+                    else
+                    {
+                        log::debug!( "lame error alen:{:?} llen:{:?}", alen, llen );
+                    }
+                }
+            ,   Err( x ) =>
+                {
+                    log::debug!( "alsa error {:?}", x );
+                }
+            }
+        }
+
+        if self.buf.is_empty()
+        {
+            log::debug!( "Poll::Pending" );
+
+            let waker = cx.waker().clone();
+
+            task::spawn(
+                async
+                {
+                    delay_for( Duration::from_millis( 100 ) ).await;
+                    waker.wake()
+                }
+            );
+
+            Poll::Pending
         }
         else
         {
@@ -347,72 +435,7 @@ impl AsyncRead for AlsaCaptureLameEncode
                 dp += 1;
             }
 
-            if self.buf.is_empty()
-            {
-                match
-                {
-                    let abuf = unsafe{ slice_mut( self.abuf, self.abuf_len ) };
-                    let io = self.pcm.io_i16().unwrap();
-                    io.readi( abuf )
-                }
-                {
-                    Ok( alen ) =>
-                    {
-                        let llen =
-                        unsafe
-                        {
-                            lame_sys::lame_encode_buffer_interleaved(
-                                self.gfp
-                            ,   self.abuf
-                            ,   alen as c_int
-                            ,   self.lbuf
-                            ,   self.lbuf_len as c_int
-                            )
-                        };
-
-                        if llen > 0
-                        {
-                            let llen = llen as usize;
-
-                            if llen < self.lbuf_len
-                            {
-                                let lbuf = unsafe{ slice( self.lbuf, llen ) };
-                                self.buf.extend( lbuf );
-                            }
-                        }
-                        else
-                        {
-                            log::debug!( "lame error {:?}", llen );
-                        }
-                    }
-                ,   Err( x ) =>
-                    {
-                        log::debug!( "alsa error {:?}", x );
-                    }
-                }
-            }
-
-            if self.buf.is_empty()
-            {
-                if dp == 0
-                {
-                    Poll::Pending
-                }
-                else
-                {
-                    Poll::Ready( Ok( dp ) )
-                }
-            }
-            else
-            {
-                while dp < dl && !self.buf.is_empty()
-                {
-                    dst[ dp ] = self.buf.pop_front().unwrap();
-                    dp += 1;
-                }
-
-                Poll::Ready( Ok( dp ) )
-            }
+            Poll::Ready( Ok( dp ) )
         }
     }
 }
