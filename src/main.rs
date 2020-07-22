@@ -47,6 +47,8 @@ mod mpdfifo;
 mod event;
 mod utils;
 
+use crate::utils::GetWake;
+
 ///
 type StrResult = Result< String, Rejection >;
 
@@ -89,7 +91,7 @@ struct AsoundParam
 */
 }
 
-async fn asound_response( _arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
+async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
 {
     let aclep = utils::AlsaCaptureLameEncodeParam
     {
@@ -105,6 +107,8 @@ async fn asound_response( _arwlctx : context::ARWLContext, _headers: HeaderMap, 
     {
         Ok( acle ) =>
         {
+            arwlctx.write().await.sdf_add( acle.get_wake() );
+
             let stream = FramedRead::new( acle, BytesCodec::new() );
             let body = Body::wrap_stream( stream );
             let mut resp = Response::new( body );
@@ -126,7 +130,7 @@ async fn asound_response( _arwlctx : context::ARWLContext, _headers: HeaderMap, 
 }
 
 ///
-async fn make_file_response( _arwlctx : context::ARWLContext, headers: HeaderMap, path: &std::path::Path ) -> RespResult
+async fn make_file_response( arwlctx : context::ARWLContext, headers: HeaderMap, path: &std::path::Path ) -> RespResult
 {
     if log::log_enabled!( log::Level::Debug )
     {
@@ -179,6 +183,8 @@ async fn make_file_response( _arwlctx : context::ARWLContext, headers: HeaderMap
                             {
                                 Ok( filerange ) =>
                                 {
+                                    arwlctx.write().await.sdf_add( filerange.get_wake() );
+
                                     let len = filerange.len();
 
                                     let stream = FramedRead::new( filerange, BytesCodec::new() );
@@ -219,6 +225,8 @@ async fn make_file_response( _arwlctx : context::ARWLContext, headers: HeaderMap
                     {
                         Ok( filerange ) =>
                         {
+                            arwlctx.write().await.sdf_add( filerange.get_wake() );
+
                             let stream = FramedRead::new( filerange, BytesCodec::new() );
                             let body = Body::wrap_stream( stream );
                             let mut resp = Response::new( body );
@@ -1005,7 +1013,7 @@ async fn main() -> std::io::Result< () >
     signal::ctrl_c().await?;
 
     {
-        arwlctx.write().await.shutdown = true;
+        arwlctx.read().await.sdf_shutdown();
     }
 
     log::info!( "" );

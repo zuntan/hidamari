@@ -24,6 +24,7 @@ use serde::{ Deserialize, Serialize };
 
 use crate::event;
 use crate::mpdcom;
+use crate::utils;
 
 pub const CONTENTS_DIR      : &str = "_contents";
 pub const THEME_DIR         : &str = "theme";
@@ -221,7 +222,8 @@ pub struct Context
 , pub   ws_data_intv    : time::Duration
 , pub   ws_send_intv    : time::Duration
 
-, pub   shutdown        : bool
+, pub   sdf_list        : Vec< utils::WmShutdownFlag >
+
 , pub   product         : String
 , pub   version         : String
 }
@@ -255,7 +257,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
-        ,   shutdown        : false
+        ,   sdf_list        : Vec::< utils::WmShutdownFlag >::new()
         ,   product         : String::from( product )
         ,   version         : String::from( version )
         }
@@ -534,6 +536,49 @@ impl Context
         }
 
         ret
+    }
+
+    pub fn sdf_add( &mut self, wsf : utils::WmShutdownFlag )
+    {
+        let n1 = self.sdf_list.len();
+
+        for i in 0..self.sdf_list.len()
+        {
+            let p = self.sdf_list.len() - 1 - i;
+
+            let x = &self.sdf_list[ p ];
+
+            if x.upgrade().is_none()
+            {
+                self.sdf_list.swap_remove( p );
+            }
+        }
+
+        self.sdf_list.push( wsf );
+
+        let n2 = self.sdf_list.len();
+
+        log::debug!( "sdf_add {} -> {}", n1, n2 );
+    }
+
+    pub fn sdf_shutdown( &self )
+    {
+        let mut c = 0;
+        let     n = self.sdf_list.len();
+
+        for x in self.sdf_list.iter()
+        {
+            if let Some( x ) = x.upgrade()
+            {
+                let mut f = x.lock().unwrap();
+
+                *f = utils::ShutdownFlag::Shutdown;
+
+                c += 1;
+            }
+        }
+
+        log::debug!( "sdf_shutdown {}/{}", c, n );
     }
 }
 

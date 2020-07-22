@@ -16,6 +16,7 @@ use std::ptr;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{ AtomicUsize, Ordering };
+use std::sync::{ Arc, Weak, Mutex };
 
 use tokio::fs::File;
 use tokio::io::AsyncRead;
@@ -31,6 +32,26 @@ use std::os::raw::c_int;
 
 //  use crate::context;
 
+#[derive(Debug)]
+pub enum ShutdownFlag
+{
+    Run
+,   Shutdown
+}
+
+pub type AmShutdownFlag = Arc< Mutex< ShutdownFlag > >;
+pub type WmShutdownFlag = Weak< Mutex< ShutdownFlag > >;
+
+pub fn new_sdf() -> AmShutdownFlag
+{
+    Arc::new( Mutex::new( ShutdownFlag::Run ) )
+}
+
+pub trait GetWake
+{
+    fn get_wake( &self ) -> WmShutdownFlag;
+}
+
 ///
 #[derive(Debug)]
 pub struct FileRangeRead
@@ -38,6 +59,15 @@ pub struct FileRangeRead
     file    : Pin< Box< File > >
 ,   len     : u64
 ,   cur     : u64
+,   sdf     : AmShutdownFlag
+}
+
+impl GetWake for FileRangeRead
+{
+    fn get_wake( &self ) -> WmShutdownFlag
+    {
+        Arc::downgrade( &self.sdf )
+    }
 }
 
 ///
@@ -56,6 +86,7 @@ impl FileRangeRead
                 file    : Box::pin( file )
             ,   len     : end - start
             ,   cur     : 0
+            ,   sdf     : new_sdf()
             }
         )
     }
@@ -72,6 +103,11 @@ impl AsyncRead for FileRangeRead
     fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
         -> Poll< std::io::Result< usize > >
     {
+        if let ShutdownFlag::Shutdown = *self.sdf.lock().unwrap()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
         if self.cur >= self.len
         {
             Poll::Ready( Ok ( 0 ) )
@@ -162,6 +198,15 @@ pub struct AlsaCaptureLameEncode
 ,   abuf    : *mut i16
 ,   lbuf_len: usize
 ,   lbuf    : *mut u8
+,   sdf     : AmShutdownFlag
+}
+
+impl GetWake for AlsaCaptureLameEncode
+{
+    fn get_wake( &self ) -> WmShutdownFlag
+    {
+        Arc::downgrade( &self.sdf )
+    }
 }
 
 impl fmt::Debug for AlsaCaptureLameEncode
@@ -320,6 +365,7 @@ impl AlsaCaptureLameEncode
                             ,   abuf        : unsafe{ alloc::< i16 >( abuf_len ) }
                             ,   lbuf_len
                             ,   lbuf        : unsafe{ alloc::< u8 >( lbuf_len ) }
+                            ,   sdf         : new_sdf()
                             }
                         )
                     }
@@ -358,6 +404,11 @@ impl AsyncRead for AlsaCaptureLameEncode
     fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
         -> Poll< std::io::Result< usize > >
     {
+        if let ShutdownFlag::Shutdown = *self.sdf.lock().unwrap()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
         log::debug!( "AlsaCaptureLameEncode::poll_read [{:?}] state:[{:?}]", &self, self.pcm.state() );
 
         if self.pcm.state() == alsa::pcm::State::Disconnected
