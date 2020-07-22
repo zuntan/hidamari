@@ -117,6 +117,8 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
 
             resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
             resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+            resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
+            resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
 
             return Ok( resp );
         }

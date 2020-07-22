@@ -18,6 +18,8 @@ use std::fmt;
 use std::sync::atomic::{ AtomicUsize, Ordering };
 use std::sync::{ Arc, Weak, Mutex };
 
+use std::os::raw::c_int;
+
 use tokio::fs::File;
 use tokio::io::AsyncRead;
 use tokio::time::{ delay_for, Duration /*, Instant */ };
@@ -28,7 +30,6 @@ use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
 
 use lame_sys;
 
-use std::os::raw::c_int;
 
 //  use crate::context;
 
@@ -153,10 +154,10 @@ pub struct AlsaCaptureLameEncodeParam
 {
     pub a_rate      : Option<u32>
 ,   pub a_channels  : Option<u8>
-,   pub a_buffer_t  : Option<u32>
-,   pub a_period_t  : Option<u32>
-,   pub lm_brate    : Option<u32>
-,   pub lm_a_brate  : Option<u32>
+,   pub a_buffer_t  : Option<u32>           // u sec    1 sec = 1000_000 u sec
+,   pub a_period_t  : Option<u32>           // u sec    1 sec = 1000_000 u sec
+,   pub lm_brate    : Option<u32>           // leme fixed   bit rate ( if 0 then average bit rate )
+,   pub lm_a_brate  : Option<u32>           // leme average bit rate ( if 0 then variable bit rate )
 }
 
 unsafe fn alloc< T >( len: usize ) -> *mut T
@@ -280,6 +281,24 @@ impl AlsaCaptureLameEncode
                         return Err( io::Error::new( io::ErrorKind::ConnectionRefused, x ) );
                     }
 
+                    if log::log_enabled!( log::Level::Debug )
+                    {
+                        let rate    = hwp.get_rate().unwrap();
+                        let ch      = hwp.get_channels().unwrap();
+                        let fmt     = hwp.get_format().unwrap();
+                        let b_size  = hwp.get_buffer_size().unwrap();
+                        let p_size  = hwp.get_period_size().unwrap();
+
+                        log::debug!(
+                            "ALSA HWP rate:{:?} channels:{:?} format:{:?} buffer_time:{:?} period_time:{:?}"
+                        ,   rate
+                        ,   ch
+                        ,   fmt
+                        ,   b_size as f32 / rate as f32
+                        ,   p_size as f32 / rate as f32
+                        );
+                    }
+
                     (
                         hwp.get_rate().unwrap()
                     ,   hwp.get_channels().unwrap() as u8
@@ -348,8 +367,10 @@ impl AlsaCaptureLameEncode
                             lame_sys::lame_init_params( gfp );
                         };
 
-                        let abuf_len    = ( ( rate as f32 / 10.0 ) * ch as f32 ) as usize;
+                        let abuf_len    = ( ( rate as f32 / 5.0 ) * ch as f32 ) as usize;
                         let lbuf_len    = ( abuf_len as f32 * 1.25 + 7200.0 ) as usize;
+
+                        log::debug!( "BUFLEN a_sz:{} a_sec:{} l_sz:{}", abuf_len, abuf_len as f32 / rate as f32, lbuf_len );
 
                         Ok(
                             AlsaCaptureLameEncode
@@ -424,12 +445,9 @@ impl AsyncRead for AlsaCaptureLameEncode
                 let abuf =
                     unsafe
                     {
-                        let ( t_abuf, t_abuf_len ) =
-                        {
-                            ( self.abuf.add( self.abuf_rem * self.ch ), self.abuf_len - self.abuf_rem * self.ch )
-                        };
+                        let d = self.abuf_rem * self.ch;
 
-                        slice_mut( t_abuf, t_abuf_len )
+                        slice_mut( self.abuf.add( d ), self.abuf_len - d )
                     };
 
                 let io = self.pcm.io_i16().unwrap();
@@ -439,14 +457,20 @@ impl AsyncRead for AlsaCaptureLameEncode
             {
                 Ok( mut alen ) =>
                 {
+
+
+/*
                     let fnum0 =
                         unsafe
                         {
                             lame_sys::lame_get_frameNum( self.gfp )
                         };
+*/
 
                     alen += self.abuf_rem;
                     self.abuf_rem = 0;
+
+                    log::debug!( "alen : {}", alen );
 
                     let llen =
                         unsafe
@@ -460,6 +484,7 @@ impl AsyncRead for AlsaCaptureLameEncode
                             )
                         };
 
+/*
                     let fnum1 =
                         unsafe
                         {
@@ -467,7 +492,7 @@ impl AsyncRead for AlsaCaptureLameEncode
                         };
 
                     log::debug!( "lame frame_total:{:?} diff:{:?}", fnum1, fnum1 - fnum0 );
-
+*/
                     if llen > 0
                     {
                         let llen = llen as usize;
@@ -496,13 +521,13 @@ impl AsyncRead for AlsaCaptureLameEncode
                             nix::errno::Errno::EAGAIN => {}          /* nop */
                         ,   _ =>
                             {
-                                log::debug!( "alsa error {:?}", x );
+                                log::error!( "alsa error {:?}", x );
                             }
                         }
                     }
                     else
                     {
-                        log::debug!( "alsa error {:?}", x );
+                        log::error!( "alsa error {:?}", x );
                     }
                 }
             }
