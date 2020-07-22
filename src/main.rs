@@ -956,6 +956,8 @@ const _PKG_AUTHORS : &'static str = env!( "CARGO_PKG_AUTHORS" );
 #[tokio::main]
 async fn main() -> std::io::Result< () >
 {
+    std::env::set_var( "LIBASOUND_THREAD_SAFE", "0" );              // for bluealsa and ALSA thread-safe API (alsa-lib >= 1.1.2).
+
     std::env::set_var( "RUST_LOG", "debug,hyper=info" );
 
     pretty_env_logger::init();

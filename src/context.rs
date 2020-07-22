@@ -39,6 +39,8 @@ pub const TESTSOUND_NAME    : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
 //pub const TESTSOUND_NAME  : &str = r"^test-44100-1-16-10s-cord_a.mp3";
 
 pub const TESTSOUND_URL_PATH    : &str = "tsound";
+pub const _ALSASOUND_URL_PATH    : &str = "asound";
+pub const HIDAMARI_EXT_PROTO    : &str = "^([at]sound)://";
 
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
 
@@ -52,7 +54,8 @@ pub const _HEADER_SHOUTCAST_ICY_PUB_KEY         : &str = "icy-pub";
 pub const _HEADER_SHOUTCAST_ICY_PUB_VAL         : &str = "1";
 pub const _HEADER_SHOUTCAST_ICY_DESC_KEY        : &str = "icy-description";
 
-pub const PROTP_ALSA : &str = "alsa://";
+// pub const PROTP_ALSA : &str = "alsa://";
+pub const IGNORE_CHECK_URL  : &str =  "^([at]sound|alsa)://";
 
 ///
 #[derive(Debug, Deserialize, Clone)]
@@ -526,13 +529,41 @@ impl Context
         }
     }
 
+    pub fn update_hidamari_url( &self, url : &str ) -> String
+    {
+        if let Some( self_url_for_mpd ) = self.config.self_url_for_mpd()
+        {
+            lazy_static!
+            {
+                static ref RE : regex::Regex =
+                    regex::Regex::new( HIDAMARI_EXT_PROTO ).unwrap();
+            }
+
+            match RE.captures( &url )
+            {
+                Some( cap ) =>
+                {
+                    let tail    = &url[ cap.get( 0 ).unwrap().end() .. ];
+                    let proto   = cap.get( 1 ).unwrap().as_str();
+
+                    return format!( "{}{}/{}", &self_url_for_mpd, proto, tail );
+                }
+            ,   None => {}
+            }
+        }
+
+        String::from( url )
+    }
+
     pub fn aux_in_urllist( &self ) -> UrlTitleList
     {
         let mut ret = UrlTitleList::new();
 
-        for ( i, n ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
+        for ( i, url ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
         {
-            ret.push( ( String::from( n ), String::from( format!( "AUX IN {}", i + 1 ) ) ) );
+            let url = self.update_hidamari_url( url );
+
+            ret.push( ( url, String::from( format!( "AUX IN {}", i + 1 ) ) ) );
         }
 
         ret
@@ -544,7 +575,7 @@ impl Context
 
         for i in 0..self.sdf_list.len()
         {
-            let p = self.sdf_list.len() - 1 - i;
+            let p = ( self.sdf_list.len() as isize - 1 - i as isize ) as usize;
 
             let x = &self.sdf_list[ p ];
 
@@ -584,7 +615,7 @@ impl Context
 
 pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
 {
-    for url in make_uniq_list( list ).iter().filter( | x | !x.starts_with( PROTP_ALSA ) )
+    for url in make_uniq_list( list ).iter()
     {
         if let Err( x ) = check_url( &url )
         {
@@ -602,7 +633,13 @@ pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
 
 pub fn check_url( url : &str ) -> Result< (), url::ParseError >
 {
-    if !url.starts_with( PROTP_ALSA )
+    lazy_static!
+    {
+        static ref RE : regex::Regex =
+            regex::Regex::new( IGNORE_CHECK_URL ).unwrap();
+    }
+
+    if !RE.is_match( url )
     {
         if let Err( x ) = Url::parse( &url )
         {

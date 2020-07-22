@@ -160,6 +160,11 @@ pub struct AlsaCaptureLameEncodeParam
 ,   pub lm_a_brate  : Option<u32>           // leme average bit rate ( if 0 then variable bit rate )
 }
 
+pub const DEFALUT_A_RATE        : u32 = 44100;
+pub const DEFALUT_A_CHANNELS    : u8 = 2;
+pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 * 2;
+pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 10;
+
 unsafe fn alloc< T >( len: usize ) -> *mut T
 {
     let mut vec = Vec::< T >::with_capacity( len );
@@ -220,9 +225,29 @@ impl fmt::Debug for AlsaCaptureLameEncode
 
 impl AlsaCaptureLameEncode
 {
-    pub fn new( dev : String, param : AlsaCaptureLameEncodeParam ) -> io::Result< Self >
+    pub fn new( dev : String, mut param : AlsaCaptureLameEncodeParam ) -> io::Result< Self >
     {
-        log::debug!( "AlsaCaptureLameEncode::new [{}]", dev );
+        if param.a_rate.is_none()
+        {
+            param.a_rate = Some( DEFALUT_A_RATE );
+        }
+
+        if param.a_channels.is_none()
+        {
+            param.a_channels = Some( DEFALUT_A_CHANNELS );
+        }
+
+        if param.a_buffer_t.is_none()
+        {
+            param.a_buffer_t = Some( DEFALUT_A_BUFFER_T );
+        }
+
+        if param.a_period_t.is_none()
+        {
+            param.a_period_t = Some( DEFALUT_A_PERIOD_T );
+        }
+
+        log::debug!( "AlsaCaptureLameEncode::new [{}]:[{:?}]", dev, param );
 
         match PCM::new( &dev, Direction::Capture, true )
         {
@@ -339,7 +364,7 @@ impl AlsaCaptureLameEncode
                                     if x > 0
                                     {
                                         lame_sys::lame_set_brate( gfp, x as c_int );
-                                        lame_sys::lame_set_quality( gfp, 2 );
+                                        lame_sys::lame_set_quality( gfp, 1 );
                                         s = true;
                                     }
                                 }
@@ -361,7 +386,7 @@ impl AlsaCaptureLameEncode
                             {
                                 lame_sys::lame_set_brate( gfp, 0 );
                                 lame_sys::lame_set_VBR( gfp, lame_sys::vbr_default );
-                                lame_sys::lame_set_VBR_quality( gfp, 2.0 );
+                                lame_sys::lame_set_VBR_quality( gfp, 1.0 );
                             }
 
                             lame_sys::lame_init_params( gfp );
@@ -429,9 +454,9 @@ impl AsyncRead for AlsaCaptureLameEncode
         {
             return Poll::Ready( Ok( 0 ) );
         }
-
+/*
         log::debug!( "AlsaCaptureLameEncode::poll_read [{:?}] state:[{:?}]", &self, self.pcm.state() );
-
+*/
         if self.pcm.state() == alsa::pcm::State::Disconnected
         {
             return Poll::Ready( Ok( 0 ) );
@@ -457,8 +482,6 @@ impl AsyncRead for AlsaCaptureLameEncode
             {
                 Ok( mut alen ) =>
                 {
-
-
 /*
                     let fnum0 =
                         unsafe
@@ -466,12 +489,11 @@ impl AsyncRead for AlsaCaptureLameEncode
                             lame_sys::lame_get_frameNum( self.gfp )
                         };
 */
-
                     alen += self.abuf_rem;
                     self.abuf_rem = 0;
-
+/*
                     log::debug!( "alen : {}", alen );
-
+*/
                     let llen =
                         unsafe
                         {
@@ -509,7 +531,7 @@ impl AsyncRead for AlsaCaptureLameEncode
                     }
                     else
                     {
-                        log::debug!( "lame error alen:{:?} llen:{:?}", alen, llen );
+                        log::error!( "lame error alen:{:?} llen:{:?}", alen, llen );
                     }
                 }
             ,   Err( x ) =>
@@ -522,12 +544,14 @@ impl AsyncRead for AlsaCaptureLameEncode
                         ,   _ =>
                             {
                                 log::error!( "alsa error {:?}", x );
+                                return Poll::Ready( Ok( 0 ) );
                             }
                         }
                     }
                     else
                     {
                         log::error!( "alsa error {:?}", x );
+                        return Poll::Ready( Ok( 0 ) );
                     }
                 }
             }
@@ -535,14 +559,15 @@ impl AsyncRead for AlsaCaptureLameEncode
 
         if self.buf.is_empty()
         {
+/*
             log::debug!( "Poll::Pending" );
-
+*/
             let waker = cx.waker().clone();
 
             task::spawn(
                 async
                 {
-                    delay_for( Duration::from_millis( 150 ) ).await;
+                    delay_for( Duration::from_micros( DEFALUT_A_PERIOD_T.into() ) ).await;
                     waker.wake()
                 }
             );
