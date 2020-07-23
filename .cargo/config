@@ -1,2 +1,6 @@
 [target.armv7-unknown-linux-gnueabihf]
-linker = "arm-linux-gnueabihf-gcc"
+linker = "arm-linux-gnueabihf-gcc_custom"
+rustflags = [
+	"-C", "link-args=-L/usr/lib/arm-linux-gnueabihf"
+,	"-C", "link-args=-l:ld.so"
+]

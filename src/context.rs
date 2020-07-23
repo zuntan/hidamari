@@ -573,15 +573,21 @@ impl Context
     {
         let n1 = self.sdf_list.len();
 
-        for i in 0..self.sdf_list.len()
+        let mut d = Vec::< usize >::new();
+
+        for ( i, x ) in self.sdf_list.iter().enumerate()
         {
-            let p = ( self.sdf_list.len() as isize - 1 - i as isize ) as usize;
-
-            let x = &self.sdf_list[ p ];
-
             if x.upgrade().is_none()
             {
-                self.sdf_list.swap_remove( p );
+                d.push( i );
+            }
+        }
+
+        if !d.is_empty()
+        {
+            for i in d.iter().rev()
+            {
+                self.sdf_list.swap_remove( *i );
             }
         }
 

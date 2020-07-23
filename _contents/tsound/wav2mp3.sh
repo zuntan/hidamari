@@ -4,6 +4,6 @@ LAME=lame
 
 for x in *wav
 do
-	echo ${LAME} -b 320 -V 2 $x ${x%.wav}.mp3
-	${LAME} -b 320 -V 2 $x ${x%.wav}.mp3
+	echo ${LAME} --cbr -b 192 -h $x ${x%.wav}.mp3
+	${LAME} --cbr -b 192 -h $x ${x%.wav}.mp3
 done

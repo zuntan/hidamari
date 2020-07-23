@@ -164,6 +164,9 @@ pub const DEFALUT_A_RATE        : u32 = 44100;
 pub const DEFALUT_A_CHANNELS    : u8 = 2;
 pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 * 2;
 pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 10;
+pub const DEFALUT_LM_BRATE      : u32 = 192;
+
+pub const ALSA_PENDING_DELAY    : u32 = DEFALUT_A_PERIOD_T / 4;
 
 unsafe fn alloc< T >( len: usize ) -> *mut T
 {
@@ -193,18 +196,20 @@ static ALSA_CAPTURE_LAME_ENCODE_COUNTER : AtomicUsize = AtomicUsize::new( 0 );
 ///
 pub struct AlsaCaptureLameEncode
 {
-    id      : usize
-,   dev     : String
-,   pcm     : PCM
-,   ch      : usize
-,   gfp     : lame_sys::lame_t
-,   buf     : VecDeque< u8 >
-,   abuf_len: usize
-,   abuf_rem: usize
-,   abuf    : *mut i16
-,   lbuf_len: usize
-,   lbuf    : *mut u8
-,   sdf     : AmShutdownFlag
+    id          : usize
+,   dev         : String
+,   pcm         : PCM
+,   rate        : usize
+,   ch          : usize
+,   gfp         : lame_sys::lame_t
+,   buf         : VecDeque< u8 >
+,   abuf_len    : usize
+,   abuf_rem    : usize
+,   abuf        : *mut i16
+,   lbuf_len    : usize
+,   lbuf        : *mut u8
+,   lsample_min : usize
+,   sdf         : AmShutdownFlag
 }
 
 impl GetWake for AlsaCaptureLameEncode
@@ -245,6 +250,11 @@ impl AlsaCaptureLameEncode
         if param.a_period_t.is_none()
         {
             param.a_period_t = Some( DEFALUT_A_PERIOD_T );
+        }
+
+        if param.lm_brate.is_none() && param.lm_a_brate.is_none()
+        {
+            param.lm_brate = Some( DEFALUT_LM_BRATE );
         }
 
         log::debug!( "AlsaCaptureLameEncode::new [{}]:[{:?}]", dev, param );
@@ -353,7 +363,7 @@ impl AlsaCaptureLameEncode
                             lame_sys::lame_set_in_samplerate( gfp, rate as c_int );
                             lame_sys::lame_set_out_samplerate( gfp, rate as c_int );
                             lame_sys::lame_set_num_channels( gfp, ch as i32 );
-                            lame_sys::lame_set_mode( gfp, if ch == 2 { lame_sys::MPEG_mode::STEREO } else { lame_sys::MPEG_mode::MONO } );
+                            lame_sys::lame_set_mode( gfp, if ch == 2 { lame_sys::MPEG_mode::JOINT_STEREO } else { lame_sys::MPEG_mode::MONO } );
 
                             let mut s = false;
 
@@ -403,6 +413,7 @@ impl AlsaCaptureLameEncode
                                 id          : ALSA_CAPTURE_LAME_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
                             ,   dev
                             ,   pcm
+                            ,   rate        : rate as usize
                             ,   ch          : ch as usize
                             ,   gfp
                             ,   buf         : VecDeque::< u8 >::new()
@@ -411,6 +422,7 @@ impl AlsaCaptureLameEncode
                             ,   abuf        : unsafe{ alloc::< i16 >( abuf_len ) }
                             ,   lbuf_len
                             ,   lbuf        : unsafe{ alloc::< u8 >( lbuf_len ) }
+                            ,   lsample_min : rate as usize / 20
                             ,   sdf         : new_sdf()
                             }
                         )
@@ -470,7 +482,16 @@ impl AsyncRead for AlsaCaptureLameEncode
                 let abuf =
                     unsafe
                     {
-                        let d = self.abuf_rem * self.ch;
+                        let d =
+                            if self.abuf_rem * self.ch >= self.abuf_len
+                            {
+                                self.abuf_rem = 0;
+                                0
+                            }
+                            else
+                            {
+                                self.abuf_rem * self.ch
+                            };
 
                         slice_mut( self.abuf.add( d ), self.abuf_len - d )
                     };
@@ -495,17 +516,23 @@ impl AsyncRead for AlsaCaptureLameEncode
                     log::debug!( "alen : {}", alen );
 */
                     let llen =
-                        unsafe
+                        if alen < self.lsample_min
                         {
-                            lame_sys::lame_encode_buffer_interleaved(
-                                self.gfp
-                            ,   self.abuf
-                            ,   alen as c_int
-                            ,   self.lbuf
-                            ,   self.lbuf_len as c_int
-                            )
+                            0
+                        }
+                        else
+                        {
+                            unsafe
+                            {
+                                lame_sys::lame_encode_buffer_interleaved(
+                                    self.gfp
+                                ,   self.abuf
+                                ,   alen as c_int
+                                ,   self.lbuf
+                                ,   self.lbuf_len as c_int
+                                )
+                            }
                         };
-
 /*
                     let fnum1 =
                         unsafe
@@ -513,7 +540,13 @@ impl AsyncRead for AlsaCaptureLameEncode
                             lame_sys::lame_get_frameNum( self.gfp )
                         };
 
-                    log::debug!( "lame frame_total:{:?} diff:{:?}", fnum1, fnum1 - fnum0 );
+                    let rem =
+                        unsafe
+                        {
+                            lame_sys::lame_get_mf_samples_to_encode( self.gfp )
+                        };
+
+                    log::debug!( "alen {:?} lame frame_total:{:?} diff:{:?} rem:{:?}", alen, fnum1, fnum1 - fnum0, rem );
 */
                     if llen > 0
                     {
@@ -567,7 +600,7 @@ impl AsyncRead for AlsaCaptureLameEncode
             task::spawn(
                 async
                 {
-                    delay_for( Duration::from_micros( DEFALUT_A_PERIOD_T.into() ) ).await;
+                    delay_for( Duration::from_micros( ALSA_PENDING_DELAY.into() ) ).await;
                     waker.wake()
                 }
             );
