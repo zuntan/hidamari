@@ -1,0 +1,50 @@
+### download toolchain
+
+cd /opt
+wget https://dl.armbian.com/_toolchains/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz
+tar xvJf gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz
+
+### append path
+
+vi .profile
+export PATH="$HOME/.cargo/bin:/opt/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin:$PATH"
+
+### .cargo/config
+
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+### append raspbian repository
+
+cat <EOT > /etc/apt/sources.list.d/raspbian.list
+deb [arch=armhf] http://archive.raspbian.org/raspbian jessie main contrib non-free
+EOT
+
+wget https://archive.raspbian.org/raspbian.public.key -O - | apt-key add -
+
+dpkg --add-architecture armhf
+dpkg --print-foreign-architectures
+
+### install libmp3lame-dev:armhf libasound2-dev:armhf
+
+apt-get update
+
+apt-get install libmp3lame-dev:armhf libasound2-dev:armhf
+dpkg -L libmp3lame-dev:armhf
+dpkg -L libasound2-dev:armhf
+
+### for libmp3lame
+
+cd /usr/lib/arm-linux-gnueabihf
+ln -s libmp3lame.so.0.0.0   libmp3lame.so
+
+### for libasound2 ( crate pkg_config )
+
+export PKG_CONFIG_armv7_unknown_linux_gnueabihf=1
+export PKG_CONFIG_PATH_armv7_unknown_linux_gnueabihf=/lib/arm-linux-gnueabihf/pkgconfig
+# export PKG_CONFIG_LIBDIR_armv7_unknown_linux_gnueabihf=/lib/arm-linux-gnueabihf
+
+### build
+
+cargo build --target armv7-unknown-linux-gnueabihf
+
