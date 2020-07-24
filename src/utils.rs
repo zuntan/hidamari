@@ -162,11 +162,12 @@ pub struct AlsaCaptureLameEncodeParam
 
 pub const DEFALUT_A_RATE        : u32 = 44100;
 pub const DEFALUT_A_CHANNELS    : u8 = 2;
-pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 * 2;
-pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 10;
+pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 * 1;
+pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 40;
 pub const DEFALUT_LM_BRATE      : u32 = 192;
 
-pub const ALSA_PENDING_DELAY    : u32 = DEFALUT_A_PERIOD_T / 4;
+pub const ALSA_PENDING_DELAY    : u32 = DEFALUT_A_PERIOD_T / 2;
+pub const ALSA_BUFFER_TIME_RATE : f32 = 0.1;
 
 unsafe fn alloc< T >( len: usize ) -> *mut T
 {
@@ -402,7 +403,7 @@ impl AlsaCaptureLameEncode
                             lame_sys::lame_init_params( gfp );
                         };
 
-                        let abuf_len    = ( ( rate as f32 / 5.0 ) * ch as f32 ) as usize;
+                        let abuf_len    = ( ( rate as f32 * ALSA_BUFFER_TIME_RATE ) * ch as f32 ) as usize;
                         let lbuf_len    = ( abuf_len as f32 * 1.25 + 7200.0 ) as usize;
 
                         log::debug!( "BUFLEN a_sz:{} a_sec:{} l_sz:{}", abuf_len, abuf_len as f32 / rate as f32, lbuf_len );

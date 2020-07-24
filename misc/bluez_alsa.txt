@@ -1,0 +1,185 @@
+apt-get install build-essential
+apt-get install autoconf automake libtool
+
+apt-get install \
+ check \
+ libasound2-dev \
+ libbluetooth-dev \
+ libbsd-dev \
+ libdbus-1-dev \
+ libglib2.0-dev \
+ libmp3lame-dev \
+ libmpg123-dev \
+ libncurses5-dev \
+ libreadline-dev \
+ libsbc-dev
+
+ libfdk-aac-dev [non-free]
+
+wget http://ftp.jp.debian.org/debian/pool/non-free/f/fdk-aac/libfdk-aac2_2.0.1-1_amd64.deb
+wget http://ftp.jp.debian.org/debian/pool/non-free/f/fdk-aac/libfdk-aac-dev_2.0.1-1_amd64.deb
+dpkg -i libfdk-aac*deb
+
+git clone https://github.com/EHfive/ldacBT.git
+cd ldacBT
+git submodule update --init
+mkdir build && cd build
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local ../
+make
+make install
+
+git clone https://github.com/Arkq/openaptx.git
+cd openaptx
+autoreconf --install
+mkdir build && cd build
+../configure
+make
+make install
+
+git clone https://github.com/Arkq/bluez-alsa.git
+cd bluez-alsa
+autoreconf --install
+mkdir build && cd build
+../configure \
+  --enable-aac \
+  --enable-aptx \
+  --enable-aptx-hd \
+  --enable-ldac \
+  --enable-ofono \
+  --enable-mp3lame \
+  --enable-mpg123 \
+  --enable-msbc \
+  --enable-debug \
+  --disable-rfcomm
+
+configure: WARNING:               *** alsa-lib >= 1.1.2 ***
+configure: WARNING: Starting from alsa-lib 1.1.2, it is possible to enable
+configure: WARNING: thread-safe API functions. Unfortunately, this feature
+configure: WARNING: is not mature enough - software plugins may experience
+configure: WARNING: random deadlocks (bluez-alsa PCM plugin is affected).
+configure: WARNING: Either compile alsa-lib without this feature or export
+configure: WARNING: LIBASOUND_THREAD_SAFE=0 while using bluealsa PCM.
+configure: WARNING:              *** aptX encoder support ***
+configure: WARNING: You have enabled support for aptX encoding. Note, that
+configure: WARNING: by default bluez-alsa will use openaptx library, which
+configure: WARNING: does NOT perform any encoding/decoding.
+
+
+root@nana:/opt/rust/bluez-alsa/build# make install
+Making install in src
+make[1]: Entering directory '/opt/rust/bluez-alsa/build/src'
+Making install in asound
+make[2]: Entering directory '/opt/rust/bluez-alsa/build/src/asound'
+make[3]: Entering directory '/opt/rust/bluez-alsa/build/src/asound'
+make[3]: Nothing to be done for 'install-exec-am'.
+ /usr/bin/mkdir -p '/etc/alsa/conf.d'
+ /usr/bin/install -c -m 644 ../../../src/asound/20-bluealsa.conf '/etc/alsa/conf.d'
+ /usr/bin/mkdir -p '/usr/lib/x86_64-linux-gnu/alsa-lib'
+ /bin/bash ../../libtool   --mode=install /usr/bin/install -c   libasound_module_ctl_bluealsa.la '/usr/lib/x86_64-linux-gnu/alsa-lib'
+libtool: install: /usr/bin/install -c .libs/libasound_module_ctl_bluealsa.so /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_ctl_bluealsa.so
+libtool: install: /usr/bin/install -c .libs/libasound_module_ctl_bluealsa.lai /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_ctl_bluealsa.la
+libtool: install: /usr/bin/install -c .libs/libasound_module_ctl_bluealsa.a /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_ctl_bluealsa.a
+libtool: install: chmod 644 /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_ctl_bluealsa.a
+libtool: install: ranlib /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_ctl_bluealsa.a
+libtool: finish: PATH="/home/zuntan/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/sbin" ldconfig -n /usr/lib/x86_64-linux-gnu/alsa-lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /usr/lib/x86_64-linux-gnu/alsa-lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/usr/lib/x86_64-linux-gnu/alsa-lib'
+ /bin/bash ../../libtool   --mode=install /usr/bin/install -c   libasound_module_pcm_bluealsa.la '/usr/lib/x86_64-linux-gnu/alsa-lib'
+libtool: install: /usr/bin/install -c .libs/libasound_module_pcm_bluealsa.so /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_pcm_bluealsa.so
+libtool: install: /usr/bin/install -c .libs/libasound_module_pcm_bluealsa.lai /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_pcm_bluealsa.la
+libtool: install: /usr/bin/install -c .libs/libasound_module_pcm_bluealsa.a /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_pcm_bluealsa.a
+libtool: install: chmod 644 /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_pcm_bluealsa.a
+libtool: install: ranlib /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_pcm_bluealsa.a
+libtool: finish: PATH="/home/zuntan/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/sbin" ldconfig -n /usr/lib/x86_64-linux-gnu/alsa-lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /usr/lib/x86_64-linux-gnu/alsa-lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+make[3]: Leaving directory '/opt/rust/bluez-alsa/build/src/asound'
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build/src/asound'
+make[2]: Entering directory '/opt/rust/bluez-alsa/build/src'
+make[3]: Entering directory '/opt/rust/bluez-alsa/build/src'
+ /usr/bin/mkdir -p '/usr/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c bluealsa '/usr/bin'
+libtool: install: /usr/bin/install -c bluealsa /usr/bin/bluealsa
+ /usr/bin/mkdir -p '/etc/dbus-1/system.d'
+ /usr/bin/install -c -m 644 ../../src/bluealsa.conf '/etc/dbus-1/system.d'
+make[3]: Leaving directory '/opt/rust/bluez-alsa/build/src'
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build/src'
+make[1]: Leaving directory '/opt/rust/bluez-alsa/build/src'
+Making install in utils
+make[1]: Entering directory '/opt/rust/bluez-alsa/build/utils'
+Making install in aplay
+make[2]: Entering directory '/opt/rust/bluez-alsa/build/utils/aplay'
+make[3]: Entering directory '/opt/rust/bluez-alsa/build/utils/aplay'
+ /usr/bin/mkdir -p '/usr/bin'
+  /bin/bash ../../libtool   --mode=install /usr/bin/install -c bluealsa-aplay '/usr/bin'
+libtool: install: /usr/bin/install -c bluealsa-aplay /usr/bin/bluealsa-aplay
+make[3]: Nothing to be done for 'install-data-am'.
+make[3]: Leaving directory '/opt/rust/bluez-alsa/build/utils/aplay'
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build/utils/aplay'
+Making install in rfcomm
+make[2]: Entering directory '/opt/rust/bluez-alsa/build/utils/rfcomm'
+make[3]: Entering directory '/opt/rust/bluez-alsa/build/utils/rfcomm'
+make[3]: Nothing to be done for 'install-data-am'.
+make[3]: Leaving directory '/opt/rust/bluez-alsa/build/utils/rfcomm'
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build/utils/rfcomm'
+make[2]: Entering directory '/opt/rust/bluez-alsa/build/utils'
+make[3]: Entering directory '/opt/rust/bluez-alsa/build/utils'
+ /usr/bin/mkdir -p '/usr/bin'
+make[3]: Nothing to be done for 'install-data-am'.
+make[3]: Leaving directory '/opt/rust/bluez-alsa/build/utils'
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build/utils'
+make[1]: Leaving directory '/opt/rust/bluez-alsa/build/utils'
+make[1]: Entering directory '/opt/rust/bluez-alsa/build'
+make[2]: Entering directory '/opt/rust/bluez-alsa/build'
+make[2]: Nothing to be done for 'install-exec-am'.
+make[2]: Nothing to be done for 'install-data-am'.
+make[2]: Leaving directory '/opt/rust/bluez-alsa/build'
+make[1]: Leaving directory '/opt/rust/bluez-alsa/build'
+
+
+cat <<EOT > /lib/systemd/system/bluealsa.service
+[Unit]
+Description=BluezAlsa proxy
+Requires=bluetooth.service
+After=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bluealsa -p a2dp-source -p a2dp-sink
+
+[Install]
+WantedBy=multi-user.target
+EOT
