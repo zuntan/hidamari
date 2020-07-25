@@ -47,7 +47,8 @@ mod mpdfifo;
 mod event;
 mod utils;
 
-use crate::utils::GetWake;
+use crate::utils::GetWakeShutdownFlag;
+use crate::utils::GetMimeType;
 
 ///
 type StrResult = Result< String, Rejection >;
@@ -93,7 +94,7 @@ struct AsoundParam
 
 async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
 {
-    let aclep = utils::AlsaCaptureLameEncodeParam
+    let aclep = utils::AlsaCaptureEncodeParam
     {
         a_rate      : param.a_rate
     ,   a_channels  : param.a_channels
@@ -103,28 +104,60 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
     ,   lm_a_brate  : None
     };
 
-    match utils::AlsaCaptureLameEncode::new( dev, aclep )
+    let use_lame    = false;
+
+    if use_lame
     {
-        Ok( acle ) =>
+        match utils::AlsaCaptureLameEncode::new( dev, aclep )
         {
-            arwlctx.write().await.sdf_add( acle.get_wake() );
+            Ok( acle ) =>
+            {
+                let mime_type = acle.get_mime_type();
 
-            let stream = FramedRead::new( acle, BytesCodec::new() );
-            let body = Body::wrap_stream( stream );
-            let mut resp = Response::new( body );
+                arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
 
-            let mime = mime_guess::from_ext( "mp3" ).first_or_octet_stream();
+                let stream = FramedRead::new( acle, BytesCodec::new() );
+                let body = Body::wrap_stream( stream );
+                let mut resp = Response::new( body );
 
-            resp.headers_mut().typed_insert( headers::ContentType::from( mime ) );
-            resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
-            resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
-            resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
+                resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+                resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
+                resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
 
-            return Ok( resp );
+                return Ok( resp );
+            }
+        ,   Err( x ) =>
+            {
+                log::error!( "asound_response error. {:?}", x );
+            }
         }
-    ,   Err( x ) =>
+    }
+    else
+    {
+        match utils::AlsaCaptureFlacEncode::new( dev, aclep )
         {
-            log::error!( "asound_response error. {:?}", x );
+            Ok( acle ) =>
+            {
+                let mime_type = acle.get_mime_type();
+
+                arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
+
+                let stream = FramedRead::new( acle, BytesCodec::new() );
+                let body = Body::wrap_stream( stream );
+                let mut resp = Response::new( body );
+
+                resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+                resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
+                resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
+
+                return Ok( resp );
+            }
+        ,   Err( x ) =>
+            {
+                log::error!( "asound_response error. {:?}", x );
+            }
         }
     }
 
@@ -185,7 +218,7 @@ async fn make_file_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                             {
                                 Ok( filerange ) =>
                                 {
-                                    arwlctx.write().await.sdf_add( filerange.get_wake() );
+                                    arwlctx.write().await.sdf_add( filerange.get_wake_shutdown_flag() );
 
                                     let len = filerange.len();
 
@@ -227,7 +260,7 @@ async fn make_file_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                     {
                         Ok( filerange ) =>
                         {
-                            arwlctx.write().await.sdf_add( filerange.get_wake() );
+                            arwlctx.write().await.sdf_add( filerange.get_wake_shutdown_flag() );
 
                             let stream = FramedRead::new( filerange, BytesCodec::new() );
                             let body = Body::wrap_stream( stream );

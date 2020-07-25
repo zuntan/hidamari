@@ -18,7 +18,7 @@ use std::fmt;
 use std::sync::atomic::{ AtomicUsize, Ordering };
 use std::sync::{ Arc, Weak, Mutex };
 
-use std::os::raw::c_int;
+use std::os::raw::{ c_int, c_uint };
 
 use tokio::fs::File;
 use tokio::io::AsyncRead;
@@ -48,9 +48,14 @@ pub fn new_sdf() -> AmShutdownFlag
     Arc::new( Mutex::new( ShutdownFlag::Run ) )
 }
 
-pub trait GetWake
+pub trait GetWakeShutdownFlag
 {
-    fn get_wake( &self ) -> WmShutdownFlag;
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag;
+}
+
+pub trait GetMimeType
+{
+    fn get_mime_type( &self ) -> mime_guess::Mime;
 }
 
 ///
@@ -63,9 +68,9 @@ pub struct FileRangeRead
 ,   sdf     : AmShutdownFlag
 }
 
-impl GetWake for FileRangeRead
+impl GetWakeShutdownFlag for FileRangeRead
 {
-    fn get_wake( &self ) -> WmShutdownFlag
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
     {
         Arc::downgrade( &self.sdf )
     }
@@ -150,7 +155,7 @@ impl AsyncRead for FileRangeRead
 
 ///
 #[derive(Debug)]
-pub struct AlsaCaptureLameEncodeParam
+pub struct AlsaCaptureEncodeParam
 {
     pub a_rate      : Option<u32>
 ,   pub a_channels  : Option<u8>
@@ -187,12 +192,12 @@ unsafe fn slice_mut<'a, T>( raw: *mut T, len : usize ) -> &'a mut [T]
     std::slice::from_raw_parts_mut( raw, len )
 }
 
-unsafe fn slice<'a, T>( raw: *mut T, len : usize ) -> &'a [T]
+unsafe fn slice<'a, T>( raw: *const T, len : usize ) -> &'a [T]
 {
     std::slice::from_raw_parts( raw, len )
 }
 
-static ALSA_CAPTURE_LAME_ENCODE_COUNTER : AtomicUsize = AtomicUsize::new( 0 );
+static ALSA_CAPTURE_ENCODE_COUNTER : AtomicUsize = AtomicUsize::new( 0 );
 
 ///
 pub struct AlsaCaptureLameEncode
@@ -200,7 +205,7 @@ pub struct AlsaCaptureLameEncode
     id          : usize
 ,   dev         : String
 ,   pcm         : PCM
-,   rate        : usize
+,   _rate       : usize
 ,   ch          : usize
 ,   gfp         : lame_sys::lame_t
 ,   buf         : VecDeque< u8 >
@@ -213,11 +218,19 @@ pub struct AlsaCaptureLameEncode
 ,   sdf         : AmShutdownFlag
 }
 
-impl GetWake for AlsaCaptureLameEncode
+impl GetWakeShutdownFlag for AlsaCaptureLameEncode
 {
-    fn get_wake( &self ) -> WmShutdownFlag
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
     {
         Arc::downgrade( &self.sdf )
+    }
+}
+
+impl GetMimeType for AlsaCaptureLameEncode
+{
+    fn get_mime_type( &self ) -> mime_guess::Mime
+    {
+        mime_guess::from_ext( "mp3" ).first_or_octet_stream()
     }
 }
 
@@ -231,7 +244,7 @@ impl fmt::Debug for AlsaCaptureLameEncode
 
 impl AlsaCaptureLameEncode
 {
-    pub fn new( dev : String, mut param : AlsaCaptureLameEncodeParam ) -> io::Result< Self >
+    pub fn new( dev : String, mut param : AlsaCaptureEncodeParam ) -> io::Result< Self >
     {
         if param.a_rate.is_none()
         {
@@ -411,10 +424,10 @@ impl AlsaCaptureLameEncode
                         Ok(
                             AlsaCaptureLameEncode
                             {
-                                id          : ALSA_CAPTURE_LAME_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
+                                id          : ALSA_CAPTURE_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
                             ,   dev
                             ,   pcm
-                            ,   rate        : rate as usize
+                            ,   _rate       : rate as usize
                             ,   ch          : ch as usize
                             ,   gfp
                             ,   buf         : VecDeque::< u8 >::new()
@@ -448,9 +461,9 @@ impl Drop for AlsaCaptureLameEncode
 
         unsafe
         {
-            lame_sys::lame_close( self.gfp );
             free( self.lbuf, self.lbuf_len );
             free( self.abuf, self.abuf_len );
+            lame_sys::lame_close( self.gfp );
         };
     }
 }
@@ -618,6 +631,418 @@ impl AsyncRead for AlsaCaptureLameEncode
                 dst[ dp ] = self.buf.pop_front().unwrap();
                 dp += 1;
             }
+
+            Poll::Ready( Ok( dp ) )
+        }
+    }
+}
+
+///
+pub struct AlsaCaptureFlacEncode
+{
+    id          : usize
+,   dev         : String
+,   pcm         : PCM
+,   _rate       : usize
+,   ch          : usize
+
+,   fse         : *mut flac_sys::FLAC__StreamEncoder
+,   buf_ptr     : *mut VecDeque< u8 >
+
+,   abuf_len    : usize
+,   abuf_rem    : usize
+,   abuf        : *mut i16
+
+,   fbuf_len    : usize
+,   fbuf        : *mut flac_sys::FLAC__int32
+
+,   lsample_min : usize
+
+,   sdf         : AmShutdownFlag
+}
+
+impl GetWakeShutdownFlag for AlsaCaptureFlacEncode
+{
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
+    {
+        Arc::downgrade( &self.sdf )
+    }
+}
+
+impl GetMimeType for AlsaCaptureFlacEncode
+{
+    fn get_mime_type( &self ) -> mime_guess::Mime
+    {
+        mime_guess::from_ext( "flac" ).first_or_octet_stream()
+    }
+}
+
+impl fmt::Debug for AlsaCaptureFlacEncode
+{
+    fn fmt( &self, f: &mut fmt::Formatter<'_> ) -> fmt::Result
+    {
+        write!( f, "AlsaCaptureFlacEncode:[{:?}] dev:[{}]", &self.id, &self.dev )
+    }
+}
+
+#[allow(dead_code)]
+unsafe extern "C" fn alsa_capture_flac_encode_callback(
+    _encoder        : *const flac_sys::FLAC__StreamEncoder
+,   buffer          : *const flac_sys::FLAC__byte
+,   bytes           : usize
+,   _samples        : std::os::raw::c_uint
+,   _current_frame  : std::os::raw::c_uint
+,   client_data     : *mut std::os::raw::c_void
+) -> flac_sys::FLAC__StreamEncoderWriteStatus
+{
+//    log::debug!( "b:{:?} s:{:?} cf:{:?}", bytes, samples, current_frame );
+
+    let buf_ptr : *mut VecDeque< u8 > = client_data as *mut VecDeque< u8 >;
+
+    let source = slice( buffer, bytes );
+
+    for p in 0..bytes
+    {
+        (*buf_ptr).push_back( (*source)[ p ] );
+    }
+
+    flac_sys::FLAC__StreamEncoderWriteStatus_FLAC__STREAM_ENCODER_WRITE_STATUS_OK
+}
+
+impl AlsaCaptureFlacEncode
+{
+    pub fn new( dev : String, mut param : AlsaCaptureEncodeParam ) -> io::Result< Self >
+    {
+        if param.a_rate.is_none()
+        {
+            param.a_rate = Some( DEFALUT_A_RATE );
+        }
+
+        if param.a_channels.is_none()
+        {
+            param.a_channels = Some( DEFALUT_A_CHANNELS );
+        }
+
+        if param.a_buffer_t.is_none()
+        {
+            param.a_buffer_t = Some( DEFALUT_A_BUFFER_T );
+        }
+
+        if param.a_period_t.is_none()
+        {
+            param.a_period_t = Some( DEFALUT_A_PERIOD_T );
+        }
+
+        log::debug!( "AlsaCaptureFlacEncode::new [{}]:[{:?}]", dev, param );
+
+        match PCM::new( &dev, Direction::Capture, true )
+        {
+            Ok( pcm ) =>
+            {
+                let ( rate, ch ) =
+                {
+                    let hwp = HwParams::any( &pcm ).unwrap();
+
+                    if let Some( x ) = param.a_rate
+                    {
+                        if let Err( x ) = hwp.set_rate( x, ValueOr::Nearest )
+                        {
+                            log::error!( "AlsaCaptureFlacEncode hwp.set_rate error. {:?}", x );
+                        }
+                    }
+
+                    if let Some( x ) = param.a_channels
+                    {
+                        if let Err( x ) = hwp.set_channels( x as u32 )
+                        {
+                            log::error!( "AlsaCaptureFlacEncode hwp.set_channels error. {:?}", x );
+                        }
+                    }
+
+                    if let Err( x ) = hwp.set_format( Format::s16() )
+                    {
+                        log::error!( "AlsaCaptureFlacEncode hwp.set_format error. {:?}", x );
+                    }
+
+                    if let Some( x ) = param.a_buffer_t
+                    {
+                        if let Err( x ) = hwp.set_buffer_time_near( x, ValueOr::Nearest )
+                        {
+                            log::error!( "AlsaCaptureFlacEncode hwp.set_buffer_time_near error. {:?}", x );
+                        }
+                    }
+
+                    if let Some( x ) = param.a_period_t
+                    {
+                        if let Err( x ) = hwp.set_period_time_near( x, ValueOr::Nearest )
+                        {
+                            log::error!( "AlsaCaptureFlacEncode hwp.set_period_time_near error. {:?}", x );
+                        }
+                    }
+
+                    if let Err( x ) = hwp.set_access( Access::RWInterleaved )
+                    {
+                        log::error!( "AlsaCaptureFlacEncode hwp.set_access error. {:?}", x );
+                    }
+
+                    if let Err( x ) = pcm.hw_params( &hwp )
+                    {
+                        log::error!( "AlsaCaptureFlacEncode hw_params error. {:?}", x );
+
+                        return Err( io::Error::new( io::ErrorKind::ConnectionRefused, x ) );
+                    }
+
+                    if log::log_enabled!( log::Level::Debug )
+                    {
+                        let rate    = hwp.get_rate().unwrap();
+                        let ch      = hwp.get_channels().unwrap();
+                        let fmt     = hwp.get_format().unwrap();
+                        let b_size  = hwp.get_buffer_size().unwrap();
+                        let p_size  = hwp.get_period_size().unwrap();
+
+                        log::debug!(
+                            "ALSA HWP rate:{:?} channels:{:?} format:{:?} buffer_time:{:?} period_time:{:?}"
+                        ,   rate
+                        ,   ch
+                        ,   fmt
+                        ,   b_size as f32 / rate as f32
+                        ,   p_size as f32 / rate as f32
+                        );
+                    }
+
+                    (
+                        hwp.get_rate().unwrap()
+                    ,   hwp.get_channels().unwrap() as u8
+                    )
+                };
+
+                if let Err( x ) = pcm.start()
+                {
+                    log::error!( "AlsaCaptureFlacEncode start error. {:?}", x );
+
+                    Err( io::Error::new( io::ErrorKind::ConnectionRefused, x ) )
+                }
+                else
+                {
+                    let fse = unsafe{ flac_sys::FLAC__stream_encoder_new() };
+
+                    if fse == ptr::null_mut()
+                    {
+                        log::error!( "FLAC__stream_encoder_new error. " );
+
+                        Err( io::Error::new( io::ErrorKind::Other, "FLAC__stream_encoder_new error" ) )
+                    }
+                    else
+                    {
+                        let buf = Box::new( VecDeque::< u8 >::new() );
+                        let buf_ptr = Box::into_raw( buf );
+
+                        unsafe
+                        {
+                            let f_b_true  : flac_sys::FLAC__bool = 1;
+                            let f_b_false : flac_sys::FLAC__bool = 0;
+
+                            let ok  : flac_sys::FLAC__bool = f_b_true;
+
+                            let ok = ok & flac_sys::FLAC__stream_encoder_set_verify( fse, f_b_false );
+                            let ok = ok & flac_sys::FLAC__stream_encoder_set_compression_level( fse, 2 );
+
+                            let ok = ok & flac_sys::FLAC__stream_encoder_set_channels( fse, ch as c_uint );
+                            let ok = ok & flac_sys::FLAC__stream_encoder_set_bits_per_sample( fse, 16 );
+
+                            if ok == f_b_false
+                            {
+                                log::error!( "FLAC__stream_encoder setup error." );
+                            }
+
+                            let status = flac_sys::FLAC__stream_encoder_init_stream( fse, Some( alsa_capture_flac_encode_callback ), None, None, None, buf_ptr as *mut std::ffi::c_void );
+
+                            if status != flac_sys::FLAC__StreamEncoderInitStatus_FLAC__STREAM_ENCODER_INIT_STATUS_OK
+                            {
+                                log::error!( "FLAC__stream_encoder init error. {:?}", status );
+                            }
+                        };
+
+                        let abuf_len    = ( ( rate as f32 * ALSA_BUFFER_TIME_RATE ) * ch as f32 ) as usize;
+                        let fbuf_len    = abuf_len;
+
+                        log::debug!( "BUFLEN a_sz:{} a_sec:{} l_sz:{}", abuf_len, abuf_len as f32 / rate as f32, fbuf_len );
+
+                        Ok(
+                            AlsaCaptureFlacEncode
+                            {
+                                id          : ALSA_CAPTURE_ENCODE_COUNTER.fetch_add( 1, Ordering::SeqCst )
+                            ,   dev
+                            ,   pcm
+                            ,   _rate       : rate as usize
+                            ,   ch          : ch as usize
+                            ,   fse
+                            ,   buf_ptr
+                            ,   abuf_len
+                            ,   abuf_rem    : 0
+                            ,   abuf        : unsafe{ alloc::< i16 >( abuf_len ) }
+                            ,   fbuf_len
+                            ,   fbuf        : unsafe{ alloc::< flac_sys::FLAC__int32 >( fbuf_len ) }
+                            ,   lsample_min : rate as usize / 20
+                            ,   sdf         : new_sdf()
+                            }
+                        )
+                    }
+                }
+            }
+        ,   Err( x ) =>
+            {
+                log::error!( "AlsaCaptureFlacEncode open error. {:?}", x );
+
+                Err( io::Error::new( io::ErrorKind::NotFound, x ) )
+            }
+        }
+    }
+}
+
+impl Drop for AlsaCaptureFlacEncode
+{
+    fn drop( &mut self )
+    {
+        log::debug!( "AlsaCaptureFlacEncode drop [{:?}]", &self );
+
+        unsafe
+        {
+            let _ = Box::from_raw( self.buf_ptr );
+
+            free( self.fbuf, self.fbuf_len );
+            free( self.abuf, self.abuf_len );
+
+            flac_sys::FLAC__stream_encoder_delete( self.fse );
+        };
+    }
+}
+
+unsafe impl Send for AlsaCaptureFlacEncode {}
+
+///
+impl AsyncRead for AlsaCaptureFlacEncode
+{
+    fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
+        -> Poll< std::io::Result< usize > >
+    {
+        if let ShutdownFlag::Shutdown = *self.sdf.lock().unwrap()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        if self.pcm.state() == alsa::pcm::State::Disconnected
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        if unsafe{ (*self.buf_ptr).is_empty() }
+        {
+            match
+            {
+                let abuf =
+                    unsafe
+                    {
+                        let d =
+                            if self.abuf_rem * self.ch >= self.abuf_len
+                            {
+                                self.abuf_rem = 0;
+                                0
+                            }
+                            else
+                            {
+                                self.abuf_rem * self.ch
+                            };
+
+                        slice_mut( self.abuf.add( d ), self.abuf_len - d )
+                    };
+
+                let io = self.pcm.io_i16().unwrap();
+
+                io.readi( abuf )
+            }
+            {
+                Ok( mut alen ) =>
+                {
+                    alen += self.abuf_rem;
+                    self.abuf_rem = 0;
+
+                    if alen < self.lsample_min
+                    {
+                        self.abuf_rem = alen;
+                    }
+                    else
+                    {
+                        let fbuf = unsafe{ slice_mut( self.fbuf, alen * 2 ) };
+                        let abuf = unsafe{ slice( self.abuf, alen * 2 ) };
+
+                        for ( i, x ) in abuf.iter().enumerate()
+                        {
+                            fbuf[ i ] = (*x).into();
+                        }
+
+                        if unsafe
+                        {
+                            flac_sys::FLAC__stream_encoder_process_interleaved( self.fse, self.fbuf, alen as c_uint )
+                        } == 0
+                        {
+                            let state = unsafe{ flac_sys::FLAC__stream_encoder_get_state( self.fse ) };
+
+                            log::error!( "flac error {:?}", state );
+                        }
+                    }
+                }
+            ,   Err( x ) =>
+                {
+                    if let nix::Error::Sys( errno ) = x.nix_error()
+                    {
+                        match errno
+                        {
+                            nix::errno::Errno::EAGAIN => {}          /* nop */
+                        ,   _ =>
+                            {
+                                log::error!( "alsa error {:?}", x );
+                                return Poll::Ready( Ok( 0 ) );
+                            }
+                        }
+                    }
+                    else
+                    {
+                        log::error!( "alsa error {:?}", x );
+                        return Poll::Ready( Ok( 0 ) );
+                    }
+                }
+            }
+        }
+
+        if unsafe{ (*self.buf_ptr).is_empty() }
+        {
+            let waker = cx.waker().clone();
+
+            task::spawn(
+                async
+                {
+                    delay_for( Duration::from_micros( ALSA_PENDING_DELAY.into() ) ).await;
+                    waker.wake()
+                }
+            );
+
+            Poll::Pending
+        }
+        else
+        {
+//          log::debug!( "buf:{:?}", unsafe{ (*self.buf_ptr).len() } );
+
+            let     dl = dst.len();
+            let mut dp = 0;
+
+            while dp < dl && ! unsafe{ (*self.buf_ptr).is_empty() }
+            {
+                dst[ dp ] = unsafe{ (*self.buf_ptr).pop_front().unwrap() };
+                dp += 1;
+            }
+
+//          log::debug!( "buf:{:?}", unsafe{ (*self.buf_ptr).len() } );
 
             Poll::Ready( Ok( dp ) )
         }

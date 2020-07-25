@@ -25,18 +25,24 @@ wget https://archive.raspbian.org/raspbian.public.key -O - | apt-key add -
 dpkg --add-architecture armhf
 dpkg --print-foreign-architectures
 
-### install libmp3lame-dev:armhf libasound2-dev:armhf
+### install libmp3lame-dev:armhf libasound2-dev:armhf libflac-dev:armhf libflac8:armhf
 
 apt-get update
 
-apt-get install libmp3lame-dev:armhf libasound2-dev:armhf
+apt-get install libmp3lame-dev:armhf libasound2-dev:armhf libflac-dev:armhf libflac8:armhf
 dpkg -L libmp3lame-dev:armhf
+dpkg -L libasound2-dev:armhf
+dpkg -L libasound2-dev:armhf
 dpkg -L libasound2-dev:armhf
 
 ### for libmp3lame
 
 cd /usr/lib/arm-linux-gnueabihf
 ln -s libmp3lame.so.0.0.0   libmp3lame.so
+
+cd /usr/lib/arm-linux-gnueabihf
+ln -s libFLAC.so libflac.so
+
 
 ### for libasound2 ( crate pkg_config )
 

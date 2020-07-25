@@ -1,0 +1,16 @@
+apt-get install libmp3lame-dev libasound2-dev libflac-dev libflac8
+
+
+cd /usr/lib/x86_64-linux-gnu
+ln -s libFLAC.so libflac.so
+
+
+Add bluetooth to the group of development or execution users.
+
+# groups zuntan
+zuntan : zuntan cdrom floppy audio dip video plugdev netdev
+
+# usermod -G bluetooth -a zuntan
+
+# groups zuntan
+zuntan : zuntan cdrom floppy audio dip video plugdev netdev bluetooth
