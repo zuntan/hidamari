@@ -24,7 +24,7 @@ use serde::{ Deserialize, Serialize };
 
 use crate::event;
 use crate::mpdcom;
-use crate::utils;
+use crate::asyncread;
 
 pub const CONTENTS_DIR      : &str = "_contents";
 pub const THEME_DIR         : &str = "theme";
@@ -225,7 +225,7 @@ pub struct Context
 , pub   ws_data_intv    : time::Duration
 , pub   ws_send_intv    : time::Duration
 
-, pub   sdf_list        : Vec< utils::WmShutdownFlag >
+, pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
 , pub   product         : String
 , pub   version         : String
@@ -260,7 +260,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
-        ,   sdf_list        : Vec::< utils::WmShutdownFlag >::new()
+        ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   product         : String::from( product )
         ,   version         : String::from( version )
         }
@@ -569,7 +569,7 @@ impl Context
         ret
     }
 
-    pub fn sdf_add( &mut self, wsf : utils::WmShutdownFlag )
+    pub fn sdf_add( &mut self, wsf : asyncread::WmShutdownFlag )
     {
         let n1 = self.sdf_list.len();
 
@@ -609,7 +609,7 @@ impl Context
             {
                 let mut f = x.lock().unwrap();
 
-                *f = utils::ShutdownFlag::Shutdown;
+                *f = asyncread::ShutdownFlag::Shutdown;
 
                 c += 1;
             }

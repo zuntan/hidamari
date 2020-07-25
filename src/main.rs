@@ -45,10 +45,10 @@ mod context;
 mod mpdcom;
 mod mpdfifo;
 mod event;
-mod utils;
+mod asyncread;
 
-use crate::utils::GetWakeShutdownFlag;
-use crate::utils::GetMimeType;
+use crate::asyncread::GetWakeShutdownFlag;
+use crate::asyncread::GetMimeType;
 
 ///
 type StrResult = Result< String, Rejection >;
@@ -94,7 +94,7 @@ struct AsoundParam
 
 async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
 {
-    let aclep = utils::AlsaCaptureEncodeParam
+    let aclep = asyncread::AlsaCaptureEncodeParam
     {
         a_rate      : param.a_rate
     ,   a_channels  : param.a_channels
@@ -108,7 +108,7 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
 
     if use_lame
     {
-        match utils::AlsaCaptureLameEncode::new( dev, aclep )
+        match asyncread::AlsaCaptureLameEncode::new( dev, aclep )
         {
             Ok( acle ) =>
             {
@@ -135,7 +135,7 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
     }
     else
     {
-        match utils::AlsaCaptureFlacEncode::new( dev, aclep )
+        match asyncread::AlsaCaptureFlacEncode::new( dev, aclep )
         {
             Ok( acle ) =>
             {
@@ -214,7 +214,7 @@ async fn make_file_response( arwlctx : context::ARWLContext, headers: HeaderMap,
 
                         if st < ed && ed <= max_len
                         {
-                            match utils::FileRangeRead::new( file, st, ed ).await
+                            match asyncread::FileRangeRead::new( file, st, ed ).await
                             {
                                 Ok( filerange ) =>
                                 {
@@ -256,7 +256,7 @@ async fn make_file_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                 }
                 else
                 {
-                    match utils::FileRangeRead::new( file, 0, max_len ).await
+                    match asyncread::FileRangeRead::new( file, 0, max_len ).await
                     {
                         Ok( filerange ) =>
                         {
