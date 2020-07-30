@@ -7,13 +7,14 @@ function()
 		{
 			return(
 			{
-				ws_status : null
-			,	ws_spec_l : null
-			,	ws_spec_r : null
-			,	ws_rms_l  : null
-			,	ws_rms_r  : null
-			,	ws_spec_t : null
-			,	ws_spec_h : null
+				ws_status 		: null
+			,	ws_spec_l 		: null
+			,	ws_spec_r	 	: null
+			,	ws_rms_l 	 	: null
+			,	ws_rms_r  		: null
+			,	ws_spec_t		: null
+			,	ws_spec_h		: null
+			,	ws_bt_status	: null
 
 			,	update : function( func )
 				{
@@ -54,6 +55,19 @@ function()
 					}
 				}
 
+			,	bt_status_update : function( func )
+				{
+					if( arguments.length > 0 )
+					{
+						if( !this._cb_bt_status_update ) { this._cb_bt_status_update = Array(); }
+						this._cb_bt_status_update.push( func );
+					}
+					else
+					{
+						if( this._cb_bt_status_update ) { var that = this; $.each( this._cb_bt_status_update, function( i, o ) { o.call( that ) } ) }
+					}
+				}
+
 			,	open : function()
 				{
 					this.update();
@@ -71,6 +85,7 @@ function()
 						that.ws_rms_l  = null;
 						that.ws_rms_r  = null;
 						that.ws_spec_t = null;
+						that.ws_bt_status = null;
 						setTimeout( function() { that.open(); }, 1000 );
 					};
 
@@ -105,6 +120,12 @@ function()
 							if( j_data.Ok.spec_t || j_data.Ok.spec_h )
 							{
 								that.spec_update();
+							}
+
+							if( j_data.Ok.bt_status )
+							{
+								that.ws_bt_status = j_data.Ok.bt_status
+								that.bt_status_update();
 							}
 
 							that.update();

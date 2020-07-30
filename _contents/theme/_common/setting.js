@@ -334,6 +334,7 @@ function()
 		$( ".x_ws_monitor_ws_rms_l"  ).val( JSON.stringify( ws.ws_rms_l ) )
 		$( ".x_ws_monitor_ws_rms_r"  ).val( JSON.stringify( ws.ws_rms_r ) )
 		$( ".x_ws_monitor_ws_spec_h" ).val( JSON.stringify( ws.ws_spec_h ) )
+		$( ".x_ws_monitor_bt_status" ).val( JSON.stringify( ws.ws_bt_status ) )
 	};
 
 	$.hidamari.ajax_setup()

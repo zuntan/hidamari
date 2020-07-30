@@ -602,6 +602,7 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     ,   mut last_mpd_status_json
     ,       last_spec_head_json
     ,   mut last_spec_data_json
+    ,   mut last_bt_status_json
     ) =
     {
         let mut ctx = arwlctx.write().await;
@@ -626,6 +627,7 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
         ,   String::from( &ctx.mpd_status_json )
         ,   String::from( &ctx.spec_head_json )
         ,   String::from( &ctx.spec_data_json )
+        ,   String::from( &ctx.bt_status_json )
         )
     };
 
@@ -665,6 +667,13 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     }
 
     if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
+    {
+        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+        cleanup!();
+        return;
+    }
+
+    if let Err(x) = ws_tx.send( Message::text( &last_bt_status_json ) ).await
     {
         log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
         cleanup!();
@@ -714,6 +723,9 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     let mut last_send_data    = time::Instant::now();
 
     let mut last_send_head    = time::Instant::now();
+
+    let mut last_check_bt_statu   = time::Instant::now();
+    let mut last_send_bt_statu    = time::Instant::now();
 
     loop
     {
@@ -784,10 +796,39 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
         {
             last_send_head = time::Instant::now();
 
-            if let Err(x) = ws_tx.send( Message::text( &last_spec_head_json ) ).await
+            if let Err(x) = ws_tx.send( Message::text( &last_bt_status_json ) ).await
             {
                 log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
                 break;
+            }
+        }
+
+        if last_check_bt_statu.elapsed() > ws_status_intv
+        {
+            last_check_bt_statu = time::Instant::now();
+
+            if
+            {
+                let ctx = arwlctx.read().await;
+
+                if ctx.bt_status_json != last_bt_status_json
+                {
+                    last_bt_status_json = String::from( &ctx.bt_status_json );
+                    true
+                }
+                else
+                {
+                    false
+                }
+            } || last_send_bt_statu.elapsed() > ws_send_intv
+            {
+                last_send_bt_statu = time::Instant::now();
+
+                if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
+                {
+                    log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+                    break;
+                }
             }
         }
     }

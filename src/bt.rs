@@ -56,7 +56,7 @@ pub static AUDIO_SINK_UUID              : &'static str = "0000110b-0000-1000-800
 
 const TIME_OUT                      : Duration = Duration::from_secs( 3 );
 
-pub type Result< T >        = std::result::Result< T, Box< dyn std::error::Error > >;
+pub type Result< T >    = std::result::Result< T, dbus::Error >;
 
 type MethodResult< T >  = std::result::Result< T, MethodErr >;
 
@@ -70,6 +70,7 @@ pub struct BtConn
     conn        : Arc< SyncConnection >
 ,   res_err     : Arc< Mutex< Option< String > > >
 ,   dump_mg     : bool
+,   agent       : bool
 }
 
 pub struct BtAdapter<'a>
@@ -95,6 +96,9 @@ pub struct BtAdapterStatus
 ,   pub pairable_timeout    : u32
 ,   pub powered             : bool
 ,   pub uuids               : Vec< String >
+
+,   pub device_status       : Option< Vec< BtDeviceStatus > >
+
 }
 
 pub struct BtDevice<'a>
@@ -243,7 +247,7 @@ impl BtConn
         }
         */
 
-        Ok( BtConn{ conn, res_err, dump_mg : true } )
+        Ok( BtConn{ conn, res_err, dump_mg : false, agent : false } )
     }
 
     pub async fn get_managed_objects<'a>( &self ) -> Result< GetManagedObjectsRetType<'a> >
@@ -264,7 +268,7 @@ impl BtConn
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }
@@ -344,7 +348,7 @@ impl BtConn
         sink
     }
 
-    pub async fn get_adapter_path( &self ) -> Result< Vec< String > >
+    pub async fn get_adapter_paths( &self ) -> Result< Vec< String > >
     {
         let mut ret = Vec::<String>::new();
 
@@ -390,7 +394,7 @@ impl BtConn
 
     pub async fn get_adapter<'a>( &'a self, path : &str ) -> Result< BtAdapter<'a> >
     {
-        let paths = self.get_adapter_path().await?;
+        let paths = self.get_adapter_paths().await?;
 
         if let Some( _ ) = paths.iter().find( |x| *x == path )
         {
@@ -398,13 +402,19 @@ impl BtConn
         }
         else
         {
-            Err( Box::from( "Bt adapter not found" ) )
+            Err( dbus::Error::new_custom( "Error", "Bt adapter not found" ) )
         }
+    }
+
+
+    pub fn get_adapter_uncheck<'a>( &'a self, path : &str ) -> BtAdapter<'a>
+    {
+        BtAdapter{ bt : self, path : String::from( path ) }
     }
 
     pub async fn get_first_adapter<'a>( &'a self ) -> Result< BtAdapter<'a> >
     {
-        let paths = self.get_adapter_path().await?;
+        let paths = self.get_adapter_paths().await?;
 
         if !paths.is_empty()
         {
@@ -412,8 +422,14 @@ impl BtConn
         }
         else
         {
-            Err( Box::from( "Bt adapter not found" ) )
+            Err( dbus::Error::new_custom( "Error", "Bt adapter not found" ) )
         }
+    }
+
+    pub async fn get_adapters<'a>( &'a self ) -> Result< Vec< BtAdapter<'a> > >
+    {
+        let adapters = self.get_adapter_paths().await?;
+        Ok( adapters.iter().map( | x | BtAdapter { bt : self, path : String::from( x ) } ).collect() )
     }
 
     pub async fn call_void_func( &self, path : &str, interface : &str, func_name : &str ) -> Result< () >
@@ -429,7 +445,7 @@ impl BtConn
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }
@@ -449,7 +465,7 @@ impl BtConn
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }
@@ -469,13 +485,13 @@ impl BtConn
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }
 
     pub async fn setup_agent< F0, F1, F2, R >(
-            &self
+            &mut self
         ,   capability                  : BtAgentCapability
         ,   func_request_pincode        : Option< F0 >
         ,   func_display_pincode        : Option< F1 >
@@ -489,6 +505,13 @@ impl BtConn
         ,   F2: Fn( &str, &str, &str ) -> R + Sync + Send + 'static + Copy
         ,   R : std::future::Future< Output = bool > + Send + 'static
     {
+
+        if self.agent
+        {
+            log::error!( "error. setup_agent already done." );
+            return
+        }
+
         let mut cr = Crossroads::new();
 
         cr.set_async_support(
@@ -708,6 +731,41 @@ impl BtConn
                 log::error!( "dbus method_call error {:?} {:?} {:?}", BLUEZ_AGENT_MANAGER_INTERFACE, "RequestDefaultAgent", x );
             }
         }
+
+        self.agent = true;
+    }
+}
+
+impl Drop for BtConn
+{
+    fn drop( &mut self )
+    {
+        log::debug!( "BtConn drop");
+
+        if self.agent
+        {
+            let conn = self.conn.clone();
+
+            tokio::spawn(
+                async move
+                {
+                    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_SERVICE_NAME, TIME_OUT, conn );
+
+                    let param = ( Path::from( BLUEZ_AGENT_PATH ), );
+
+                    match proxy.method_call::< (), _, _, _ >( BLUEZ_AGENT_MANAGER_INTERFACE, "UnregisterAgent", param ).await
+                    {
+                        Ok( _ ) => {}
+                    ,   Err( x ) =>
+                        {
+                            log::error!( "dbus method_call error {:?} {:?} {:?}", BLUEZ_AGENT_MANAGER_INTERFACE, "UnregisterAgent", x );
+                        }
+                    }
+                }
+            );
+
+            self.agent = false;
+        }
     }
 }
 
@@ -720,8 +778,47 @@ impl <'a> BtAdapter<'a>
         &self.path
     }
 
-    pub async fn get_status( &self ) -> Result< BtAdapterStatus >
+    pub async fn get_status( &self, with_devices : bool ) -> Result< BtAdapterStatus >
     {
+        let device_status : Option< Vec< BtDeviceStatus > > =
+            if with_devices
+            {
+                let mut device_status = Vec::< BtDeviceStatus >::new();
+
+                match self.get_devices().await
+                {
+                    Ok( devices ) =>
+                    {
+                        for device in devices
+                        {
+                            match device.get_status().await
+                            {
+                                Ok( x ) =>
+                                {
+                                    device_status.push( x );
+                                }
+                            ,   Err( x ) =>
+                                {
+                                    log::debug!( "{:?}", x );
+                                    return Err( x );
+                                }
+                            }
+                        }
+                    }
+                ,   Err( x ) =>
+                    {
+                        log::debug!( "{:?}", x );
+                        return Err( x );
+                    }
+                }
+
+                Some( device_status )
+            }
+            else
+            {
+                None
+            };
+
         let proxy = Proxy::new( BLUEZ_SERVICE_NAME, &self.path, TIME_OUT, self.bt.conn.clone() );
 
         match proxy.get_all( BLUEZ_ADAPTER_INTERFACE ).await
@@ -770,13 +867,14 @@ impl <'a> BtAdapter<'a>
                     ,   pairable_timeout
                     ,   powered
                     ,   uuids
+                    ,   device_status
                     }
                 )
             }
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }
@@ -944,7 +1042,7 @@ impl <'a> BtDevice<'a>
         ,   Err( x ) =>
             {
                 log::debug!( "{:?}", x );
-                Err( Box::new( x ) )
+                Err( x )
             }
         }
     }

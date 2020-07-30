@@ -225,6 +225,8 @@ pub struct Context
 , pub   ws_data_intv    : time::Duration
 , pub   ws_send_intv    : time::Duration
 
+, pub   bt_status_json  : String
+
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
 , pub   product         : String
@@ -260,6 +262,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
+        ,   bt_status_json  : String::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   product         : String::from( product )
         ,   version         : String::from( version )
