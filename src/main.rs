@@ -47,6 +47,7 @@ mod mpdfifo;
 mod event;
 mod asyncread;
 mod bt;
+mod btctrl;
 
 use crate::asyncread::GetWakeShutdownFlag;
 use crate::asyncread::GetMimeType;
@@ -1030,6 +1031,11 @@ async fn main() -> std::io::Result< () >
     let arwlctx_c = arwlctx.clone();
     let h_mpdfifo : task::JoinHandle< _ > = task::spawn( mpdfifo::mpdfifo_task( arwlctx_c, mpdfifo_rx ) );
 
+    let ( mut btctrl_tx,   btctrl_rx ) = event::make_channel();
+
+    let arwlctx_c = arwlctx.clone();
+    let h_btctrl : task::JoinHandle< _ > = task::spawn( btctrl::btctrl_task( arwlctx_c, btctrl_rx ) );
+
     log::debug!( "http server init." );
 
     let ( tx, rx ) = sync::oneshot::channel();
@@ -1088,6 +1094,12 @@ async fn main() -> std::io::Result< () >
     let _ = tx.send( () );
     let _ = join!( h_server );
     log::info!( "http server shutdown." );
+
+    let ( mut req, _ ) = event::new_request();
+    req.req = event::EventRequestType::Shutdown;
+    let _ = btctrl_tx.send( req ).await;
+    let _ = join!( h_btctrl );
+    log::info!( "btctrl_task shutdown." );
 
     let ( mut req, _ ) = event::new_request();
     req.req = event::EventRequestType::Shutdown;
