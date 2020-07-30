@@ -20,9 +20,9 @@ use dbus::nonblock::{ SyncConnection, MsgMatch, Proxy, MethodReply, stdintf::org
 use dbus::message::{ MatchRule, MessageType };
 use dbus::strings::{ BusName, Path, Interface, Member };
 use dbus::arg::{ Variant, RefArg };
-use dbus::tree::Factory;
+use dbus::channel::MatchingReceiver;
 
-type Result< T > = std::result::Result< T, Box< dyn std::error::Error > >;
+use dbus_crossroads::{ MethodErr, Crossroads, IfaceToken, IfaceBuilder };
 
 static BLUEZ_SENDER                 : &'static str = "org.bluez";
 static BLUEZ_SERVICE_NAME           : &'static str = "org.bluez";
@@ -34,15 +34,27 @@ static BLUEZ_ADAPTER_INTERFACE      : &'static str = "org.bluez.Adapter1";
 static BLUEZ_DEVICE_INTERFACE       : &'static str = "org.bluez.Device1";
 static BLUEZ_AGENT_INTERFACE        : &'static str = "org.bluez.Agent1";
 
+static BLUEZ_AGENT_MANAGER_INTERFACE : &'static str = "org.bluez.AgentManager1";
+
+
+
+static BLUEZ_AGENT_PATH             : &'static str = "/net/zuntan/hidamari";
+
+static BLUEZ_ERROR_REJECTED         : &'static str = "org.bluez.Error.Rejected";
+static BLUEZ_ERROR_CANCELED         : &'static str = "org.bluez.Error.Canceled";
+
 static AUDIO_SOURCE_UUID            : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
 static AUDIO_SINK_UUID              : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
 
 const TIME_OUT                      : Duration = Duration::from_secs( 3 );
 
+type Result< T >        = std::result::Result< T, Box< dyn std::error::Error > >;
+type MethodResult< T >  = std::result::Result< T, MethodErr >;
+
 type GetManagedObjectsRetType<'a> =
     HashMap< dbus::strings::Path<'a>, HashMap< String, HashMap< String, Variant< Box< dyn RefArg > > > > >;
 
-type GetAllRetType = HashMap< String, Variant< Box< dyn RefArg > > >;
+type GetAllRetType      = HashMap< String, Variant< Box< dyn RefArg > > >;
 
 pub struct BtConn
 {
@@ -50,6 +62,8 @@ pub struct BtConn
 ,   res_err     : Arc< Mutex< Option< String > > >
 ,   dump_mg     : bool
 }
+
+struct BtAgentContext {}
 
 pub struct BtAdapter<'a>
 {
@@ -387,6 +401,202 @@ impl BtConn
             {
                 log::debug!( "{:?}", x );
                 Err( Box::new( x ) )
+            }
+        }
+    }
+
+    pub async fn setup_agent()
+    {
+        let mut cr = Crossroads::new();
+
+        cr.set_async_support(
+            Some(
+                (
+                    conn.clone()
+                ,   Box::new( |x| { tokio::spawn( x ); } )
+                )
+            )
+        );
+
+    let iface_token =
+        cr.register
+        (
+            BLUEZ_AGENT_INTERFACE
+        ,   | b: &mut IfaceBuilder< BtAgentContext >  |
+            {
+                b.method(
+                    "Release", (), ()
+                ,   | _, btactx, _ : () |
+                    {
+                        log::debug!( "m:Release" );
+
+                        Ok(())
+                    }
+                );
+
+                b.method(
+                    "RequestPinCode", ( "device", ), ( "pincode",  )
+                ,   | _, btactx, ( device, ) : ( Path, ) |
+                    {
+                        log::debug!( "m:RequestPinCode {:?}", device );
+
+                        /*
+                        Ok( ( "", ) )
+                        */
+
+                        MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                    }
+                );
+
+                b.method(
+                    "DisplayPinCode", ( "device", "pincode", ), ()
+                ,   | _, btactx, ( device, pincode, ) : ( Path, String, ) |
+                    {
+                        log::debug!( "m:DisplayPinCode {:?} {:?}", device, pincode );
+
+                        /*
+                        Ok(())
+                        */
+
+                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                    }
+                );
+
+                b.method(
+                    "RequestPasskey", ( "device", ), ( "passkey", )
+                ,   | _, btactx, ( device, ) : ( Path, ) |
+                    {
+                        log::debug!( "m:RequestPasskey {:?}", device );
+
+                        /*
+                        Ok(( 0, ))
+                        */
+
+                        MethodResult::<(u32,)>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                    }
+                );
+
+                b.method(
+                    "DisplayPasskey", ( "device", "passkey", "entered" ), ()
+                ,   | _, btactx, ( device, passkey, entered ) : ( Path, u32, u16 ) |
+                    {
+                        log::debug!( "m:DisplayPasskey {:?} {:?} {:?}", device, passkey, entered );
+
+                        /*
+                        Ok(())
+                        */
+
+                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                    }
+                );
+
+                b.method_with_cr_async(
+                    "RequestConfirmation", ( "device", "passkey" ), ()
+                ,   | mut ctx, cr, ( device, passkey ) : ( Path, u32 ) |
+                    {
+                        log::debug!( "m:RequestConfirmation {:?} {:?}", device, passkey );
+
+                        async move
+                        {
+                            use tokio::io::AsyncBufReadExt;
+
+                            let mut buffer = String::new();
+                            let mut bin = tokio::io::BufReader::new( tokio::io::stdin() );
+
+                            log::debug!( "passkey:{:?}", passkey );
+
+                            bin.read_line( &mut buffer ).await;
+
+                            log::debug!( "ret:{:?}", buffer );
+
+                            ctx.reply(
+                                if buffer.trim() == "1"
+                                {
+                                    Ok( () )
+                                }
+                                else
+                                {
+                                    MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                }
+                            )
+                        }
+                    }
+                );
+
+                b.method(
+                    "RequestAuthorization", ( "device", ), ()
+                ,   | _, btactx, ( device, ) : ( Path, ) |
+                    {
+                        log::debug!( "m:RequestAuthorization {:?}", device );
+
+                        /*
+                        Ok(())
+                        */
+
+                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                    }
+                );
+
+                b.method(
+                    "AuthorizeService", ( "device", "uuid" ), ()
+                ,   | _, btactx, ( device, uuid ) : ( Path, String ) |
+                    {
+                        log::debug!( "m:AuthorizeService {:?} {:?}", device, uuid );
+
+                        Ok(())
+
+                        /*
+                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                        */
+                    }
+                );
+
+                b.method(
+                    "Cancel", (), ()
+                ,   | _, btactx, _ : () |
+                    {
+                        log::debug!( "m:Cancel" );
+
+                        Ok(())
+                    }
+                );
+            }
+        );
+
+        cr.insert( BLUEZ_AGENT_PATH, &[iface_token], BtAgentContext {} );
+
+        conn.start_receive(
+            MatchRule::new_method_call()
+        ,   Box::new(
+                move | msg, conn |
+                {
+                    log::debug!( "dbus msg {:?}", msg );
+                    cr.handle_message( msg, conn ).unwrap();
+                    true
+                }
+            )
+        );
+
+        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_SERVICE_NAME, TIME_OUT, conn.clone() );
+        let param = ( Path::from( BLUEZ_AGENT_PATH ), "DisplayYesNo" );
+
+        match proxy.method_call::< (), _, _, _ >( BLUEZ_AGENT_MANAGER_INTERFACE, "RegisterAgent", param ).await
+        {
+            Ok( _ ) => {}
+        ,   Err( x ) =>
+            {
+                log::error!( "dbus method_call error {:?} {:?} {:?}", BLUEZ_AGENT_MANAGER_INTERFACE, "RegisterAgent", x );
+            }
+        }
+
+        let param = ( Path::from( BLUEZ_AGENT_PATH ), );
+
+        match proxy.method_call::< (), _, _, _ >( BLUEZ_AGENT_MANAGER_INTERFACE, "RequestDefaultAgent", param ).await
+        {
+            Ok( _ ) => {}
+        ,   Err( x ) =>
+            {
+                log::error!( "dbus method_call error {:?} {:?} {:?}", BLUEZ_AGENT_MANAGER_INTERFACE, "RequestDefaultAgent", x );
             }
         }
     }
