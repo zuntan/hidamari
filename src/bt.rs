@@ -17,17 +17,19 @@ use tokio::time::{ Duration };
 
 use serde::{ Serialize, /* Deserialize */ };
 
-use dbus_tokio::connection::{ self, IOResource };
+use dbus_tokio::connection;
 
-use dbus::nonblock::{ SyncConnection, MsgMatch, Proxy, MethodReply, stdintf::org_freedesktop_dbus::Properties };
-use dbus::message::{ MatchRule, MessageType };
-use dbus::strings::{ BusName, Path, Interface, Member };
+use dbus::nonblock::{ SyncConnection, Proxy, stdintf::org_freedesktop_dbus::Properties /*, MethodReply, MsgMatch */ };
+use dbus::message::{ MatchRule /*, MessageType */ };
+use dbus::strings::{ Path /*, Interface, BusName, Member */ };
 use dbus::arg::{ Variant, RefArg };
 use dbus::channel::MatchingReceiver;
 
-use dbus_crossroads::{ MethodErr, Crossroads, IfaceToken, IfaceBuilder };
+use dbus_crossroads::{ MethodErr, Crossroads, IfaceBuilder /*, IfaceToken */ };
 
+/*
 static BLUEZ_SENDER                 : &'static str = "org.bluez";
+*/
 static BLUEZ_SERVICE_NAME           : &'static str = "org.bluez";
 
 static OBJECT_MANAGER_INTERFACE     : &'static str = "org.freedesktop.DBus.ObjectManager";
@@ -49,18 +51,19 @@ static REQUEST_PINCODE              : &'static str = "0000";
 static REQUEST_PASSKEY              : u32 = 0;
 */
 
-static AUDIO_SOURCE_UUID            : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
-static AUDIO_SINK_UUID              : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
+pub static AUDIO_SOURCE_UUID            : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
+pub static AUDIO_SINK_UUID              : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
 
 const TIME_OUT                      : Duration = Duration::from_secs( 3 );
 
-type Result< T >        = std::result::Result< T, Box< dyn std::error::Error > >;
+pub type Result< T >        = std::result::Result< T, Box< dyn std::error::Error > >;
+
 type MethodResult< T >  = std::result::Result< T, MethodErr >;
 
-type GetManagedObjectsRetType<'a> =
+pub type GetManagedObjectsRetType<'a> =
     HashMap< dbus::strings::Path<'a>, HashMap< String, HashMap< String, Variant< Box< dyn RefArg > > > > >;
 
-type GetAllRetType      = HashMap< String, Variant< Box< dyn RefArg > > >;
+// type GetAllRetType       = HashMap< String, Variant< Box< dyn RefArg > > >;
 
 pub struct BtConn
 {
@@ -78,20 +81,20 @@ pub struct BtAdapter<'a>
 #[derive(Debug, Serialize)]
 pub struct BtAdapterStatus
 {
-    id                  : String
-,   address             : String
-,   address_type        : String
-,   alias               : String
-,   class               : u32
-,   discoverable        : bool
-,   discoverable_timeout : u32
-,   discovering         : bool
-,   modalias            : Option< String >
-,   name                : String
-,   pairable            : bool
-,   pairable_timeout    : u32
-,   powered             : bool
-,   uuids               : Vec< String >
+    pub id                  : String
+,   pub address             : String
+,   pub address_type        : String
+,   pub alias               : String
+,   pub class               : u32
+,   pub discoverable        : bool
+,   pub discoverable_timeout : u32
+,   pub discovering         : bool
+,   pub modalias            : Option< String >
+,   pub name                : String
+,   pub pairable            : bool
+,   pub pairable_timeout    : u32
+,   pub powered             : bool
+,   pub uuids               : Vec< String >
 }
 
 pub struct BtDevice<'a>
@@ -103,32 +106,59 @@ pub struct BtDevice<'a>
 #[derive(Debug, Serialize)]
 pub struct BtDeviceStatus
 {
-    id              : String
-,   adapter         : String
-,   address         : String
-,   address_type    : String
-,   alias           : String
-,   appearance      : Option< i16 >
-,   blocked         : bool
-,   class           : u32
-,   connected       : bool
-,   icon            : String
-,   legacy_pairing  : bool
-,   modalias        : Option< String >
-,   name            : String
-,   paired          : bool
-,   rssi            : Option< i16 >
-,   services_resolved : bool
-,   trusted         : bool
-,   tx_power        : Option< i16 >
-,   uuids           : Vec< String >
-,   audio_source    : bool
-,   audio_sink      : bool
+    pub id              : String
+,   pub adapter         : String
+,   pub address         : String
+,   pub address_type    : String
+,   pub alias           : String
+,   pub appearance      : Option< i16 >
+,   pub blocked         : bool
+,   pub class           : u32
+,   pub connected       : bool
+,   pub icon            : String
+,   pub legacy_pairing  : bool
+,   pub modalias        : Option< String >
+,   pub name            : String
+,   pub paired          : bool
+,   pub rssi            : Option< i16 >
+,   pub services_resolved : bool
+,   pub trusted         : bool
+,   pub tx_power        : Option< i16 >
+,   pub uuids           : Vec< String >
+,   pub audio_source    : bool
+,   pub audio_sink      : bool
 }
 
 struct BtAgentContext
 {
     rng             : StdRng
+}
+
+#[derive(Debug)]
+pub enum BtAgentCapability
+{
+    DisplayOnly
+,   DisplayYesNo
+,   KeyboardOnly
+,   NoInputNoOutput
+,   KeyboardDisplay
+}
+
+impl From< BtAgentCapability > for String
+{
+    fn from( x: BtAgentCapability ) -> String
+    {
+        String::from(
+            match x
+            {
+                BtAgentCapability::DisplayOnly      => "DisplayOnly"
+            ,   BtAgentCapability::DisplayYesNo     => "DisplayYesNo"
+            ,   BtAgentCapability::KeyboardOnly     => "KeyboardOnly"
+            ,   BtAgentCapability::NoInputNoOutput  => "NoInputNoOutput"
+            ,   BtAgentCapability::KeyboardDisplay  => "KeyboardDisplay"
+            }
+        )
+    }
 }
 
 impl BtAgentContext
@@ -187,6 +217,7 @@ impl BtConn
             }
         );
 
+        /*
         let mut mr = MatchRule::new();
 
         mr.msg_type = Some( MessageType::Signal );
@@ -210,6 +241,7 @@ impl BtConn
                 log::debug!( "{:?}", x );
             }
         }
+        */
 
         Ok( BtConn{ conn, res_err, dump_mg : true } )
     }
@@ -360,7 +392,7 @@ impl BtConn
     {
         let paths = self.get_adapter_path().await?;
 
-        if let Some( x ) = paths.iter().find( |x| *x == path )
+        if let Some( _ ) = paths.iter().find( |x| *x == path )
         {
             Ok( BtAdapter{ bt : self, path : String::from( path ) } )
         }
@@ -444,6 +476,7 @@ impl BtConn
 
     pub async fn setup_agent< F0, F1, F2, R >(
             &self
+        ,   capability                  : BtAgentCapability
         ,   func_request_pincode        : Option< F0 >
         ,   func_display_pincode        : Option< F1 >
         ,   func_request_passkey        : Option< F0 >
@@ -475,7 +508,7 @@ impl BtConn
                 {
                     b.method(
                         "Release", (), ()
-                    ,   | _, btactx, _ : () |
+                    ,   | _, _btactx, _ : () |
                         {
                             log::debug!( "m:Release" );
                             Ok(())
@@ -486,11 +519,9 @@ impl BtConn
                         "RequestPinCode", ( "device", ), ( "pincode",  )
                     ,   move | _, btactx, ( device, ) : ( Path, ) |
                         {
-                            log::debug!( "m:RequestPinCode dev {:?}", device );
-
                             let pincpde = btactx.make_pincode();
 
-                            log::debug!( "m:RequestPinCode ret {:?}", pincpde );
+                            log::debug!( "m:RequestPinCode dev {:?} ret {:?}", device, pincpde );
 
                             if let Some( func ) = func_request_pincode
                             {
@@ -503,9 +534,9 @@ impl BtConn
 
                     b.method_with_cr_async(
                         "DisplayPinCode", ( "device", "pincode", ), ()
-                    ,   move | mut ctx, cr, ( device, pincode, ) : ( Path, String, ) |
+                    ,   move | mut ctx, _cr, ( device, pincode, ) : ( Path, String, ) |
                         {
-                            log::debug!( "m:DisplayPinCode dev {:?} pincode {:?}", device, pincode );
+                            log::debug!( "m:DisplayPinCode dev {:?} pincode {}", device, pincode );
 
                             async move
                             {
@@ -534,11 +565,9 @@ impl BtConn
                         "RequestPasskey", ( "device", ), ( "passkey", )
                     ,   move | _, btactx, ( device, ) : ( Path, ) |
                         {
-                            log::debug!( "m:RequestPasskey dev {:?}", device );
-
                             let passkey = btactx.make_passkey();
 
-                            log::debug!( "m:RequestPasskey ret {:?}", passkey );
+                            log::debug!( "m:RequestPasskey dev {:?} ret {:06}", device, passkey );
 
                             if let Some( func ) = func_request_passkey
                             {
@@ -552,7 +581,7 @@ impl BtConn
 
                     b.method_with_cr_async(
                         "DisplayPasskey", ( "device", "passkey", "entered" ), ()
-                    ,   move | mut ctx, cr, ( device, passkey, entered ) : ( Path, u32, u16 ) |
+                    ,   move | mut ctx, _cr, ( device, passkey, entered ) : ( Path, u32, u16 ) |
                         {
                             log::debug!( "m:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
 
@@ -584,7 +613,7 @@ impl BtConn
 
                     b.method_with_cr_async(
                         "RequestConfirmation", ( "device", "passkey" ), ()
-                    ,   move | mut ctx, cr, ( device, passkey ) : ( Path, u32 ) |
+                    ,   move | mut ctx, _cr, ( device, passkey ) : ( Path, u32 ) |
                         {
                             log::debug!( "m:RequestConfirmation dev {:?} passkey {:?}", device, passkey );
 
@@ -615,7 +644,7 @@ impl BtConn
 
                     b.method(
                         "RequestAuthorization", ( "device", ), ()
-                    ,   | _, btactx, ( device, ) : ( Path, ) |
+                    ,   | _, _btactx, ( device, ) : ( Path, ) |
                         {
                             log::debug!( "m:RequestAuthorization dev {:?}", device );
                             Ok( () )
@@ -624,7 +653,7 @@ impl BtConn
 
                     b.method(
                         "AuthorizeService", ( "device", "uuid" ), ()
-                    ,   | _, btactx, ( device, uuid ) : ( Path, String ) |
+                    ,   | _, _btactx, ( device, uuid ) : ( Path, String ) |
                         {
                             log::debug!( "m:AuthorizeService dev {:?} uuid {:?}", device, uuid );
                             Ok(())
@@ -633,7 +662,7 @@ impl BtConn
 
                     b.method(
                         "Cancel", (), ()
-                    ,   | _, btactx, _ : () |
+                    ,   | _, _btactx, _ : () |
                         {
                             log::debug!( "m:Cancel" );
                             Ok(())
@@ -658,7 +687,7 @@ impl BtConn
 
         let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_SERVICE_NAME, TIME_OUT, self.conn.clone() );
 
-        let param = ( Path::from( BLUEZ_AGENT_PATH ), "DisplayYesNo" );
+        let param = ( Path::from( BLUEZ_AGENT_PATH ), String::from( capability ) );
 
         match proxy.method_call::< (), _, _, _ >( BLUEZ_AGENT_MANAGER_INTERFACE, "RegisterAgent", param ).await
         {
