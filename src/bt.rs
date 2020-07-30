@@ -442,15 +442,19 @@ impl BtConn
         }
     }
 
-    pub async fn setup_agent< F1, F2, R >(
+    pub async fn setup_agent< F0, F1, F2, R >(
             &self
-        ,   func_display_pincode        : F1
-        ,   func_display_passkey        : F2
-        ,   func_request_confirmation   : F1
+        ,   func_request_pincode        : Option< F0 >
+        ,   func_display_pincode        : Option< F1 >
+        ,   func_request_passkey        : Option< F0 >
+        ,   func_display_passkey        : Option< F2 >
+        ,   func_request_confirmation   : Option< F1 >
         )
-        where   F1: Fn( &str, &str ) -> R + Sync + Send + 'static + Copy
-        ,       F2: Fn( &str, &str, &str ) -> R + Sync + Send + 'static + Copy
-        ,       R: std::future::Future< Output = bool > + Send + 'static
+        where
+            F0: Fn( &str, &str ) + Sync + Send + 'static + Copy
+        ,   F1: Fn( &str, &str ) -> R + Sync + Send + 'static + Copy
+        ,   F2: Fn( &str, &str, &str ) -> R + Sync + Send + 'static + Copy
+        ,   R : std::future::Future< Output = bool > + Send + 'static
     {
         let mut cr = Crossroads::new();
 
@@ -480,13 +484,18 @@ impl BtConn
 
                     b.method(
                         "RequestPinCode", ( "device", ), ( "pincode",  )
-                    ,   | _, btactx, ( device, ) : ( Path, ) |
+                    ,   move | _, btactx, ( device, ) : ( Path, ) |
                         {
                             log::debug!( "m:RequestPinCode dev {:?}", device );
 
                             let pincpde = btactx.make_pincode();
 
                             log::debug!( "m:RequestPinCode ret {:?}", pincpde );
+
+                            if let Some( func ) = func_request_pincode
+                            {
+                                func( &device, &pincpde );
+                            }
 
                             Ok( ( pincpde, ) )
                         }
@@ -501,13 +510,20 @@ impl BtConn
                             async move
                             {
                                 ctx.reply(
-                                    if func_display_pincode( &device, &pincode ).await
+                                    if let Some( func ) = func_display_pincode
                                     {
-                                        Ok( () )
+                                        if func( &device, &pincode ).await
+                                        {
+                                            Ok( () )
+                                        }
+                                        else
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                     else
                                     {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( () )
                                     }
                                 )
                             }
@@ -516,13 +532,19 @@ impl BtConn
 
                     b.method(
                         "RequestPasskey", ( "device", ), ( "passkey", )
-                    ,   | _, btactx, ( device, ) : ( Path, ) |
+                    ,   move | _, btactx, ( device, ) : ( Path, ) |
                         {
                             log::debug!( "m:RequestPasskey dev {:?}", device );
 
                             let passkey = btactx.make_passkey();
 
                             log::debug!( "m:RequestPasskey ret {:?}", passkey );
+
+                            if let Some( func ) = func_request_passkey
+                            {
+                                let passkey = format!( "{:06}", passkey );
+                                func( &device, &passkey );
+                            }
 
                             Ok( ( passkey, ) )
                         }
@@ -540,13 +562,20 @@ impl BtConn
                             async move
                             {
                                 ctx.reply(
-                                    if func_display_passkey( &device, &passkey, &entered ).await
+                                    if let Some( func ) = func_display_passkey
                                     {
-                                        Ok( () )
+                                        if func( &device, &passkey, &entered ).await
+                                        {
+                                            Ok( () )
+                                        }
+                                        else
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                     else
                                     {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( () )
                                     }
                                 )
                             }
@@ -564,13 +593,20 @@ impl BtConn
                             async move
                             {
                                 ctx.reply(
-                                    if func_request_confirmation( &device, &passkey ).await
+                                    if let Some( func ) = func_request_confirmation
                                     {
-                                        Ok( () )
+                                        if func( &device, &passkey ).await
+                                        {
+                                            Ok( () )
+                                        }
+                                        else
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                     else
                                     {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( () )
                                     }
                                 )
                             }
