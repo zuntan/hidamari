@@ -41,3 +41,7 @@ alsa        = "0.4.2"
 nix         = "0.15.0"
 lame-sys    = "0.1.2"
 flac-sys    = "0.1.0"
+
+dbus        = "0.8.4"
+dbus-tokio  = "0.5.2"
+dbus-crossroads = "0.2.1"

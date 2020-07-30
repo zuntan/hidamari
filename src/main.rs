@@ -46,6 +46,7 @@ mod mpdcom;
 mod mpdfifo;
 mod event;
 mod asyncread;
+mod bt;
 
 use crate::asyncread::GetWakeShutdownFlag;
 use crate::asyncread::GetMimeType;
