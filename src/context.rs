@@ -25,6 +25,7 @@ use serde::{ Deserialize, Serialize };
 use crate::event;
 use crate::mpdcom;
 use crate::asyncread;
+use crate::btctrl;
 
 pub const CONTENTS_DIR      : &str = "_contents";
 pub const THEME_DIR         : &str = "theme";
@@ -225,6 +226,7 @@ pub struct Context
 , pub   ws_data_intv    : time::Duration
 , pub   ws_send_intv    : time::Duration
 
+, pub   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
 , pub   bt_status_json  : String
 
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
@@ -241,6 +243,7 @@ impl Context
         config      : Config
     ,   config_dyn  : ConfigDyn
     ,   mpdcom_tx   : sync::mpsc::Sender< mpdcom::MpdComRequest >
+    ,   btctrl_tx   : sync::mpsc::Sender< btctrl::BtctrlRequest >
     ,   product     : &str
     ,   version     : &str
     ) -> Context
@@ -262,6 +265,7 @@ impl Context
         ,   ws_status_intv  : time::Duration::from_millis( 200 )
         ,   ws_data_intv    : time::Duration::from_millis( 200 )
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
+        ,   btctrl_tx
         ,   bt_status_json  : String::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   product         : String::from( product )

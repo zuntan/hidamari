@@ -842,6 +842,54 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     cleanup!();
 }
 
+#[derive(Debug, Deserialize, Clone)]
+struct BtCmdParam
+{
+    cmd  : String
+,   id   : String
+,   sw   : bool
+,   arg  : Option< String >
+}
+
+///
+impl BtCmdParam
+{
+    fn to_request( &self ) -> ( btctrl::BtctrlRequest, sync::oneshot::Receiver< btctrl::BtctrlResult > )
+    {
+        let cmd = self.cmd.trim_end().to_lowercase();
+
+        let ( mut req, rx ) = btctrl::BtctrlRequest::new();
+
+        req.req = btctrl::BtctrlRequestType::Cmd
+            (
+                cmd
+            ,   String::from( &self.id )
+            ,   self.sw
+            ,   if let Some( x ) = self.arg.as_ref() { Some( String::from( x ) ) } else { None }
+            );
+
+        ( req, rx )
+    }
+}
+
+///
+async fn bt_cmd_response( arwlctx : context::ARWLContext, param : BtCmdParam ) -> RespResult
+{
+    log::debug!( "{:?}", &param );
+
+    let ( req, rx ) = param.to_request();
+
+    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
+
+    Ok(
+        match rx.await
+        {
+            Ok(x)  => json_response( &x )
+        ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
+        }
+    )
+}
+
 ///
 async fn test_response( _arwlctx : context::ARWLContext, _param : HashMap< String, String > ) -> StrResult
 {
@@ -999,6 +1047,12 @@ async fn make_route( arwlctx : context::ARWLContext )
             }
         );
 
+    let r_bt_cmd  =
+        warp::path!( "bt_cmd" )
+        .and( arwlctx_clone_filter() )
+        .and( make_route_getpost::< BtCmdParam >() )
+        .and_then( bt_cmd_response );
+
     let routes =
         r_root
         .or( r_favicon )
@@ -1012,6 +1066,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_spec_data )
         .or( r_config )
         .or( r_ws )
+        .or( r_bt_cmd )
         .or( r_test )
         ;
 
@@ -1051,12 +1106,13 @@ async fn main() -> std::io::Result< () >
     let bind_addr   = config.bind_addr();
     let mpd_addr    = config.mpd_addr();
 
-    let ( mpdcom_tx,    mpdcom_rx )     = sync::mpsc::channel::< mpdcom::MpdComRequest >( 128 );
+    let ( mpdcom_tx,    mpdcom_rx ) = sync::mpsc::channel::< mpdcom::MpdComRequest >( 128 );
+    let ( btctrl_tx,    btctrl_rx ) = sync::mpsc::channel::< btctrl::BtctrlRequest >( 128 );
 
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                context::Context::new( config, config_dyn, mpdcom_tx, PKG_NAME, PKG_VERSION )
+                context::Context::new( config, config_dyn, mpdcom_tx, btctrl_tx, PKG_NAME, PKG_VERSION )
             )
         );
 
@@ -1071,8 +1127,6 @@ async fn main() -> std::io::Result< () >
 
     let arwlctx_c = arwlctx.clone();
     let h_mpdfifo : task::JoinHandle< _ > = task::spawn( mpdfifo::mpdfifo_task( arwlctx_c, mpdfifo_rx ) );
-
-    let ( mut btctrl_tx,   btctrl_rx ) = event::make_channel();
 
     let arwlctx_c = arwlctx.clone();
     let h_btctrl : task::JoinHandle< _ > = task::spawn( btctrl::btctrl_task( arwlctx_c, btctrl_rx ) );
@@ -1136,9 +1190,9 @@ async fn main() -> std::io::Result< () >
     let _ = join!( h_server );
     log::info!( "http server shutdown." );
 
-    let ( mut req, _ ) = event::new_request();
-    req.req = event::EventRequestType::Shutdown;
-    let _ = btctrl_tx.send( req ).await;
+    let ( mut req, _ ) = btctrl::BtctrlRequest::new();
+    req.req = btctrl::BtctrlRequestType::Shutdown;
+    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
     let _ = join!( h_btctrl );
     log::info!( "btctrl_task shutdown." );
 

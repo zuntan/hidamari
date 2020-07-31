@@ -9,8 +9,8 @@
 
 use std::io;
 
-use tokio::time::{ delay_for, Duration, Instant };
-use tokio::sync::{ mpsc };
+use tokio::time::{ timeout, delay_for, Duration /*, Instant */ };
+use tokio::sync::{ oneshot, mpsc };
 
 use serde::{ Serialize, /* Deserialize */ };
 
@@ -21,10 +21,10 @@ use crate::bt;
 const DEEP_SLEEP    : Duration = Duration::from_secs( 2 );
 const SHALLOW_SLEEP : Duration = Duration::from_millis( 500 );
 
-type BtctlStatusResult<'a> = Result< &'a BtctlStatus< 'a >, () >;
+type BtctrlStatusResult<'a> = Result< &'a BtctrlStatus< 'a >, () >;
 
 #[derive(Debug, Serialize)]
-pub struct BtctlStatusMember
+pub struct BtctrlStatusMember
 {
     enable  : bool
 ,   time    : String
@@ -32,43 +32,75 @@ pub struct BtctlStatusMember
 }
 
 #[derive(Debug, Serialize)]
-pub struct BtctlStatus<'a>
+pub struct BtctrlStatus<'a>
 {
-    bt_status : &'a BtctlStatusMember
+    bt_status : &'a BtctrlStatusMember
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BtctlOk {}
+pub struct BtctrlOk {}
+
+impl BtctrlOk
+{
+    fn new() -> BtctrlOk
+    {
+        BtctrlOk{}
+    }
+}
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BtctlErr
+pub struct BtctrlErr
 {
-    msg : String
+    pub err_code : i32
+,   pub msg_text : String
+}
+
+impl BtctrlErr
+{
+    fn new( err_code : i32, msg_text : &str ) -> BtctrlErr
+    {
+        BtctrlErr{ err_code, msg_text : String::from( msg_text ) }
+    }
 }
 
 ///
-pub type BtctlResult       = Result< BtctlOk, BtctlErr >;
+pub type BtctrlResult       = Result< BtctrlOk, BtctrlErr >;
 
 ///
 #[derive(Debug)]
-pub enum BtctlRequestType
+pub enum BtctrlRequestType
 {
     Nop
-,   Cmd( String, String, bool )
+,   Cmd( String, String, bool, Option< String > )
 ,   Shutdown
 }
 
 ///
-pub struct BtctlRequest
+pub struct BtctrlRequest
 {
-    pub req  : BtctlRequestType
-,   pub tx   : oneshot::Sender< BtctlResult >
+    pub req  : BtctrlRequestType
+,   pub tx   : oneshot::Sender< BtctrlResult >
 }
 
+impl BtctrlRequest
+{
+    pub fn new() -> ( BtctrlRequest, oneshot::Receiver< BtctrlResult > )
+    {
+        let ( tx, rx ) = oneshot::channel::< BtctrlResult >();
+
+        (
+            BtctrlRequest{
+                req         : BtctrlRequestType::Nop
+            ,   tx
+            }
+        ,   rx
+        )
+    }
+}
 
 pub async fn btctrl_task(
     arwlctx : context::ARWLContext
-,   mut rx  : mpsc::Receiver< event::BtctlRequest >
+,   mut rx  : mpsc::Receiver< BtctrlRequest >
 )
 -> io::Result< ()  >
 {
@@ -94,7 +126,7 @@ pub async fn btctrl_task(
         // status update
 
         let mut btctl_st_m =
-            BtctlStatusMember
+            BtctrlStatusMember
             {
                 enable : false
             ,   time :  chrono::Local::now().to_rfc3339()
@@ -168,20 +200,125 @@ pub async fn btctrl_task(
         {
             let mut ctx = arwlctx.write().await;
 
-            if let Ok( x ) = serde_json::to_string( &BtctlStatusResult::Ok( &BtctlStatus{ bt_status : &btctl_st_m } ) )
+            if let Ok( x ) = serde_json::to_string( &BtctrlStatusResult::Ok( &BtctrlStatus{ bt_status : &btctl_st_m } ) )
             {
                 ctx.bt_status_json = x;
             }
         }
 
-        match timeout( rx_time_out, rx.recv() ).await
+        match timeout( event::EVENT_WAIT_TIMEOUT, rx.recv() ).await
         {
-            Ok(recv) =>
+            Ok( recv ) =>
             {
+                let recv = recv.unwrap();
+
+                log::debug!( "recv [{:?}]", recv.req );
+
+                match recv.req
+                {
+                    BtctrlRequestType::Shutdown =>
+                    {
+                        recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
+                        break;
+                    }
+
+
+
+                ,   BtctrlRequestType::Cmd( cmd, id, sw, _arg ) =>
+                    {
+                        let err : Option< BtctrlErr > =
+                            match bt_conn
+                            {
+                                None =>
+                                {
+                                    Some( BtctrlErr::new( -1, "BtConn init error" ) )
+                                }
+                            ,   Some( ref bt_conn ) =>
+                                {
+                                    match cmd.as_str()
+                                    {
+                                        "ad_power" | "ad_pairable" | "ad_discoverable" | "ad_discovering" =>
+                                        {
+                                            match bt_conn.get_adapter( &id ).await
+                                            {
+                                                Ok( bt_adapter ) =>
+                                                {
+                                                    macro_rules! exec
+                                                    {
+                                                        ( $e : expr ) =>
+                                                        {
+                                                            if let Err( x ) = $e.await
+                                                            {
+                                                                Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                            }
+                                                            else { None }
+                                                        }
+                                                    }
+
+                                                    match cmd.as_str()
+                                                    {
+                                                        "ad_power" =>
+                                                        {
+                                                            exec!( bt_adapter.set_powered( sw ) )
+                                                        }
+                                                    ,   "ad_pairable" =>
+                                                        {
+                                                            exec!( bt_adapter.set_pairable( sw ) )
+                                                        }
+                                                    ,   "ad_discoverable" =>
+                                                        {
+                                                            exec!( bt_adapter.set_discoverable( sw ) )
+                                                        }
+                                                    ,   "ad_discovering" =>
+                                                        {
+                                                            if sw
+                                                            {
+                                                                exec!( bt_adapter.start_discovery() )
+                                                            }
+                                                            else
+                                                            {
+                                                                exec!( bt_adapter.stop_discovery() )
+                                                            }
+                                                        }
+                                                    ,   _ => { None }
+                                                    }
+                                                }
+                                            ,   Err( x ) =>
+                                                {
+                                                    Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                }
+                                            }
+                                        }
+                                    ,   _ =>
+                                        {
+                                            Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
+                                        }
+                                    }
+                                }
+                            };
+
+
+                        if let Some( x ) = err
+                        {
+                            recv.tx.send( Err( x ) ).ok();
+                        }
+                        else
+                        {
+                            recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
+                        }
+                    }
+
+                ,   _ =>
+                    {
+                        recv.tx.send( Err( BtctrlErr::new( -9, "" ) ) ).ok();
+                    }
+                }
+            }
+        ,   Err( _ ) =>
+            {
+                delay_for( if btctl_st_m.enable { SHALLOW_SLEEP } else { DEEP_SLEEP } ).await;
             }
         }
-
-        delay_for( if btctl_st_m.enable { SHALLOW_SLEEP } else { DEEP_SLEEP } ).await;
     }
 
     log::debug!( "btctrl stop." );

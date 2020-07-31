@@ -343,8 +343,8 @@ function()
 
 	var bt_command = function( cmd, id, sw )
 	{
-		if( cmd != "" ){ return; }
-		if( id != "" ){ return; }
+		if( cmd == "" ){ return; }
+		if( id == "" ){ return; }
 		sw = !!sw;
 
 		bt_disable_update = true;

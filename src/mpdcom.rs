@@ -21,6 +21,7 @@ use serde::{ Serialize, /* Deserialize */ };
 
 use crate::context;
 use crate::event;
+
 ///
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComOk
@@ -473,7 +474,7 @@ pub async fn mpdcom_task(
             }
         }
 
-        match timeout( rx_time_out, rx.recv() ).await
+        match timeout( event::EVENT_WAIT_TIMEOUT, rx.recv() ).await
         {
             Ok(recv) =>
             {
