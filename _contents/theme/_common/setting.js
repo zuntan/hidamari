@@ -464,14 +464,14 @@ function()
 						$( "input.x_bt_dev_connected"	, tr ).change(
 							function ()
 							{
-								bt_command( "dev_connect",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), true );
+								bt_command( "dev_connect",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), $(this).prop( 'checked' ) );
 							}
 						);
 
 						$( "input.x_bt_dev_paired"		, tr ).change(
 							function ()
 							{
-								bt_command( "dev_pair", 	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), $(this).prop( 'checked' ) );
+								bt_command( "dev_pair", 	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), true );
 							}
 						);
 

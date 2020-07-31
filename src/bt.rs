@@ -65,6 +65,10 @@ pub type GetManagedObjectsRetType<'a> =
 
 // type GetAllRetType       = HashMap< String, Variant< Box< dyn RefArg > > >;
 
+type F0 = dyn Fn( &str, &str ) + Sync + Send + 'static;
+type F1 = dyn Fn( &str, &str ) -> Box< dyn std::future::Future< Output = bool > + Send + Unpin > + Sync + Send + 'static;
+type F2 = dyn Fn( &str, &str, &str ) -> Box< dyn std::future::Future< Output = bool > + Send + Unpin > + Sync + Send + 'static;
+
 pub struct BtConn
 {
     conn        : Arc< SyncConnection >
@@ -247,7 +251,15 @@ impl BtConn
         }
         */
 
-        Ok( BtConn{ conn, res_err, dump_mg : false, agent : false } )
+        Ok(
+            BtConn
+            {
+                conn
+            ,   res_err
+            ,   dump_mg : false
+            ,   agent : false
+            }
+        )
     }
 
     pub async fn get_managed_objects<'a>( &self ) -> Result< GetManagedObjectsRetType<'a> >
@@ -490,22 +502,16 @@ impl BtConn
         }
     }
 
-    pub async fn setup_agent< F0, F1, F2, R >(
+    pub async fn setup_agent(
             &mut self
         ,   capability                  : BtAgentCapability
-        ,   func_request_pincode        : Option< F0 >
-        ,   func_display_pincode        : Option< F1 >
-        ,   func_request_passkey        : Option< F0 >
-        ,   func_display_passkey        : Option< F2 >
-        ,   func_request_confirmation   : Option< F1 >
+        ,   func_request_pincode        : Option< Arc< F0 > >
+        ,   func_display_pincode        : Option< Arc< F1 > >
+        ,   func_request_passkey        : Option< Arc< F0 > >
+        ,   func_display_passkey        : Option< Arc< F2 > >
+        ,   func_request_confirmation   : Option< Arc< F1 > >
         )
-        where
-            F0: Fn( &str, &str ) + Sync + Send + 'static + Copy
-        ,   F1: Fn( &str, &str ) -> R + Sync + Send + 'static + Copy
-        ,   F2: Fn( &str, &str, &str ) -> R + Sync + Send + 'static + Copy
-        ,   R : std::future::Future< Output = bool > + Send + 'static
     {
-
         if self.agent
         {
             log::error!( "error. setup_agent already done." );
@@ -546,7 +552,7 @@ impl BtConn
 
                             log::debug!( "m:RequestPinCode dev {:?} ret {:?}", device, pincpde );
 
-                            if let Some( func ) = func_request_pincode
+                            if let Some( ref func ) = func_request_pincode
                             {
                                 func( &device, &pincpde );
                             }
@@ -561,10 +567,12 @@ impl BtConn
                         {
                             log::debug!( "m:DisplayPinCode dev {:?} pincode {}", device, pincode );
 
+                            let func = func_display_pincode.clone();
+
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( func ) = func_display_pincode
+                                    if let Some( ref func ) = func
                                     {
                                         if func( &device, &pincode ).await
                                         {
@@ -592,7 +600,7 @@ impl BtConn
 
                             log::debug!( "m:RequestPasskey dev {:?} ret {:06}", device, passkey );
 
-                            if let Some( func ) = func_request_passkey
+                            if let Some( ref func ) = func_request_passkey
                             {
                                 let passkey = format!( "{:06}", passkey );
                                 func( &device, &passkey );
@@ -610,11 +618,12 @@ impl BtConn
 
                             let passkey = format!( "{:06}", passkey );
                             let entered = format!( "{:06}", entered );
+                            let func = func_display_passkey.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( func ) = func_display_passkey
+                                    if let Some( ref func ) = func
                                     {
                                         if func( &device, &passkey, &entered ).await
                                         {
@@ -641,11 +650,12 @@ impl BtConn
                             log::debug!( "m:RequestConfirmation dev {:?} passkey {:?}", device, passkey );
 
                             let passkey = format!( "{:06}", passkey );
+                            let func = func_request_confirmation.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( func ) = func_request_confirmation
+                                    if let Some( ref func ) = func
                                     {
                                         if func( &device, &passkey ).await
                                         {

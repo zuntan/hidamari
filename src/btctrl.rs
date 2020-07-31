@@ -9,6 +9,8 @@
 
 use std::io;
 
+use std::sync::{ Arc };
+
 use tokio::time::{ timeout, delay_for, Duration /*, Instant */ };
 use tokio::sync::{ oneshot, mpsc };
 
@@ -106,12 +108,38 @@ pub async fn btctrl_task(
 {
     log::debug!( "btctrl start." );
 
+    let func_request_pincode =
+        | x : &str, y : &str |
+        {
+        };
+
+    let func_display_pincode =
+        | x : &str, y : &str |
+        {
+            Box::new (
+                async
+                {
+                    true
+                }
+            )
+        };
+
+
     let bt_conn : Option< bt::BtConn > =
         match bt::BtConn::new().await
         {
-            Ok( x ) =>
+            Ok( mut bt_conn ) =>
             {
-                Some( x )
+                bt_conn.setup_agent(
+                    bt::BtAgentCapability::DisplayYesNo
+                ,   Some( Arc::new( func_request_pincode ) )
+                ,   None /* Some( Arc::new( func_display_pincode ) ) */
+                ,   None
+                ,   None
+                ,   None
+                ).await;
+
+                Some( bt_conn )
             }
         ,   Err( x ) =>
             {
@@ -119,7 +147,6 @@ pub async fn btctrl_task(
                 None
             }
         };
-
 
     loop
     {
@@ -132,6 +159,8 @@ pub async fn btctrl_task(
             ,   time :  chrono::Local::now().to_rfc3339()
             ,   adapter : Vec::< bt::BtAdapterStatus >::new()
             };
+
+        // get adapter_status
 
         match bt_conn
         {
@@ -222,11 +251,9 @@ pub async fn btctrl_task(
                         break;
                     }
 
-
-
                 ,   BtctrlRequestType::Cmd( cmd, aid, did, sw, _arg ) =>
                     {
-                        let err : Option< BtctrlErr > =
+                        if let Some( err ) =
                             match bt_conn
                             {
                                 None =>
@@ -339,19 +366,15 @@ pub async fn btctrl_task(
                                         }
                                     }
                                 }
-                            };
-
-
-                        if let Some( x ) = err
+                            }
                         {
-                            recv.tx.send( Err( x ) ).ok();
+                            recv.tx.send( Err( err ) ).ok();
                         }
                         else
                         {
                             recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
                         }
                     }
-
                 ,   _ =>
                     {
                         recv.tx.send( Err( BtctrlErr::new( -9, "" ) ) ).ok();
