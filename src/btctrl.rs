@@ -16,6 +16,8 @@ use tokio::sync::{ oneshot, mpsc };
 
 use serde::{ Serialize, /* Deserialize */ };
 
+use async_trait::async_trait;
+
 use crate::context;
 use crate::event;
 use crate::bt;
@@ -130,43 +132,38 @@ impl BtAgentIO
     }
 }
 
+#[async_trait]
 impl bt::BtAgentIO for BtAgentIO
 {
-    fn request_pincode( &self, device : &str, pincode : &str )
+    async fn request_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
     {
         log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
 
         let arwlctx = self.arwlctx.clone();
-
-        tokio::spawn(
-            async move
-            {
-                let ctx = arwlctx.write().await;
-
-
-            }
-        );
     }
 
-    fn display_pincode( &self, device : &str, pincode : &str )
+    /*
+
+    fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
     {
         log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
     }
 
-    fn request_passkey( &self, device : &str, passkey : &str )
+    fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
     }
 
-    fn display_passkey( &self, device : &str, passkey : &str, entered : &str )
+    fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
     {
         log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
-    fn request_confirmation( &self, device : &str, passkey : &str )
+    fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
     }
+    */
 }
 
 pub async fn btctrl_task(

@@ -65,38 +65,454 @@ type MethodResult< T >  = std::result::Result< T, MethodErr >;
 pub type GetManagedObjectsRetType<'a> =
     HashMap< dbus::strings::Path<'a>, HashMap< String, HashMap< String, Variant< Box< dyn RefArg > > > > >;
 
-pub struct BtConn
+pub async fn get_managed_objects<'a>( conn : Arc< SyncConnection > ) -> Result< GetManagedObjectsRetType<'a> >
 {
-    conn        : Arc< SyncConnection >
-,   res_err     : Arc< Mutex< Option< String > > >
-,   dump_mg     : bool
-,   agent       : bool
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, "/", TIME_OUT, conn );
+
+    match proxy.method_call::< ( GetManagedObjectsRetType, ), _, _, _ >( OBJECT_MANAGER_INTERFACE, GET_MANAGED_OBJECTS, () ).await
+    {
+        Ok( x ) =>
+        {
+            Ok( x.0 )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
 }
+
+pub fn pretty_dump_managed_objects<'a>( mo : &GetManagedObjectsRetType<'a> ) -> String
+{
+    let mut keys_1 : Vec< dbus::strings::Path<'a> > = Vec::new();
+
+    for x in mo.keys()
+    {
+        keys_1.push( x.clone() );
+    }
+
+    keys_1.sort();
+
+    // log::debug!( "{:?}", keys_1 );
+
+    let mut sink = String::new();
+
+    sink += "\n{\n";
+
+    for ( i1, k1 ) in keys_1.iter().enumerate()
+    {
+        sink += &format!( "{}\t{:?} :", if i1 == 0 { "" } else { "," }, &k1 );
+
+        let dic2 = &mo.get( &k1 ).unwrap();
+
+        if dic2.is_empty()
+        {
+            sink += " {}\n";
+        }
+        else
+        {
+            sink += "\n\t{\n";
+
+            let mut keys_2 = dic2.keys().collect::< Vec< &String > >();
+
+            keys_2.sort();
+
+            for ( i2, k2 ) in keys_2.iter().enumerate()
+            {
+                sink += &format!( "\t{}\t{:?}", if i2 == 0 { "" } else { "," }, &k2 );
+
+                let dic3 = &dic2.get( *k2 ).unwrap();
+
+                if dic3.is_empty()
+                {
+                    sink += " : {}\n";
+                }
+                else
+                {
+                    sink += "\n\t\t{\n";
+
+                    let mut keys_3 = dic3.keys().collect::< Vec< &String > >();
+
+                    keys_3.sort();
+
+                    for ( i3, k3 ) in keys_3.iter().enumerate()
+                    {
+
+                        let val = &dic3.get( *k3 ).unwrap();
+
+
+                        sink += &format!( "\t\t{}\t{:?} : {:?}\n", if i3 == 0 { "" } else { "," }, &k3, &val );
+                    }
+
+                    sink += "\t\t}\n";
+                }
+            }
+
+            sink += "\t}\n";
+        }
+    }
+
+    sink += "}\n";
+
+    sink
+}
+
+pub async fn get_adapter_paths( conn : Arc< SyncConnection > ) -> Result< Vec< String > >
+{
+    let mut ret = Vec::<String>::new();
+
+    let mo = get_managed_objects( conn ).await?;
+
+    for ( k, v ) in mo.iter()
+    {
+        if v.contains_key( BLUEZ_ADAPTER_INTERFACE )
+        {
+            ret.push( k.to_string() );
+        }
+    }
+
+    Ok( ret )
+}
+
+pub async fn get_device_path( conn : Arc< SyncConnection >, adapter_path : &str ) -> Result< Vec< String > >
+{
+    let mut ret = Vec::<String>::new();
+
+    let mo = get_managed_objects( conn ).await?;
+
+    for ( k, v ) in mo.iter()
+    {
+        if v.contains_key( BLUEZ_DEVICE_INTERFACE )
+        {
+            let prop = v.get( BLUEZ_DEVICE_INTERFACE ).unwrap();
+
+            if let Some( x ) = prop.get( "Adapter" )
+            {
+                let adapter_path_ref = x.0.as_str().unwrap();
+
+                if adapter_path_ref == adapter_path
+                {
+                    ret.push( k.to_string() );
+                }
+            }
+        }
+    }
+
+    Ok( ret )
+}
+
+pub async fn get_adapter_path_from_device_path( conn : Arc< SyncConnection >, device_path : &str ) -> Result< String >
+{
+    let mo = get_managed_objects( conn ).await?;
+
+    for ( k, v ) in mo.iter()
+    {
+        if v.contains_key( BLUEZ_DEVICE_INTERFACE )
+        {
+            let prop = v.get( BLUEZ_DEVICE_INTERFACE ).unwrap();
+
+            if let Some( x ) = prop.get( "Adapter" )
+            {
+                let adapter_path_ref = x.0.as_str().unwrap();
+
+                return Ok( String::from( adapter_path_ref ) )
+            }
+        }
+    }
+
+    Err( dbus::Error::new_custom( "Error", "Bt adapter not found" ) )
+}
+
+pub async fn call_void_func( conn : Arc< SyncConnection >, path : &str, interface : &str, func_name : &str ) -> Result< () >
+{
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn );
+
+    match proxy.method_call::< (), _, _, _ >( interface, func_name, () ).await
+    {
+        Ok( _ ) =>
+        {
+            Ok( () )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
+}
+
+pub async fn call_void_func_a< T : dbus::arg::Arg + dbus::arg::Append >
+    ( conn : Arc< SyncConnection >, path : &str, interface : &str, func_name : &str, value : T )
+    -> Result< () >
+{
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn );
+
+    match proxy.method_call::< (), _, _, _ >( interface, func_name, ( value, ) ).await
+    {
+        Ok( _ ) =>
+        {
+            Ok( () )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
+}
+
+pub async fn set< T : dbus::arg::Arg + dbus::arg::Append >
+    ( conn : Arc< SyncConnection >, path : &str, interface : &str, key : &str, value : T )
+    -> Result< () >
+{
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn );
+
+    match proxy.set( interface, key, value ).await
+    {
+        Ok( _ ) =>
+        {
+            Ok( () )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
+}
+
+pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> Result< BtDeviceStatus >
+{
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn );
+
+    match proxy.get_all( BLUEZ_DEVICE_INTERFACE ).await
+    {
+        Ok( props ) =>
+        {
+            let adapter         = String::from( props.get( "Adapter" ).unwrap().0.as_str().unwrap() );
+            let address         = String::from( props.get( "Address" ).unwrap().0.as_str().unwrap() );
+            let address_type    = String::from( props.get( "AddressType" ).unwrap().0.as_str().unwrap() );
+            let alias           = String::from( props.get( "Alias" ).unwrap().0.as_str().unwrap() );
+
+            let appearance =
+                if props.contains_key( "Appearance" )
+                {
+                    Some( *props.get( "Appearance" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
+                }
+                else
+                {
+                    None
+                };
+
+            let blocked         = *props.get( "Blocked" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+            let class           = *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
+            let connected       = *props.get( "Connected" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+            let icon            = String::from( props.get( "Icon" ).unwrap().0.as_str().unwrap() );
+            let legacy_pairing  = *props.get( "LegacyPairing" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+
+            let modalias =
+                if props.contains_key( "Modalias" )
+                {
+                    Some( String::from( props.get( "Modalias" ).unwrap().0.as_str().unwrap() ) )
+                }
+                else
+                {
+                    None
+                };
+
+            let name            = String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() );
+            let paired          = *props.get( "Paired" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+
+            let rssi =
+                if props.contains_key( "RSSI" )
+                {
+                    Some( *props.get( "RSSI" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
+                }
+                else
+                {
+                    None
+                };
+
+            let services_resolved = *props.get( "ServicesResolved" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+            let trusted         = *props.get( "Trusted" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+
+            let tx_power =
+                if props.contains_key( "TxPower" )
+                {
+                    Some( *props.get( "TxPower" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
+                }
+                else
+                {
+                    None
+                };
+
+            let uuids : Vec< String > = props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec<String> >().unwrap().iter().map( | x | String::from( x ) ).collect();
+
+            let audio_source    = uuids.iter().find( | &x | x == AUDIO_SOURCE_UUID ).is_some();
+            let audio_sink      = uuids.iter().find( | &x | x == AUDIO_SINK_UUID ).is_some();
+
+            Ok(
+                BtDeviceStatus
+                {
+                    id              : String::from( path )
+                ,   adapter
+                ,   address
+                ,   address_type
+                ,   alias
+                ,   appearance
+                ,   blocked
+                ,   class
+                ,   connected
+                ,   icon
+                ,   legacy_pairing
+                ,   modalias
+                ,   name
+                ,   paired
+                ,   rssi
+                ,   services_resolved
+                ,   trusted
+                ,   tx_power
+                ,   uuids
+                ,   audio_source
+                ,   audio_sink
+                }
+            )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
+}
+
+pub async fn get_adapter_status( conn : Arc< SyncConnection >, path : &str, with_devices : bool ) -> Result< BtAdapterStatus >
+{
+    let device_status : Option< Vec< BtDeviceStatus > > =
+        if with_devices
+        {
+            let mut device_status = Vec::< BtDeviceStatus >::new();
+
+            match get_device_path( conn.clone(), path ).await
+            {
+                Ok( devices ) =>
+                {
+                    for device in devices
+                    {
+                        match get_device_status( conn.clone(), &device ).await
+                        {
+                            Ok( x ) =>
+                            {
+                                device_status.push( x );
+                            }
+                        ,   Err( x ) =>
+                            {
+                                log::debug!( "{:?}", x );
+                                return Err( x );
+                            }
+                        }
+                    }
+                }
+            ,   Err( x ) =>
+                {
+                    log::debug!( "{:?}", x );
+                    return Err( x );
+                }
+            }
+
+            Some( device_status )
+        }
+        else
+        {
+            None
+        };
+
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn.clone() );
+
+    match proxy.get_all( BLUEZ_ADAPTER_INTERFACE ).await
+    {
+        Ok( props ) =>
+        {
+            let address         = String::from( props.get( "Address" ).unwrap().0.as_str().unwrap() );
+            let address_type    = String::from( props.get( "AddressType" ).unwrap().0.as_str().unwrap() );
+            let alias           = String::from( props.get( "Alias" ).unwrap().0.as_str().unwrap() );
+            let class           = *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
+            let discoverable    = *props.get( "Discoverable" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+            let discoverable_timeout = *props.get( "DiscoverableTimeout" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
+            let discovering     = *props.get( "Discovering" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+
+            let modalias        =
+                if props.contains_key( "Modalias" )
+                {
+                    Some( String::from( props.get( "Modalias" ).unwrap().0.as_str().unwrap() ) )
+                }
+                else
+                {
+                    None
+                };
+
+            let name            = String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() );
+            let pairable        = *props.get( "Pairable" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+            let pairable_timeout = *props.get( "PairableTimeout" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
+            let powered         = *props.get( "Powered" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
+
+            let uuids : Vec< String > = props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec<String> >().unwrap().iter().map( | x | String::from( x ) ).collect();
+
+            Ok(
+                BtAdapterStatus
+                {
+                    id          : String::from( path )
+                ,   address
+                ,   address_type
+                ,   alias
+                ,   class
+                ,   discoverable
+                ,   discoverable_timeout
+                ,   discovering
+                ,   modalias
+                ,   name
+                ,   pairable
+                ,   pairable_timeout
+                ,   powered
+                ,   uuids
+                ,   device_status
+                }
+            )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?}", x );
+            Err( x )
+        }
+    }
+}
+
 
 #[async_trait]
 pub trait BtAgentIO
 {
-    fn request_pincode( &self, device : &str, pincode : &str )
+    async fn request_pincode( &self, device : BtDeviceStatus, pincode : &str )
     {
         log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
     }
 
-    fn display_pincode( &self, device : &str, pincode : &str )
+    async fn display_pincode( &self, device : BtDeviceStatus, pincode : &str )
     {
         log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
     }
 
-    fn request_passkey( &self, device : &str, passkey : &str )
+    async fn request_passkey( &self, device : BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
     }
 
-    fn display_passkey( &self, device : &str, passkey : &str, entered : &str )
+    async fn display_passkey( &self, device : BtDeviceStatus, passkey : &str, entered : &str )
     {
         log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
-    fn request_confirmation( &self, device : &str, passkey : &str )
+    async fn request_confirmation( &self, device : BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
     }
@@ -107,9 +523,16 @@ pub trait BtAgentIO
     }
 }
 
-pub struct BtAdapter<'a>
+pub struct BtConn
 {
-    bt          : &'a BtConn
+    conn        : Arc< SyncConnection >
+,   res_err     : Arc< Mutex< Option< String > > >
+,   agent       : bool
+}
+
+pub struct BtAdapter
+{
+    conn        : Arc< SyncConnection >
 ,   path        : String
 }
 
@@ -134,9 +557,9 @@ pub struct BtAdapterStatus
 ,   pub device_status       : Option< Vec< BtDeviceStatus > >
 }
 
-pub struct BtDevice<'a>
+pub struct BtDevice
 {
-    bt          : &'a BtConn
+    conn        : Arc< SyncConnection >
 ,   path        : String
 }
 
@@ -295,184 +718,18 @@ impl BtConn
             {
                 conn
             ,   res_err
-            ,   dump_mg : false
             ,   agent : false
             }
         )
     }
 
-    pub async fn get_managed_objects<'a>( &self ) -> Result< GetManagedObjectsRetType<'a> >
+    pub async fn get_adapter( &self, path : &str ) -> Result< BtAdapter >
     {
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, "/", TIME_OUT, self.conn.clone() );
-
-        match proxy.method_call::< ( GetManagedObjectsRetType, ), _, _, _ >( OBJECT_MANAGER_INTERFACE, GET_MANAGED_OBJECTS, () ).await
-        {
-            Ok( x ) =>
-            {
-                if self.dump_mg
-                {
-                    log::debug!( "{}", &Self::pretty_dump_managed_objects( &x.0 ) );
-                }
-
-                Ok( x.0 )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
-    }
-
-    pub fn pretty_dump_managed_objects<'a>( mo : & GetManagedObjectsRetType<'a> ) -> String
-    {
-        let mut keys_1 : Vec< dbus::strings::Path<'a> > = Vec::new();
-
-        for x in mo.keys()
-        {
-            keys_1.push( x.clone() );
-        }
-
-        keys_1.sort();
-
-        // log::debug!( "{:?}", keys_1 );
-
-        let mut sink = String::new();
-
-        sink += "\n{\n";
-
-        for ( i1, k1 ) in keys_1.iter().enumerate()
-        {
-            sink += &format!( "{}\t{:?} :", if i1 == 0 { "" } else { "," }, &k1 );
-
-            let dic2 = &mo.get( &k1 ).unwrap();
-
-            if dic2.is_empty()
-            {
-                sink += " {}\n";
-            }
-            else
-            {
-                sink += "\n\t{\n";
-
-                let mut keys_2 = dic2.keys().collect::< Vec< &String > >();
-
-                keys_2.sort();
-
-                for ( i2, k2 ) in keys_2.iter().enumerate()
-                {
-                    sink += &format!( "\t{}\t{:?}", if i2 == 0 { "" } else { "," }, &k2 );
-
-                    let dic3 = &dic2.get( *k2 ).unwrap();
-
-                    if dic3.is_empty()
-                    {
-                        sink += " : {}\n";
-                    }
-                    else
-                    {
-                        sink += "\n\t\t{\n";
-
-                        let mut keys_3 = dic3.keys().collect::< Vec< &String > >();
-
-                        keys_3.sort();
-
-                        for ( i3, k3 ) in keys_3.iter().enumerate()
-                        {
-
-                            let val = &dic3.get( *k3 ).unwrap();
-
-
-                            sink += &format!( "\t\t{}\t{:?} : {:?}\n", if i3 == 0 { "" } else { "," }, &k3, &val );
-                        }
-
-                        sink += "\t\t}\n";
-                    }
-                }
-
-                sink += "\t}\n";
-            }
-        }
-
-        sink += "}\n";
-
-        sink
-    }
-
-    pub async fn get_adapter_paths( &self ) -> Result< Vec< String > >
-    {
-        let mut ret = Vec::<String>::new();
-
-        let mo = self.get_managed_objects().await?;
-
-        for ( k, v ) in mo.iter()
-        {
-            if v.contains_key( BLUEZ_ADAPTER_INTERFACE )
-            {
-                ret.push( k.to_string() );
-            }
-        }
-
-        Ok( ret )
-    }
-
-    pub async fn get_device_path( &self, adapter_path : &str ) -> Result< Vec< String > >
-    {
-        let mut ret = Vec::<String>::new();
-
-        let mo = self.get_managed_objects().await?;
-
-        for ( k, v ) in mo.iter()
-        {
-            if v.contains_key( BLUEZ_DEVICE_INTERFACE )
-            {
-                let prop = v.get( BLUEZ_DEVICE_INTERFACE ).unwrap();
-
-                if let Some( x ) = prop.get( "Adapter" )
-                {
-                    let adapter_path_ref = x.0.as_str().unwrap();
-
-                    if adapter_path_ref == adapter_path
-                    {
-                        ret.push( k.to_string() );
-                    }
-                }
-            }
-        }
-
-        Ok( ret )
-    }
-
-    pub async fn get_adapter_path_from_device_path( &self, device_path : &str ) -> Result< String >
-    {
-        let mo = self.get_managed_objects().await?;
-
-        for ( k, v ) in mo.iter()
-        {
-            if v.contains_key( BLUEZ_DEVICE_INTERFACE )
-            {
-                let prop = v.get( BLUEZ_DEVICE_INTERFACE ).unwrap();
-
-                if let Some( x ) = prop.get( "Adapter" )
-                {
-                    let adapter_path_ref = x.0.as_str().unwrap();
-
-                    return Ok( String::from( adapter_path_ref ) )
-                }
-            }
-        }
-
-        Err( dbus::Error::new_custom( "Error", "Bt adapter not found" ) )
-    }
-
-
-    pub async fn get_adapter<'a>( &'a self, path : &str ) -> Result< BtAdapter<'a> >
-    {
-        let paths = self.get_adapter_paths().await?;
+        let paths = get_adapter_paths( self.conn.clone() ).await?;
 
         if let Some( _ ) = paths.iter().find( |x| *x == path )
         {
-            Ok( BtAdapter{ bt : self, path : String::from( path ) } )
+            Ok( BtAdapter{ conn : self.conn.clone(), path : String::from( path ) } )
         }
         else
         {
@@ -480,19 +737,18 @@ impl BtConn
         }
     }
 
-
-    pub fn get_adapter_uncheck<'a>( &'a self, path : &str ) -> BtAdapter<'a>
+    pub fn get_adapter_uncheck( &self, path : &str ) -> BtAdapter
     {
-        BtAdapter{ bt : self, path : String::from( path ) }
+        BtAdapter{ conn : self.conn.clone(), path : String::from( path ) }
     }
 
-    pub async fn get_first_adapter<'a>( &'a self ) -> Result< BtAdapter<'a> >
+    pub async fn get_first_adapter( &self ) -> Result< BtAdapter >
     {
-        let paths = self.get_adapter_paths().await?;
+        let paths = get_adapter_paths( self.conn.clone() ).await?;
 
         if !paths.is_empty()
         {
-            Ok( BtAdapter{ bt : self, path : String::from( paths.first().unwrap() ) } )
+            Ok( BtAdapter{ conn : self.conn.clone(), path : String::from( paths.first().unwrap() ) } )
         }
         else
         {
@@ -500,68 +756,10 @@ impl BtConn
         }
     }
 
-    pub async fn get_adapters<'a>( &'a self ) -> Result< Vec< BtAdapter<'a> > >
+    pub async fn get_adapters( &self ) -> Result< Vec< BtAdapter > >
     {
-        let adapters = self.get_adapter_paths().await?;
-        Ok( adapters.iter().map( | x | BtAdapter { bt : self, path : String::from( x ) } ).collect() )
-    }
-
-    pub async fn call_void_func( &self, path : &str, interface : &str, func_name : &str ) -> Result< () >
-    {
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, self.conn.clone() );
-
-        match proxy.method_call::< (), _, _, _ >( interface, func_name, () ).await
-        {
-            Ok( _ ) =>
-            {
-                Ok( () )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
-    }
-
-    pub async fn call_void_func_a< T : dbus::arg::Arg + dbus::arg::Append >
-        ( &self, path : &str, interface : &str, func_name : &str, value : T )
-        -> Result< () >
-    {
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, self.conn.clone() );
-
-        match proxy.method_call::< (), _, _, _ >( interface, func_name, ( value, ) ).await
-        {
-            Ok( _ ) =>
-            {
-                Ok( () )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
-    }
-
-    pub async fn set< T : dbus::arg::Arg + dbus::arg::Append >
-        ( &self, path : &str, interface : &str, key : &str, value : T )
-        -> Result< () >
-    {
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, self.conn.clone() );
-
-        match proxy.set( interface, key, value ).await
-        {
-            Ok( _ ) =>
-            {
-                Ok( () )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
+        let paths = get_adapter_paths( self.conn.clone() ).await?;
+        Ok( paths.iter().map( | x | BtAdapter { conn : self.conn.clone(), path : String::from( x ) } ).collect() )
     }
 
     pub async fn setup_agent< T : BtAgentContext + Send + 'static, U : BtAgentIO + Sync + Send + 'static >(
@@ -603,60 +801,109 @@ impl BtConn
                         }
                     );
 
+                    let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
-                    b.method(
+                    b.method_with_cr_async(
                         "RequestPinCode", ( "device", ), ( "pincode",  )
-                    ,   move | _, btactx, ( device, ) : ( Path, ) |
+                    ,   move | mut ctx, cr, ( device, ) : ( Path, ) |
                         {
+                            let btactx: &mut T = cr.data_mut( ctx.path() ).unwrap();
+
                             let pincpde = btactx.make_pincode();
 
-                            agent_io_clone.request_pincode( &device, &pincpde );
+                            let conn_clone = conn_clone.clone();
+                            let agent_io_clone = agent_io_clone.clone();
 
-                            Ok( ( pincpde, ) )
+                            async move
+                            {
+                                match get_device_status( conn_clone, &device ).await
+                                {
+                                    Ok( device_status ) =>
+                                    {
+                                        agent_io_clone.request_pincode( device_status, &pincpde ).await;
+                                    }
+                                ,   Err( x ) =>
+                                    {
+                                    }
+                                };
+
+                                ctx.reply( Ok( ( pincpde, ) ) )
+                            }
                         }
                     );
 
+                    let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
                         "DisplayPinCode", ( "device", "pincode", ), ()
                     ,   move | mut ctx, _cr, ( device, pincode, ) : ( Path, String, ) |
                         {
-                            agent_io_clone.display_pincode( &device, &pincode );
-
+                            let conn_clone = conn_clone.clone();
                             let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if agent_io_clone.ok().await
+                                    match get_device_status( conn_clone, &device ).await
                                     {
-                                         Ok( () )
-                                    }
-                                    else
-                                    {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( device_status ) =>
+                                        {
+                                            agent_io_clone.display_pincode( device_status, &pincode ).await;
+
+                                            if agent_io_clone.ok().await
+                                            {
+                                                 Ok( () )
+                                            }
+                                            else
+                                            {
+                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        }
+                                    ,   Err( x ) =>
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                 )
                             }
                         }
                     );
 
+                    let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
-                    b.method(
+                    b.method_with_cr_async(
                         "RequestPasskey", ( "device", ), ( "passkey", )
-                    ,   move | _, btactx, ( device, ) : ( Path, ) |
+                    ,   move | mut ctx, cr, ( device, ) : ( Path, ) |
                         {
+                            let btactx: &mut T = cr.data_mut( ctx.path() ).unwrap();
+
                             let passkey = btactx.make_passkey();
 
-                            agent_io_clone.request_passkey( &device, &format!( "{:06}", passkey ) );
+                            let conn_clone = conn_clone.clone();
+                            let agent_io_clone = agent_io_clone.clone();
 
-                            Ok( ( passkey, ) )
+                            async move
+                            {
+                                match get_device_status( conn_clone, &device ).await
+                                {
+                                    Ok( device_status ) =>
+                                    {
+                                        agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
+                                    }
+                                ,   Err( x ) =>
+                                    {
+                                    }
+                                };
+
+                                ctx.reply( Ok( ( passkey, ) ) )
+                            }
                         }
                     );
 
+                    let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
@@ -666,52 +913,71 @@ impl BtConn
                             let passkey = format!( "{:06}", passkey );
                             let entered = format!( "{:06}", entered );
 
+                            let conn_clone = conn_clone.clone();
                             let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
-                                agent_io_clone.display_passkey( &device, &passkey, &entered );
-
                                 ctx.reply(
-                                    if agent_io_clone.ok().await
+                                    match get_device_status( conn_clone, &device ).await
                                     {
-                                         Ok( () )
-                                    }
-                                    else
-                                    {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( device_status ) =>
+                                        {
+                                            agent_io_clone.display_passkey( device_status, &passkey, &entered ).await;
+
+                                            if agent_io_clone.ok().await
+                                            {
+                                                 Ok( () )
+                                            }
+                                            else
+                                            {
+                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        }
+                                    ,   Err( x ) =>
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                 )
                             }
                         }
                     );
 
+                    let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
                         "RequestConfirmation", ( "device", "passkey" ), ()
                     ,   move | mut ctx, _cr, ( device, passkey ) : ( Path, u32 ) |
                         {
-                            log::debug!( "m:RequestConfirmation dev {:?} passkey {:?}", device, passkey );
-
                             let passkey = format!( "{:06}", passkey );
 
-                            agent_io_clone.request_confirmation( &device, &passkey );
-
+                            let conn_clone = conn_clone.clone();
                             let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
-
-
                                 ctx.reply(
-                                    if agent_io_clone.ok().await
+                                    match get_device_status( conn_clone, &device ).await
                                     {
-                                         Ok( () )
-                                    }
-                                    else
-                                    {
-                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        Ok( device_status ) =>
+                                        {
+                                            agent_io_clone.request_confirmation( device_status, &passkey ).await;
+
+                                            if agent_io_clone.ok().await
+                                            {
+                                                 Ok( () )
+                                            }
+                                            else
+                                            {
+                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        }
+                                    ,   Err( x ) =>
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
                                     }
                                 )
                             }
@@ -824,173 +1090,77 @@ impl Drop for BtConn
 
 /// https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/adapter-api.txt
 ///
-impl <'a> BtAdapter<'a>
+impl BtAdapter
 {
     pub fn get_id( &self ) -> &str
     {
         &self.path
     }
 
-    pub async fn get_status( &self, with_devices : bool ) -> Result< BtAdapterStatus >
+    pub async fn get_status( &self, with_devices : bool  ) -> Result< BtAdapterStatus >
     {
-        let device_status : Option< Vec< BtDeviceStatus > > =
-            if with_devices
-            {
-                let mut device_status = Vec::< BtDeviceStatus >::new();
-
-                match self.get_devices().await
-                {
-                    Ok( devices ) =>
-                    {
-                        for device in devices
-                        {
-                            match device.get_status().await
-                            {
-                                Ok( x ) =>
-                                {
-                                    device_status.push( x );
-                                }
-                            ,   Err( x ) =>
-                                {
-                                    log::debug!( "{:?}", x );
-                                    return Err( x );
-                                }
-                            }
-                        }
-                    }
-                ,   Err( x ) =>
-                    {
-                        log::debug!( "{:?}", x );
-                        return Err( x );
-                    }
-                }
-
-                Some( device_status )
-            }
-            else
-            {
-                None
-            };
-
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, &self.path, TIME_OUT, self.bt.conn.clone() );
-
-        match proxy.get_all( BLUEZ_ADAPTER_INTERFACE ).await
-        {
-            Ok( props ) =>
-            {
-                let address         = String::from( props.get( "Address" ).unwrap().0.as_str().unwrap() );
-                let address_type    = String::from( props.get( "AddressType" ).unwrap().0.as_str().unwrap() );
-                let alias           = String::from( props.get( "Alias" ).unwrap().0.as_str().unwrap() );
-                let class           = *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
-                let discoverable    = *props.get( "Discoverable" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-                let discoverable_timeout = *props.get( "DiscoverableTimeout" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
-                let discovering     = *props.get( "Discovering" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-
-                let modalias        =
-                    if props.contains_key( "Modalias" )
-                    {
-                        Some( String::from( props.get( "Modalias" ).unwrap().0.as_str().unwrap() ) )
-                    }
-                    else
-                    {
-                        None
-                    };
-
-                let name            = String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() );
-                let pairable        = *props.get( "Pairable" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-                let pairable_timeout = *props.get( "PairableTimeout" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
-                let powered         = *props.get( "Powered" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-
-                let uuids : Vec< String > = props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec<String> >().unwrap().iter().map( | x | String::from( x ) ).collect();
-
-                Ok(
-                    BtAdapterStatus
-                    {
-                        id          : String::from( &self.path )
-                    ,   address
-                    ,   address_type
-                    ,   alias
-                    ,   class
-                    ,   discoverable
-                    ,   discoverable_timeout
-                    ,   discovering
-                    ,   modalias
-                    ,   name
-                    ,   pairable
-                    ,   pairable_timeout
-                    ,   powered
-                    ,   uuids
-                    ,   device_status
-                    }
-                )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
+        get_adapter_status( self.conn.clone(), &self.path, with_devices ).await
     }
 
     pub async fn set_alias( &self, value : &str ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "Alias", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Alias", value ).await
     }
 
     pub async fn set_discoverable( &self, value : bool ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "Discoverable", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Discoverable", value ).await
     }
 
     pub async fn set_discoverable_timeout( &self, value: u64 ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "DiscoverableTimeout", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "DiscoverableTimeout", value ).await
     }
 
     pub async fn set_pairable( &self, value : bool ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "Pairable", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Pairable", value ).await
     }
 
     pub async fn set_pairable_timeout( &self, value: u64 ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "PairableTimeout", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "PairableTimeout", value ).await
     }
 
     pub async fn set_powered( &self, value : bool ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_ADAPTER_INTERFACE, "Powered", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Powered", value ).await
     }
 
     pub async fn start_discovery( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_ADAPTER_INTERFACE, "StartDiscovery" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "StartDiscovery" ).await
     }
 
     pub async fn stop_discovery( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_ADAPTER_INTERFACE, "StopDiscovery" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "StopDiscovery" ).await
     }
 
     pub async fn remove_device( &self, device: &str ) -> Result< () >
     {
         let device_path = dbus::strings::Path::from( device );
-        self.bt.call_void_func_a( &self.path, BLUEZ_ADAPTER_INTERFACE, "RemoveDevice", device_path ).await
+        call_void_func_a( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "RemoveDevice", device_path ).await
     }
 
-    pub async fn get_devices( &'a self ) -> Result< Vec< BtDevice<'a> > >
+    pub async fn get_devices( &self ) -> Result< Vec< BtDevice > >
     {
-        let devices = self.bt.get_device_path( &self.path ).await?;
-        Ok( devices.iter().map( | x | BtDevice { bt : self.bt, path : String::from( x ) } ).collect() )
+        let devices = get_device_path( self.conn.clone(), &self.path ).await?;
+        Ok( devices.iter().map( | x | BtDevice { conn : self.conn.clone(), path : String::from( x ) } ).collect() )
     }
 
-    pub async fn get_device( &'a self, path : &str ) -> Result< BtDevice<'a> >
+    pub async fn get_device( &self, path : &str ) -> Result< BtDevice >
     {
-        let devices = self.bt.get_device_path( &self.path ).await?;
+        let devices = get_device_path( self.conn.clone(), &self.path ).await?;
 
         if let Some( x ) = devices.iter().find( |x| *x == path )
         {
-            Ok( BtDevice{ bt : self.bt, path : String::from( x ) } )
+            Ok( BtDevice{ conn : self.conn.clone(), path : String::from( x ) } )
         }
         else
         {
@@ -1001,7 +1171,7 @@ impl <'a> BtAdapter<'a>
 
 /// https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/device-api.txt
 ///
-impl <'a> BtDevice<'a>
+impl BtDevice
 {
     pub fn get_id( &self ) -> &str
     {
@@ -1010,148 +1180,47 @@ impl <'a> BtDevice<'a>
 
     pub async fn get_status( &self ) -> Result< BtDeviceStatus >
     {
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, &self.path, TIME_OUT, self.bt.conn.clone() );
-
-        match proxy.get_all( BLUEZ_DEVICE_INTERFACE ).await
-        {
-            Ok( props ) =>
-            {
-                let adapter         = String::from( props.get( "Adapter" ).unwrap().0.as_str().unwrap() );
-                let address         = String::from( props.get( "Address" ).unwrap().0.as_str().unwrap() );
-                let address_type    = String::from( props.get( "AddressType" ).unwrap().0.as_str().unwrap() );
-                let alias           = String::from( props.get( "Alias" ).unwrap().0.as_str().unwrap() );
-
-                let appearance =
-                    if props.contains_key( "Appearance" )
-                    {
-                        Some( *props.get( "Appearance" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
-                    }
-                    else
-                    {
-                        None
-                    };
-
-                let blocked         = *props.get( "Blocked" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-                let class           = *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
-                let connected       = *props.get( "Connected" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-                let icon            = String::from( props.get( "Icon" ).unwrap().0.as_str().unwrap() );
-                let legacy_pairing  = *props.get( "LegacyPairing" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-
-                let modalias =
-                    if props.contains_key( "Modalias" )
-                    {
-                        Some( String::from( props.get( "Modalias" ).unwrap().0.as_str().unwrap() ) )
-                    }
-                    else
-                    {
-                        None
-                    };
-
-                let name            = String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() );
-                let paired          = *props.get( "Paired" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-
-                let rssi =
-                    if props.contains_key( "RSSI" )
-                    {
-                        Some( *props.get( "RSSI" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
-                    }
-                    else
-                    {
-                        None
-                    };
-
-                let services_resolved = *props.get( "ServicesResolved" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-                let trusted         = *props.get( "Trusted" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-
-
-                let tx_power =
-                    if props.contains_key( "TxPower" )
-                    {
-                        Some( *props.get( "TxPower" ).unwrap().0.as_any().downcast_ref::<i16>().unwrap() )
-                    }
-                    else
-                    {
-                        None
-                    };
-
-                let uuids : Vec< String > = props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec<String> >().unwrap().iter().map( | x | String::from( x ) ).collect();
-
-                let audio_source    = uuids.iter().find( | &x | x == AUDIO_SOURCE_UUID ).is_some();
-                let audio_sink      = uuids.iter().find( | &x | x == AUDIO_SINK_UUID ).is_some();
-
-                Ok(
-                    BtDeviceStatus
-                    {
-                        id              : String::from( &self.path )
-                    ,   adapter
-                    ,   address
-                    ,   address_type
-                    ,   alias
-                    ,   appearance
-                    ,   blocked
-                    ,   class
-                    ,   connected
-                    ,   icon
-                    ,   legacy_pairing
-                    ,   modalias
-                    ,   name
-                    ,   paired
-                    ,   rssi
-                    ,   services_resolved
-                    ,   trusted
-                    ,   tx_power
-                    ,   uuids
-                    ,   audio_source
-                    ,   audio_sink
-                    }
-                )
-            }
-        ,   Err( x ) =>
-            {
-                log::debug!( "{:?}", x );
-                Err( x )
-            }
-        }
+        get_device_status( self.conn.clone(), &self.path ).await
     }
 
     pub async fn set_trusted( &self, value : bool ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_DEVICE_INTERFACE, "Trusted", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Trusted", value ).await
     }
 
     pub async fn set_blocked( &self, value : bool ) -> Result< () >
     {
-        self.bt.set( &self.path, BLUEZ_DEVICE_INTERFACE, "Blocked", value ).await
+        set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Blocked", value ).await
     }
 
     pub async fn connect( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_DEVICE_INTERFACE, "Connect" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Connect" ).await
     }
 
     pub async fn disconnect( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_DEVICE_INTERFACE, "Disconnect" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Disconnect" ).await
     }
 
     pub async fn connect_profile( &self, uuid : &str ) -> Result< () >
     {
-        self.bt.call_void_func_a( &self.path, BLUEZ_DEVICE_INTERFACE, "ConnectProfile", uuid ).await
+        call_void_func_a( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "ConnectProfile", uuid ).await
     }
 
     pub async fn disconnect_profile( &self, uuid : &str ) -> Result< () >
     {
-        self.bt.call_void_func_a( &self.path, BLUEZ_DEVICE_INTERFACE, "DisconnectProfile", uuid ).await
+         call_void_func_a( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "DisconnectProfile", uuid ).await
     }
 
     pub async fn pair( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_DEVICE_INTERFACE, "Pair" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Pair" ).await
     }
 
     pub async fn cancel_pairing( &self ) -> Result< () >
     {
-        self.bt.call_void_func( &self.path, BLUEZ_DEVICE_INTERFACE, "CancelPairing" ).await
+        call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "CancelPairing" ).await
     }
 }
 
