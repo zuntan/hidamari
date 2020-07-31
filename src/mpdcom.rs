@@ -20,7 +20,7 @@ use tokio::prelude::*;
 use serde::{ Serialize, /* Deserialize */ };
 
 use crate::context;
-
+use crate::event;
 ///
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdComOk
@@ -301,8 +301,6 @@ pub async fn mpdcom_task(
     let     conn_err_retry = Duration::from_secs( 10 );
 
     let mut _mpd_version : Option< String > = None;
-
-    let rx_time_out = Duration::from_millis( 20 );
 
     let mut status_try_time : Option< Instant > = None;
     let status_time_out = Duration::from_millis( 250 );

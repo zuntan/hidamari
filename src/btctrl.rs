@@ -37,9 +37,38 @@ pub struct BtctlStatus<'a>
     bt_status : &'a BtctlStatusMember
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct BtctlOk {}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BtctlErr
+{
+    msg : String
+}
+
+///
+pub type BtctlResult       = Result< BtctlOk, BtctlErr >;
+
+///
+#[derive(Debug)]
+pub enum BtctlRequestType
+{
+    Nop
+,   Cmd( String, String, bool )
+,   Shutdown
+}
+
+///
+pub struct BtctlRequest
+{
+    pub req  : BtctlRequestType
+,   pub tx   : oneshot::Sender< BtctlResult >
+}
+
+
 pub async fn btctrl_task(
     arwlctx : context::ARWLContext
-,   mut rx  : mpsc::Receiver< event::EventRequest >
+,   mut rx  : mpsc::Receiver< event::BtctlRequest >
 )
 -> io::Result< ()  >
 {
@@ -62,11 +91,6 @@ pub async fn btctrl_task(
 
     loop
     {
-        if event::event_shutdown( &mut rx ).await
-        {
-            break;
-        }
-
         // status update
 
         let mut btctl_st_m =
@@ -147,6 +171,13 @@ pub async fn btctrl_task(
             if let Ok( x ) = serde_json::to_string( &BtctlStatusResult::Ok( &BtctlStatus{ bt_status : &btctl_st_m } ) )
             {
                 ctx.bt_status_json = x;
+            }
+        }
+
+        match timeout( rx_time_out, rx.recv() ).await
+        {
+            Ok(recv) =>
+            {
             }
         }
 
