@@ -18,6 +18,8 @@ use tokio::time::{ Duration };
 
 use serde::{ Serialize, /* Deserialize */ };
 
+use async_trait::async_trait;
+
 use dbus_tokio::connection;
 
 use dbus::nonblock::{ SyncConnection, Proxy, stdintf::org_freedesktop_dbus::Properties /*, MethodReply, MsgMatch */ };
@@ -27,6 +29,7 @@ use dbus::arg::{ Variant, RefArg };
 use dbus::channel::MatchingReceiver;
 
 use dbus_crossroads::{ MethodErr, Crossroads, IfaceBuilder /*, IfaceToken */ };
+
 
 /*
 static BLUEZ_SENDER                 : &'static str = "org.bluez";
@@ -76,6 +79,39 @@ pub struct BtConn
 ,   res_err     : Arc< Mutex< Option< String > > >
 ,   dump_mg     : bool
 ,   agent       : bool
+}
+
+#[async_trait]
+pub trait BtAgentIO
+{
+    fn request_pincode( &self, device : &str, pincode : &str )
+    {
+        log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
+    }
+
+    fn display_pincode( &self, device : &str, pincode : &str )
+    {
+        log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
+    }
+
+    fn request_passkey( &self, device : &str, passkey : &str )
+    {
+        log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
+    }
+
+    fn display_passkey( &self, device : &str, passkey : &str, entered : &str )
+    {
+    }
+
+    fn request_confirmation( &self, device : &str, passkey : &str )
+    {
+        log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
+    }
+
+    async fn ok( &self ) -> bool
+    {
+        true
+    }
 }
 
 pub struct BtAdapter<'a>
@@ -503,14 +539,10 @@ impl BtConn
         }
     }
 
-    pub async fn setup_agent(
+    pub async fn setup_agent< T : BtAgentIO + Sync + Send + Clone + 'static >(
             &mut self
-        ,   capability                  : BtAgentCapability
-        ,   func_request_pincode        : Option< Arc< F0 > >
-        ,   func_display_pincode        : Option< Arc< F1 > >
-        ,   func_request_passkey        : Option< Arc< F0 > >
-        ,   func_display_passkey        : Option< Arc< F2 > >
-        ,   func_request_confirmation   : Option< Arc< F1 > >
+        ,   capability      : BtAgentCapability
+        ,   agent_io        : T
         )
     {
         if self.agent
@@ -545,53 +577,47 @@ impl BtConn
                         }
                     );
 
+                    let agent_io_clone = agent_io.clone();
+
                     b.method(
                         "RequestPinCode", ( "device", ), ( "pincode",  )
                     ,   move | _, btactx, ( device, ) : ( Path, ) |
                         {
                             let pincpde = btactx.make_pincode();
 
-                            log::debug!( "m:RequestPinCode dev {:?} ret {:?}", device, pincpde );
-
-                            if let Some( ref func ) = func_request_pincode
-                            {
-                                func( &device, &pincpde );
-                            }
+                            agent_io_clone.request_pincode( &device, &pincpde );
 
                             Ok( ( pincpde, ) )
                         }
                     );
 
+                    let agent_io_clone = agent_io.clone();
+
                     b.method_with_cr_async(
                         "DisplayPinCode", ( "device", "pincode", ), ()
                     ,   move | mut ctx, _cr, ( device, pincode, ) : ( Path, String, ) |
                         {
-                            log::debug!( "m:DisplayPinCode dev {:?} pincode {}", device, pincode );
+                            agent_io_clone.display_pincode( &device, &pincode );
 
-                            let func = func_display_pincode.clone();
+                            let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( ref func ) = func
+                                    if agent_io_clone.ok().await
                                     {
-                                        if func( &device, &pincode ).await
-                                        {
-                                            Ok( () )
-                                        }
-                                        else
-                                        {
-                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
-                                        }
+                                         Ok( () )
                                     }
                                     else
                                     {
-                                        Ok( () )
+                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                     }
                                 )
                             }
                         }
                     );
+
+                    let agent_io_clone = agent_io.clone();
 
                     b.method(
                         "RequestPasskey", ( "device", ), ( "passkey", )
@@ -599,17 +625,13 @@ impl BtConn
                         {
                             let passkey = btactx.make_passkey();
 
-                            log::debug!( "m:RequestPasskey dev {:?} ret {:06}", device, passkey );
-
-                            if let Some( ref func ) = func_request_passkey
-                            {
-                                let passkey = format!( "{:06}", passkey );
-                                func( &device, &passkey );
-                            }
+                            agent_io_clone.request_passkey( &device, &format!( "{:06}", passkey ) );
 
                             Ok( ( passkey, ) )
                         }
                     );
+
+                    let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
                         "DisplayPasskey", ( "device", "passkey", "entered" ), ()
@@ -619,30 +641,28 @@ impl BtConn
 
                             let passkey = format!( "{:06}", passkey );
                             let entered = format!( "{:06}", entered );
-                            let func = func_display_passkey.clone();
+
+                            agent_io_clone.display_passkey( &device, &passkey, &entered );
+
+                            let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( ref func ) = func
+                                    if agent_io_clone.ok().await
                                     {
-                                        if func( &device, &passkey, &entered ).await
-                                        {
-                                            Ok( () )
-                                        }
-                                        else
-                                        {
-                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
-                                        }
+                                         Ok( () )
                                     }
                                     else
                                     {
-                                        Ok( () )
+                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                     }
                                 )
                             }
                         }
                     );
+
+                    let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
                         "RequestConfirmation", ( "device", "passkey" ), ()
@@ -651,25 +671,21 @@ impl BtConn
                             log::debug!( "m:RequestConfirmation dev {:?} passkey {:?}", device, passkey );
 
                             let passkey = format!( "{:06}", passkey );
-                            let func = func_request_confirmation.clone();
+
+                            agent_io_clone.request_confirmation( &device, &passkey );
+
+                            let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
                                 ctx.reply(
-                                    if let Some( ref func ) = func
+                                    if agent_io_clone.ok().await
                                     {
-                                        if func( &device, &passkey ).await
-                                        {
-                                            Ok( () )
-                                        }
-                                        else
-                                        {
-                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
-                                        }
+                                         Ok( () )
                                     }
                                     else
                                     {
-                                        Ok( () )
+                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                     }
                                 )
                             }

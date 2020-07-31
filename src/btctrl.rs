@@ -129,7 +129,7 @@ pub async fn btctrl_task(
         match bt::BtConn::new().await
         {
             Ok( mut bt_conn ) =>
-            {
+            {/*
                 bt_conn.setup_agent(
                     bt::BtAgentCapability::DisplayYesNo
                 ,   Some( Arc::new( func_request_pincode ) )
@@ -138,7 +138,7 @@ pub async fn btctrl_task(
                 ,   None
                 ,   None
                 ).await;
-
+                */
                 Some( bt_conn )
             }
         ,   Err( x ) =>
