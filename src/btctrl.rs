@@ -9,7 +9,7 @@
 
 use std::io;
 
-use std::sync::{ Arc };
+use std::sync::{ Arc, Mutex };
 
 use tokio::time::{ timeout, delay_for, Duration /*, Instant */ };
 use tokio::sync::{ oneshot, mpsc };
@@ -100,14 +100,74 @@ impl BtctrlRequest
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct BtctrlNotice
+{
+    title       : String
+,   name        : String
+,   address     : String
+,   pincode     : Option< String >
+,   passkey     : Option< String >
+,   entered     : Option< String >
+,   reply_token : Option< String >
+}
+
 struct BtAgentIO
 {
+    arwlctx     : context::ARWLContext
+,   reply_token : String
 }
 
-impl bt::BtAgentIO for  BtAgentIO
+impl BtAgentIO
 {
+    fn new( arwlctx : context::ARWLContext ) -> BtAgentIO
+    {
+        BtAgentIO
+        {
+            arwlctx
+        ,   reply_token : String::new()
+        }
+    }
 }
 
+impl bt::BtAgentIO for BtAgentIO
+{
+    fn request_pincode( &self, device : &str, pincode : &str )
+    {
+        log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
+
+        let arwlctx = self.arwlctx.clone();
+
+        tokio::spawn(
+            async move
+            {
+                let ctx = arwlctx.write().await;
+
+
+            }
+        );
+    }
+
+    fn display_pincode( &self, device : &str, pincode : &str )
+    {
+        log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
+    }
+
+    fn request_passkey( &self, device : &str, passkey : &str )
+    {
+        log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
+    }
+
+    fn display_passkey( &self, device : &str, passkey : &str, entered : &str )
+    {
+        log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
+    }
+
+    fn request_confirmation( &self, device : &str, passkey : &str )
+    {
+        log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
+    }
+}
 
 pub async fn btctrl_task(
     arwlctx : context::ARWLContext
@@ -121,16 +181,16 @@ pub async fn btctrl_task(
         match bt::BtConn::new().await
         {
             Ok( mut bt_conn ) =>
-            {/*
+            {
+                let bt_agent_ctx    = bt::BtAgentContextImpl::new();
+                let bt_agent_io     = Arc::new( BtAgentIO::new( arwlctx.clone() ) );
+
                 bt_conn.setup_agent(
                     bt::BtAgentCapability::DisplayYesNo
-                ,   Some( Arc::new( func_request_pincode ) )
-                ,   None /* Some( Arc::new( func_display_pincode ) ) */
-                ,   None
-                ,   None
-                ,   None
+                ,   bt_agent_ctx
+                ,   bt_agent_io
                 ).await;
-                */
+
                 Some( bt_conn )
             }
         ,   Err( x ) =>

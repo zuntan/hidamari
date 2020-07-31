@@ -30,7 +30,6 @@ use dbus::channel::MatchingReceiver;
 
 use dbus_crossroads::{ MethodErr, Crossroads, IfaceBuilder /*, IfaceToken */ };
 
-
 /*
 static BLUEZ_SENDER                 : &'static str = "org.bluez";
 */
@@ -43,20 +42,19 @@ static BLUEZ_ADAPTER_INTERFACE      : &'static str = "org.bluez.Adapter1";
 static BLUEZ_DEVICE_INTERFACE       : &'static str = "org.bluez.Device1";
 static BLUEZ_AGENT_INTERFACE        : &'static str = "org.bluez.Agent1";
 
+static BLUEZ_AGENT_MANAGER_PATH     : &'static str = "/org/bluez";
 static BLUEZ_AGENT_MANAGER_INTERFACE : &'static str = "org.bluez.AgentManager1";
 
-static BLUEZ_AGENT_PATH             : &'static str = "/net/zuntan/hidamari";
+static BLUEZ_AGENT_PATH             : &'static str = "/net/zuntan/bt";
 
 static BLUEZ_ERROR_REJECTED         : &'static str = "org.bluez.Error.Rejected";
 static BLUEZ_ERROR_CANCELED         : &'static str = "org.bluez.Error.Canceled";
 
-/*
 static REQUEST_PINCODE              : &'static str = "0000";
 static REQUEST_PASSKEY              : u32 = 0;
-*/
 
-pub static AUDIO_SOURCE_UUID            : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
-pub static AUDIO_SINK_UUID              : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
+pub static AUDIO_SOURCE_UUID        : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
+pub static AUDIO_SINK_UUID          : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
 
 const TIME_OUT                      : Duration = Duration::from_secs( 3 );
 
@@ -66,12 +64,6 @@ type MethodResult< T >  = std::result::Result< T, MethodErr >;
 
 pub type GetManagedObjectsRetType<'a> =
     HashMap< dbus::strings::Path<'a>, HashMap< String, HashMap< String, Variant< Box< dyn RefArg > > > > >;
-
-// type GetAllRetType       = HashMap< String, Variant< Box< dyn RefArg > > >;
-
-type F0 = dyn Fn( &str, &str ) + Sync + Send + 'static;
-type F1 = dyn Fn( &str, &str ) -> Pin< Box< dyn std::future::Future< Output = bool > + Send > > + Sync + Send + 'static;
-type F2 = dyn Fn( &str, &str, &str ) -> Pin< Box< dyn std::future::Future< Output = bool > + Send > > + Sync + Send + 'static;
 
 pub struct BtConn
 {
@@ -101,6 +93,7 @@ pub trait BtAgentIO
 
     fn display_passkey( &self, device : &str, passkey : &str, entered : &str )
     {
+        log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
     fn request_confirmation( &self, device : &str, passkey : &str )
@@ -139,7 +132,6 @@ pub struct BtAdapterStatus
 ,   pub uuids               : Vec< String >
 
 ,   pub device_status       : Option< Vec< BtDeviceStatus > >
-
 }
 
 pub struct BtDevice<'a>
@@ -174,10 +166,6 @@ pub struct BtDeviceStatus
 ,   pub audio_sink      : bool
 }
 
-struct BtAgentContext
-{
-    rng             : StdRng
-}
 
 #[derive(Debug)]
 pub enum BtAgentCapability
@@ -206,31 +194,45 @@ impl From< BtAgentCapability > for String
     }
 }
 
-impl BtAgentContext
+pub trait BtAgentContext
 {
-    fn new() -> BtAgentContext
+    fn make_pincode( &mut self ) -> String
     {
-        BtAgentContext { rng : SeedableRng::from_rng( thread_rng() ).unwrap() }
+        String::from( REQUEST_PINCODE )
     }
 
+    fn make_passkey( &mut self ) -> u32
+    {
+        REQUEST_PASSKEY
+    }
+}
+
+pub struct BtAgentContextImpl
+{
+    rng : StdRng
+}
+
+impl BtAgentContextImpl
+{
+    pub fn new() -> BtAgentContextImpl
+    {
+        BtAgentContextImpl { rng : SeedableRng::from_rng( thread_rng() ).unwrap() }
+    }
+}
+
+impl BtAgentContext for BtAgentContextImpl
+{
     fn make_pincode( &mut self ) -> String
     {
         let src = "0123456789".as_bytes();
         let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 4 ).cloned().collect();
 
         sel.iter().map( | &s | s as char ).collect::<String>()
-        /*
-        String::from_utf8( sel ).unwrap()
-        String::from( REQUEST_PINCODE )
-        */
     }
 
     fn make_passkey( &mut self ) -> u32
     {
         self.rng.gen()
-        /*
-        REQUEST_PASSKEY
-        */
     }
 }
 
@@ -441,6 +443,29 @@ impl BtConn
         Ok( ret )
     }
 
+    pub async fn get_adapter_path_from_device_path( &self, device_path : &str ) -> Result< String >
+    {
+        let mo = self.get_managed_objects().await?;
+
+        for ( k, v ) in mo.iter()
+        {
+            if v.contains_key( BLUEZ_DEVICE_INTERFACE )
+            {
+                let prop = v.get( BLUEZ_DEVICE_INTERFACE ).unwrap();
+
+                if let Some( x ) = prop.get( "Adapter" )
+                {
+                    let adapter_path_ref = x.0.as_str().unwrap();
+
+                    return Ok( String::from( adapter_path_ref ) )
+                }
+            }
+        }
+
+        Err( dbus::Error::new_custom( "Error", "Bt adapter not found" ) )
+    }
+
+
     pub async fn get_adapter<'a>( &'a self, path : &str ) -> Result< BtAdapter<'a> >
     {
         let paths = self.get_adapter_paths().await?;
@@ -539,10 +564,11 @@ impl BtConn
         }
     }
 
-    pub async fn setup_agent< T : BtAgentIO + Sync + Send + Clone + 'static >(
+    pub async fn setup_agent< T : BtAgentContext + Send + 'static, U : BtAgentIO + Sync + Send + 'static >(
             &mut self
         ,   capability      : BtAgentCapability
-        ,   agent_io        : T
+        ,   agent_ctx       : T
+        ,   agent_io        : Arc< U >
         )
     {
         if self.agent
@@ -566,7 +592,7 @@ impl BtConn
             cr.register
             (
                 BLUEZ_AGENT_INTERFACE
-            ,   | b: &mut IfaceBuilder< BtAgentContext > |
+            ,   | b: &mut IfaceBuilder< T > |
                 {
                     b.method(
                         "Release", (), ()
@@ -637,17 +663,15 @@ impl BtConn
                         "DisplayPasskey", ( "device", "passkey", "entered" ), ()
                     ,   move | mut ctx, _cr, ( device, passkey, entered ) : ( Path, u32, u16 ) |
                         {
-                            log::debug!( "m:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
-
                             let passkey = format!( "{:06}", passkey );
                             let entered = format!( "{:06}", entered );
-
-                            agent_io_clone.display_passkey( &device, &passkey, &entered );
 
                             let agent_io_clone = agent_io_clone.clone();
 
                             async move
                             {
+                                agent_io_clone.display_passkey( &device, &passkey, &entered );
+
                                 ctx.reply(
                                     if agent_io_clone.ok().await
                                     {
@@ -678,6 +702,8 @@ impl BtConn
 
                             async move
                             {
+
+
                                 ctx.reply(
                                     if agent_io_clone.ok().await
                                     {
@@ -721,7 +747,7 @@ impl BtConn
                 }
             );
 
-        cr.insert( BLUEZ_AGENT_PATH, &[iface_token], BtAgentContext::new() );
+        cr.insert( BLUEZ_AGENT_PATH, &[iface_token], agent_ctx );
 
         self.conn.start_receive(
             MatchRule::new_method_call()
@@ -735,7 +761,7 @@ impl BtConn
             )
         );
 
-        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_SERVICE_NAME, TIME_OUT, self.conn.clone() );
+        let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_AGENT_MANAGER_PATH, TIME_OUT, self.conn.clone() );
 
         let param = ( Path::from( BLUEZ_AGENT_PATH ), String::from( capability ) );
 
@@ -776,7 +802,7 @@ impl Drop for BtConn
             tokio::spawn(
                 async move
                 {
-                    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_SERVICE_NAME, TIME_OUT, conn );
+                    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, BLUEZ_AGENT_MANAGER_PATH, TIME_OUT, conn );
 
                     let param = ( Path::from( BLUEZ_AGENT_PATH ), );
 

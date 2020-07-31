@@ -15,6 +15,8 @@ use std::collections::{ HashMap, HashSet };
 use std::fs;
 use std::net::{ SocketAddr, ToSocketAddrs };
 
+use rand::prelude::*;
+
 use tokio::sync;
 use tokio::time;
 
@@ -228,8 +230,11 @@ pub struct Context
 
 , pub   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
 , pub   bt_status_json  : String
+, pub   bt_notice_json  : String
 
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
+
+, pub   rng             : StdRng
 
 , pub   product         : String
 , pub   version         : String
@@ -267,7 +272,9 @@ impl Context
         ,   ws_send_intv    : time::Duration::from_secs( 3 )
         ,   btctrl_tx
         ,   bt_status_json  : String::new()
+        ,   bt_notice_json  : String::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
+        ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
         ,   version         : String::from( version )
         }
@@ -371,7 +378,6 @@ impl Context
         ,   aux_in          : self.config_dyn.aux_in    .iter().map( | x | String::from( x ) ).collect()
         }
     }
-
 
     pub fn update_config_dyn( &mut self, newval : &str ) -> Option< ConfigDynOutputError >
     {
@@ -623,6 +629,13 @@ impl Context
         }
 
         log::debug!( "sdf_shutdown {}/{}", c, n );
+    }
+
+    fn make_random_token( &mut self ) -> String
+    {
+        let src = "0123456789abcdef".as_bytes();
+        let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 16 ).cloned().collect();
+        sel.iter().map( | &s | s as char ).collect::<String>()
     }
 }
 

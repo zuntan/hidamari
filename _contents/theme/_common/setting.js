@@ -366,6 +366,10 @@ function()
 			, 	2000
 			);
 		}
+		else
+		{
+			bt_disable_update = false;
+		}
 	}
 
 	$( ".x_bt_dev_z" ).hide();
