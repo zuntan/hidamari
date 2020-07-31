@@ -116,7 +116,7 @@ pub async fn btctrl_task(
     let func_display_pincode =
         | x : &str, y : &str |
         {
-            Box::new (
+            Box::pin(
                 async
                 {
                     true

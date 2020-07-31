@@ -9,6 +9,7 @@
 
 use std::sync::{ Arc, Mutex };
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::ops::Fn;
 
 use rand::prelude::*;
@@ -66,8 +67,8 @@ pub type GetManagedObjectsRetType<'a> =
 // type GetAllRetType       = HashMap< String, Variant< Box< dyn RefArg > > >;
 
 type F0 = dyn Fn( &str, &str ) + Sync + Send + 'static;
-type F1 = dyn Fn( &str, &str ) -> Box< dyn std::future::Future< Output = bool > + Send + Unpin > + Sync + Send + 'static;
-type F2 = dyn Fn( &str, &str, &str ) -> Box< dyn std::future::Future< Output = bool > + Send + Unpin > + Sync + Send + 'static;
+type F1 = dyn Fn( &str, &str ) -> Pin< Box< dyn std::future::Future< Output = bool > + Send > > + Sync + Send + 'static;
+type F2 = dyn Fn( &str, &str, &str ) -> Pin< Box< dyn std::future::Future< Output = bool > + Send > > + Sync + Send + 'static;
 
 pub struct BtConn
 {
