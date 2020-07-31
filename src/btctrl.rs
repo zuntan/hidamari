@@ -106,8 +106,7 @@ impl BtctrlRequest
 pub struct BtctrlNotice
 {
     title       : String
-,   name        : String
-,   address     : String
+,   device      : bt::BtDeviceStatus
 ,   pincode     : Option< String >
 ,   passkey     : Option< String >
 ,   entered     : Option< String >
@@ -139,31 +138,28 @@ impl bt::BtAgentIO for BtAgentIO
     {
         log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
 
-        let arwlctx = self.arwlctx.clone();
+        let mut ctx = self.arwlctx.write().await;
     }
 
-    /*
-
-    fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
+    async fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
     {
         log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
     }
 
-    fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str )
+    async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
     }
 
-    fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
+    async fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
     {
         log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
-    fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str )
+    async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str )
     {
         log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
     }
-    */
 }
 
 pub async fn btctrl_task(

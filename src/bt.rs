@@ -206,7 +206,7 @@ pub async fn get_adapter_path_from_device_path( conn : Arc< SyncConnection >, de
 {
     let mo = get_managed_objects( conn ).await?;
 
-    for ( k, v ) in mo.iter()
+    if let Some( v ) = mo.get( &dbus::strings::Path::from( device_path ) )
     {
         if v.contains_key( BLUEZ_DEVICE_INTERFACE )
         {
@@ -817,15 +817,9 @@ impl BtConn
 
                             async move
                             {
-                                match get_device_status( conn_clone, &device ).await
+                                if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
                                 {
-                                    Ok( device_status ) =>
-                                    {
-                                        agent_io_clone.request_pincode( device_status, &pincpde ).await;
-                                    }
-                                ,   Err( x ) =>
-                                    {
-                                    }
+                                    agent_io_clone.request_pincode( device_status, &pincpde ).await;
                                 };
 
                                 ctx.reply( Ok( ( pincpde, ) ) )
@@ -861,7 +855,7 @@ impl BtConn
                                                 MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                             }
                                         }
-                                    ,   Err( x ) =>
+                                    ,   Err( _ ) =>
                                         {
                                             MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                         }
@@ -887,15 +881,9 @@ impl BtConn
 
                             async move
                             {
-                                match get_device_status( conn_clone, &device ).await
+                                if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
                                 {
-                                    Ok( device_status ) =>
-                                    {
-                                        agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
-                                    }
-                                ,   Err( x ) =>
-                                    {
-                                    }
+                                    agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
                                 };
 
                                 ctx.reply( Ok( ( passkey, ) ) )
@@ -934,7 +922,7 @@ impl BtConn
                                                 MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                             }
                                         }
-                                    ,   Err( x ) =>
+                                    ,   Err( _ ) =>
                                         {
                                             MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                         }
@@ -974,7 +962,7 @@ impl BtConn
                                                 MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                             }
                                         }
-                                    ,   Err( x ) =>
+                                    ,   Err( _ ) =>
                                         {
                                             MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
                                         }
