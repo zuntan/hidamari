@@ -100,6 +100,15 @@ impl BtctrlRequest
     }
 }
 
+struct BtAgentIO
+{
+}
+
+impl bt::BtAgentIO for  BtAgentIO
+{
+}
+
+
 pub async fn btctrl_task(
     arwlctx : context::ARWLContext
 ,   mut rx  : mpsc::Receiver< BtctrlRequest >
@@ -107,23 +116,6 @@ pub async fn btctrl_task(
 -> io::Result< ()  >
 {
     log::debug!( "btctrl start." );
-
-    let func_request_pincode =
-        | x : &str, y : &str |
-        {
-        };
-
-    let func_display_pincode =
-        | x : &str, y : &str |
-        {
-            Box::pin(
-                async
-                {
-                    true
-                }
-            )
-        };
-
 
     let bt_conn : Option< bt::BtConn > =
         match bt::BtConn::new().await
