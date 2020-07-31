@@ -845,10 +845,11 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
 #[derive(Debug, Deserialize, Clone)]
 struct BtCmdParam
 {
-    cmd  : String
-,   id   : String
-,   sw   : bool
-,   arg  : Option< String >
+    cmd : String
+,   aid : String
+,   did : String
+,   sw  : bool
+,   arg : Option< String >
 }
 
 ///
@@ -863,7 +864,8 @@ impl BtCmdParam
         req.req = btctrl::BtctrlRequestType::Cmd
             (
                 cmd
-            ,   String::from( &self.id )
+            ,   String::from( &self.aid )
+            ,   String::from( &self.did )
             ,   self.sw
             ,   if let Some( x ) = self.arg.as_ref() { Some( String::from( x ) ) } else { None }
             );

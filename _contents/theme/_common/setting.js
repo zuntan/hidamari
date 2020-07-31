@@ -341,15 +341,14 @@ function()
 
 	var bt_disable_update = false;
 
-	var bt_command = function( cmd, id, sw )
+	var bt_command = function( cmd, aid, did, sw )
 	{
 		if( cmd == "" ){ return; }
-		if( id == "" ){ return; }
 		sw = !!sw;
 
 		bt_disable_update = true;
 
-		$.getJSON( "/bt_cmd", { cmd : cmd , id : id, sw : sw } )
+		$.getJSON( "/bt_cmd", { cmd : cmd , aid : aid, did : did, sw : sw } )
 			.done( function( json )
 				{
 					update_error( json, ".x_st_bt_cmd_err" );
@@ -357,13 +356,16 @@ function()
 				}
 			);
 
-		mute_timer = setTimeout(
-			function()
-			{
-				bt_disable_update = false;
-			}
-		, 	2000
-		);
+		if( cmd != "dev_remove" )
+		{
+			setTimeout(
+				function()
+				{
+					bt_disable_update = false;
+				}
+			, 	2000
+			);
+		}
 	}
 
 	$( ".x_bt_dev_z" ).hide();
@@ -417,7 +419,9 @@ function()
 					$( ".x_st_bt_discoverable" 	).prop( 'checked', adpt.discoverable );
 					$( ".x_st_bt_discovering" 	).prop( 'checked', adpt.discovering );
 
-					$( ".x_st_bt_powerd, .x_st_bt_pairable, .x_st_bt_discoverable, .x_st_bt_discovering" ).data( "x_bt_id", adpt.id );
+					$( ".x_st_bt_powerd, .x_st_bt_pairable, .x_st_bt_discoverable, .x_st_bt_discovering" )
+						.data( "x_bt_aid", adpt.id )
+						;
 
 					var tr_base = $( ".x_bt_dev_z" );
 
@@ -446,7 +450,10 @@ function()
 						$( "input.x_bt_dev_blocked"		, tr ).attr( "id",  "x_bt_dev_blocked_" + j );
 						$( "label.x_bt_dev_blocked"		, tr ).attr( "for", "x_bt_dev_blocked_" + j );
 
-						$( ".x_bt_dev_connected, .x_bt_dev_paired, .x_bt_dev_trusted, .x_bt_dev_blocked, .x_bt_dev_remove", tr ).data( "x_bt_id", dev.id );
+						$( ".x_bt_dev_connected, .x_bt_dev_paired, .x_bt_dev_trusted, .x_bt_dev_blocked, .x_bt_dev_remove", tr )
+							.data( "x_bt_aid", adpt.id )
+							.data( "x_bt_did", dev.id )
+							;
 
 						$( "input.x_bt_dev_connected"	, tr ).prop( 'checked', dev.connected );
 						$( "input.x_bt_dev_paired"		, tr ).prop( 'checked', dev.paired );
@@ -457,35 +464,35 @@ function()
 						$( "input.x_bt_dev_connected"	, tr ).change(
 							function ()
 							{
-								bt_command( "dev_connect", $(this).data( "x_bt_id" ), true );
+								bt_command( "dev_connect",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), true );
 							}
 						);
 
 						$( "input.x_bt_dev_paired"		, tr ).change(
 							function ()
 							{
-								bt_command( "dev_pair", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+								bt_command( "dev_pair", 	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), $(this).prop( 'checked' ) );
 							}
 						);
 
 						$( "input.x_bt_dev_trusted"		, tr ).change(
 							function ()
 							{
-								bt_command( "dev_trust", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+								bt_command( "dev_trust",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), $(this).prop( 'checked' ) );
 							}
 						);
 
 						$( "input.x_bt_dev_blocked"		, tr ).change(
 							function ()
 							{
-								bt_command( "dev_block", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+								bt_command( "dev_block",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), $(this).prop( 'checked' ) );
 							}
 						);
 
-						$( "input.x_bt_dev_remove"		, tr ).click(
+						$( ".x_bt_dev_remove"		, tr ).click(
 							function ()
 							{
-								bt_command( "dev_remove", $(this).data( "x_bt_id" ), true );
+								bt_command( "dev_remove",	$(this).data( "x_bt_aid" ), $(this).data( "x_bt_did" ), true );
 							}
 						);
 
@@ -511,21 +518,21 @@ function()
 	$( ".x_st_bt_powerd"		).change(
 		function ()
 		{
-			bt_command( "ad_power", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+			bt_command( "ad_power", 		$(this).data( "x_bt_aid" ), "", $(this).prop( 'checked' ) );
 		}
 	);
 
 	$( ".x_st_bt_pairable"		).change(
 		function ()
 		{
-			bt_command( "ad_pairable", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+			bt_command( "ad_pairable", 		$(this).data( "x_bt_aid" ), "", $(this).prop( 'checked' ) );
 		}
 	);
 
 	$( ".x_st_bt_discoverable"	).change(
 		function ()
 		{
-			bt_command( "ad_discoverable", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+			bt_command( "ad_discoverable",	$(this).data( "x_bt_aid" ), "", $(this).prop( 'checked' ) );
 		}
 	);
 
@@ -533,7 +540,7 @@ function()
 
 		function ()
 		{
-			bt_command( "ad_discovering", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+			bt_command( "ad_discovering",	$(this).data( "x_bt_aid" ), "", $(this).prop( 'checked' ) );
 		}
 	);
 

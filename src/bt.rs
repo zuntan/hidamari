@@ -919,7 +919,7 @@ impl <'a> BtAdapter<'a>
         self.bt.call_void_func( &self.path, BLUEZ_ADAPTER_INTERFACE, "StopDiscovery" ).await
     }
 
-    pub async fn remove_device( &self, device: String ) -> Result< () >
+    pub async fn remove_device( &self, device: &str ) -> Result< () >
     {
         let device_path = dbus::strings::Path::from( device );
         self.bt.call_void_func_a( &self.path, BLUEZ_ADAPTER_INTERFACE, "RemoveDevice", device_path ).await
@@ -929,6 +929,20 @@ impl <'a> BtAdapter<'a>
     {
         let devices = self.bt.get_device_path( &self.path ).await?;
         Ok( devices.iter().map( | x | BtDevice { bt : self.bt, path : String::from( x ) } ).collect() )
+    }
+
+    pub async fn get_device( &'a self, path : &str ) -> Result< BtDevice<'a> >
+    {
+        let devices = self.bt.get_device_path( &self.path ).await?;
+
+        if let Some( x ) = devices.iter().find( |x| *x == path )
+        {
+            Ok( BtDevice{ bt : self.bt, path : String::from( x ) } )
+        }
+        else
+        {
+            Err( dbus::Error::new_custom( "Error", "Bt device not found" ) )
+        }
     }
 }
 

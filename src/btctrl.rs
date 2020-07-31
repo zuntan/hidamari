@@ -71,7 +71,7 @@ pub type BtctrlResult       = Result< BtctrlOk, BtctrlErr >;
 pub enum BtctrlRequestType
 {
     Nop
-,   Cmd( String, String, bool, Option< String > )
+,   Cmd( String, String, String, bool, Option< String > )
 ,   Shutdown
 }
 
@@ -224,7 +224,7 @@ pub async fn btctrl_task(
 
 
 
-                ,   BtctrlRequestType::Cmd( cmd, id, sw, _arg ) =>
+                ,   BtctrlRequestType::Cmd( cmd, aid, did, sw, _arg ) =>
                     {
                         let err : Option< BtctrlErr > =
                             match bt_conn
@@ -235,63 +235,107 @@ pub async fn btctrl_task(
                                 }
                             ,   Some( ref bt_conn ) =>
                                 {
-                                    match cmd.as_str()
+                                    match bt_conn.get_adapter( &aid ).await
                                     {
-                                        "ad_power" | "ad_pairable" | "ad_discoverable" | "ad_discovering" =>
+                                        Ok( bt_adapter ) =>
                                         {
-                                            match bt_conn.get_adapter( &id ).await
+                                            macro_rules! exec
                                             {
-                                                Ok( bt_adapter ) =>
+                                                ( $e : expr ) =>
                                                 {
-                                                    macro_rules! exec
+                                                    if let Err( x ) = $e.await
                                                     {
-                                                        ( $e : expr ) =>
-                                                        {
-                                                            if let Err( x ) = $e.await
-                                                            {
-                                                                Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
-                                                            }
-                                                            else { None }
-                                                        }
+                                                        Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
                                                     }
+                                                    else { None }
+                                                }
+                                            }
 
-                                                    match cmd.as_str()
+                                            match cmd.as_str()
+                                            {
+                                                "ad_power" =>
+                                                {
+                                                    exec!( bt_adapter.set_powered( sw ) )
+                                                }
+                                            ,   "ad_pairable" =>
+                                                {
+                                                    exec!( bt_adapter.set_pairable( sw ) )
+                                                }
+                                            ,   "ad_discoverable" =>
+                                                {
+                                                    exec!( bt_adapter.set_discoverable( sw ) )
+                                                }
+                                            ,   "ad_discovering" =>
+                                                {
+                                                    if sw
                                                     {
-                                                        "ad_power" =>
-                                                        {
-                                                            exec!( bt_adapter.set_powered( sw ) )
-                                                        }
-                                                    ,   "ad_pairable" =>
-                                                        {
-                                                            exec!( bt_adapter.set_pairable( sw ) )
-                                                        }
-                                                    ,   "ad_discoverable" =>
-                                                        {
-                                                            exec!( bt_adapter.set_discoverable( sw ) )
-                                                        }
-                                                    ,   "ad_discovering" =>
-                                                        {
-                                                            if sw
-                                                            {
-                                                                exec!( bt_adapter.start_discovery() )
-                                                            }
-                                                            else
-                                                            {
-                                                                exec!( bt_adapter.stop_discovery() )
-                                                            }
-                                                        }
-                                                    ,   _ => { None }
+                                                        exec!( bt_adapter.start_discovery() )
+                                                    }
+                                                    else
+                                                    {
+                                                        exec!( bt_adapter.stop_discovery() )
                                                     }
                                                 }
-                                            ,   Err( x ) =>
+                                            ,   "dev_remove" =>
                                                 {
-                                                    Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                    exec!( bt_adapter.remove_device( &did ) )
+                                                }
+                                            ,   "dev_connect" | "dev_pair" | "dev_trust" | "dev_block" =>
+                                                {
+                                                    match bt_adapter.get_device( &did ).await
+                                                    {
+                                                        Ok( bt_device ) =>
+                                                        {
+                                                            match cmd.as_str()
+                                                            {
+                                                                "dev_connect" =>
+                                                                {
+                                                                    if sw
+                                                                    {
+                                                                        exec!( bt_device.connect() )
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        exec!( bt_device.disconnect() )
+                                                                    }
+                                                                }
+                                                            ,   "dev_pair" =>
+                                                                {
+                                                                    if sw
+                                                                    {
+                                                                        exec!( bt_device.pair() )
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        Some( BtctrlErr::new( -7, &format!( "Invarid parameter [{}]", &sw ) ) )
+                                                                    }
+                                                                }
+                                                            ,   "dev_trust" =>
+                                                                {
+                                                                    exec!( bt_device.set_trusted( sw ) )
+                                                                }
+                                                            ,   "dev_block" =>
+                                                                {
+                                                                    exec!( bt_device.set_blocked( sw ) )
+                                                                }
+                                                            ,   _ => { None }
+                                                            }
+                                                        }
+                                                    ,   Err( x ) =>
+                                                        {
+                                                            Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                        }
+                                                    }
+                                                }
+                                            ,   _ =>
+                                                {
+                                                    Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
                                                 }
                                             }
                                         }
-                                    ,   _ =>
+                                    ,   Err( x ) =>
                                         {
-                                            Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
+                                            Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
                                         }
                                     }
                                 }
