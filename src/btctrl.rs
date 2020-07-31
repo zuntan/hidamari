@@ -113,6 +113,34 @@ pub async fn btctrl_task(
             }
         }
 
+        // sort adapter_status
+
+        btctl_st_m.adapter.sort_by(
+            | lhs, rhs |
+            {
+                let lhs_name = format!( "{} [{}]", lhs.name, lhs.address );
+                let rhs_name = format!( "{} [{}]", rhs.name, rhs.address );
+                lhs_name.cmp( &rhs_name )
+            }
+        );
+
+        // sort device_status
+
+        for adapter_status in btctl_st_m.adapter.iter_mut()
+        {
+            if let Some( device_status ) = adapter_status.device_status.as_mut()
+            {
+                device_status.sort_by(
+                    | lhs, rhs |
+                    {
+                        let lhs_name = format!( "{} [{}]", lhs.name, lhs.address );
+                        let rhs_name = format!( "{} [{}]", rhs.name, rhs.address );
+                        lhs_name.cmp( &rhs_name )
+                    }
+                );
+            }
+        }
+
         {
             let mut ctx = arwlctx.write().await;
 

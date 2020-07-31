@@ -337,10 +337,217 @@ function()
 		$( ".x_ws_monitor_bt_status" ).val( JSON.stringify( ws.ws_bt_status ) )
 	};
 
+	// bluetooth
+
+	var bt_disable_update = false;
+
+	var bt_command = function( cmd, id, sw )
+	{
+		if( cmd != "" ){ return; }
+		if( id != "" ){ return; }
+		sw = !!sw;
+
+		bt_disable_update = true;
+
+		$.getJSON( "/bt_cmd", { cmd : cmd , id : id, sw : sw } )
+			.done( function( json )
+				{
+					update_error( json, ".x_st_bt_cmd_err" );
+					update_ok( json, ".x_st_bt_cmd_ok" );
+				}
+			);
+
+		mute_timer = setTimeout(
+			function()
+			{
+				bt_disable_update = false;
+			}
+		, 	2000
+		);
+	}
+
+	$( ".x_bt_dev_z" ).hide();
+
+	var bt_status_update = function( ws )
+	{
+		if( bt_disable_update ) { return; }
+
+		var st = ws.ws_bt_status;
+
+		$( ".x_st_bt_enable" ).text( st.enable ? "Enable" : "Disable" );
+
+		var t = $( ".x_st_bt_adapter" );
+
+		if( ! t.hasClass( "x_focus" ) )
+		{
+			var sel_id = t.val();
+
+			t.empty();
+
+			for( var i = 0 ; i < st.adapter.length ; ++i )
+			{
+				var adpt = st.adapter[ i ];
+
+				var h = "";
+				h += '<option value="' + adpt.id  + '" ';
+				h += ( adpt.id == sel_id ? ' selected="selected" ' : '' );
+				h += '>' + adpt.name + ' [' + adpt.address + '] </option>';
+
+				t.append( $( h ) );
+			}
+		}
+
+		var adpt_disabled = true;
+		$( ".x_bt_dev" ).remove();
+
+		var sel_id = t.val();
+
+		if( sel_id != "" )
+		{
+			for( var i = 0 ; i < st.adapter.length ; ++i )
+			{
+				var adpt = st.adapter[ i ];
+
+				if( adpt.id == sel_id )
+				{
+					adpt_disabled = false;
+
+					$( ".x_st_bt_powerd" 		).prop( 'checked', adpt.powered );
+					$( ".x_st_bt_pairable" 		).prop( 'checked', adpt.pairable );
+					$( ".x_st_bt_discoverable" 	).prop( 'checked', adpt.discoverable );
+					$( ".x_st_bt_discovering" 	).prop( 'checked', adpt.discovering );
+
+					$( ".x_st_bt_powerd, .x_st_bt_pairable, .x_st_bt_discoverable, .x_st_bt_discovering" ).data( "x_bt_id", adpt.id );
+
+					var tr_base = $( ".x_bt_dev_z" );
+
+					for( var j = 0 ; j < adpt.device_status.length ; ++j )
+					{
+						var dev = adpt.device_status[ j ];
+
+						var tr = tr_base.clone();
+
+						tr.removeClass( "x_bt_dev_z" );
+						tr.addClass( "x_bt_dev" );
+
+						$( ".x_bt_dev_name"		, tr ).text( dev.name + ' [' + dev.address + ']' );
+						$( ".x_bt_dev_source"	, tr ).toggle( dev.audio_source );
+						$( ".x_bt_dev_sink"		, tr ).toggle( dev.audio_sink );
+
+						$( "input.x_bt_dev_connected"	, tr ).attr( "id",  "x_bt_dev_connected_" + j );
+						$( "label.x_bt_dev_connected"	, tr ).attr( "for", "x_bt_dev_connected_" + j );
+
+						$( "input.x_bt_dev_paired"		, tr ).attr( "id",  "x_bt_dev_paired_" + j );
+						$( "label.x_bt_dev_paired"		, tr ).attr( "for", "x_bt_dev_paired_" + j );
+
+						$( "input.x_bt_dev_trusted"		, tr ).attr( "id",  "x_bt_dev_trusted_" + j );
+						$( "label.x_bt_dev_trusted"		, tr ).attr( "for", "x_bt_dev_trusted_" + j );
+
+						$( "input.x_bt_dev_blocked"		, tr ).attr( "id",  "x_bt_dev_blocked_" + j );
+						$( "label.x_bt_dev_blocked"		, tr ).attr( "for", "x_bt_dev_blocked_" + j );
+
+						$( ".x_bt_dev_connected, .x_bt_dev_paired, .x_bt_dev_trusted, .x_bt_dev_blocked, .x_bt_dev_remove", tr ).data( "x_bt_id", dev.id );
+
+						$( "input.x_bt_dev_connected"	, tr ).prop( 'checked', dev.connected );
+						$( "input.x_bt_dev_paired"		, tr ).prop( 'checked', dev.paired );
+						$( "input.x_bt_dev_paired"		, tr ).prop( 'disabled', dev.paired );
+						$( "input.x_bt_dev_trusted"		, tr ).prop( 'checked', dev.trusted );
+						$( "input.x_bt_dev_blocked"		, tr ).prop( 'checked', dev.blocked );
+
+						$( "input.x_bt_dev_connected"	, tr ).change(
+							function ()
+							{
+								bt_command( "dev_connect", $(this).data( "x_bt_id" ), true );
+							}
+						);
+
+						$( "input.x_bt_dev_paired"		, tr ).change(
+							function ()
+							{
+								bt_command( "dev_pair", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+							}
+						);
+
+						$( "input.x_bt_dev_trusted"		, tr ).change(
+							function ()
+							{
+								bt_command( "dev_trust", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+							}
+						);
+
+						$( "input.x_bt_dev_blocked"		, tr ).change(
+							function ()
+							{
+								bt_command( "dev_block", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+							}
+						);
+
+						$( "input.x_bt_dev_remove"		, tr ).click(
+							function ()
+							{
+								bt_command( "dev_remove", $(this).data( "x_bt_id" ), true );
+							}
+						);
+
+						tr_base.before( tr );
+
+						tr.show();
+					}
+
+					break;
+				}
+			}
+		}
+
+		$( ".x_st_bt_powerd, .x_st_bt_pairable, .x_st_bt_discoverable, .x_st_bt_discovering" ).prop( 'disabled', adpt_disabled );
+
+		if( adpt_disabled )
+		{
+			$( ".x_bt_dev" ).remove();
+			$( ".x_st_bt_powerd, .x_st_bt_pairable, .x_st_bt_discoverable, .x_st_bt_discovering" ).prop( 'checked', false );
+		}
+	}
+
+	$( ".x_st_bt_powerd"		).change(
+		function ()
+		{
+			bt_command( "ad_power", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+		}
+	);
+
+	$( ".x_st_bt_pairable"		).change(
+		function ()
+		{
+			bt_command( "ad_pairable", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+		}
+	);
+
+	$( ".x_st_bt_discoverable"	).change(
+		function ()
+		{
+			bt_command( "ad_discoverable", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+		}
+	);
+
+	$( ".x_st_bt_discovering"	).change(
+
+		function ()
+		{
+			bt_command( "ad_discovering", $(this).data( "x_bt_id" ), $(this).prop( 'checked' ) );
+		}
+	);
+
+	$( ".x_st_bt_adapter" )
+		.focusin(  function() { $(this).addClass( "x_focus" ); } )
+		.focusout( function() { $(this).removeClass( "x_focus" ); } )
+
+	// ajax
+
 	$.hidamari.ajax_setup()
 
 	var ws = $.hidamari.websocket();
 	ws.update( function() { monitor_update( this ); } );
+	ws.bt_status_update( function() { bt_status_update( this ); } );
 	ws.open();
 }
 );
