@@ -11,7 +11,7 @@ use std::io;
 
 use std::sync::{ Arc, Mutex };
 
-use tokio::time::{ timeout, delay_for, Duration /*, Instant */ };
+use tokio::time::{ timeout, delay_for, Duration, Instant };
 use tokio::sync::{ oneshot, mpsc };
 
 use serde::{ Serialize, /* Deserialize */ };
@@ -120,7 +120,6 @@ pub struct BtctrlNotice
 struct BtAgentIO
 {
     arwlctx     : context::ARWLContext
-,   reply_token : String
 }
 
 impl BtAgentIO
@@ -130,18 +129,28 @@ impl BtAgentIO
         BtAgentIO
         {
             arwlctx
-        ,   reply_token : String::new()
         }
     }
 }
 
+const BT_AGENT_IO_OK_TIMEOUT : Duration = Duration::from_secs( 60 );
+
 #[async_trait]
 impl bt::BtAgentIO for BtAgentIO
 {
-    // async fn request_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bool { true }
-    // async fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bool { true }
+    async fn request_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bt::BtAgentIOConfirm
+    {
+        log::info!( "BtAgentIO:RequestPinCode dev {:?} ret {:?} -> Reject", device, pincode );
+        bt::BtAgentIOConfirm::Reject
+    }
 
-    async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bool
+    async fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bt::BtAgentIOConfirm
+    {
+        log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {} -> Reject", device, pincode );
+        bt::BtAgentIOConfirm::Reject
+    }
+
+    async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bt::BtAgentIOConfirm
     {
         let mut ctx = self.arwlctx.write().await;
         let token = ctx.next_bt_notice_reply_token();
@@ -164,7 +173,7 @@ impl bt::BtAgentIO for BtAgentIO
             ctx.bt_notice_json = x;
         }
 
-        false
+        bt::BtAgentIOConfirm::Confirm
     }
 
     async fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
@@ -191,7 +200,7 @@ impl bt::BtAgentIO for BtAgentIO
         }
     }
 
-    async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bool
+    async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bt::BtAgentIOConfirm
     {
         let mut ctx = self.arwlctx.write().await;
         let token = ctx.next_bt_notice_reply_token();
@@ -214,7 +223,7 @@ impl bt::BtAgentIO for BtAgentIO
             ctx.bt_notice_json = x;
         }
 
-        false
+        bt::BtAgentIOConfirm::Confirm
     }
 
     async fn cancel( &self )
@@ -242,14 +251,73 @@ impl bt::BtAgentIO for BtAgentIO
             ctx.bt_notice_json = x;
         }
     }
-
+    //  sync::mpsc::channel::< btctrl::BtctrlRequest >( 128 );
     async fn ok( &self ) -> bool
     {
-        let mut ctx = self.arwlctx.write().await;
+        {
+            let mut ctx = self.arwlctx.write().await;
+            ctx.reset_bt_notice_reply_token();
+            ctx.bt_agent_io_rx_opend = true;
+        }
 
-        ctx.reset_bt_notice_reply_token();
+        let tm = Instant::now();
 
-        true
+        let mut ret = false;
+
+        loop
+        {
+            {
+                let mut ctx = self.arwlctx.write().await;
+
+                match timeout( event::EVENT_WAIT_TIMEOUT, ctx.bt_agent_io_rx.recv() ).await
+                {
+                    Ok( recv ) =>
+                    {
+                        let recv = recv.unwrap();
+
+                        log::debug!( "recv [{:?}]", recv );
+
+                        match recv
+                        {
+                            BtctrlRequestType::Shutdown =>
+                            {
+                                break;
+                            }
+                        ,   BtctrlRequestType::Reply( reply_token, sw ) =>
+                            {
+                                if reply_token == ctx.current_bt_notice_reply_token()
+                                {
+                                    if ctx.current_bt_notice_reply_token_elapsed() < BT_AGENT_IO_OK_TIMEOUT
+                                    {
+                                        ret = sw;
+                                        break;
+                                    }
+                                }
+                            }
+                        ,   _ => {}
+                        }
+                    }
+                ,   Err( x ) =>
+                    {
+                    }
+                }
+            }
+
+            delay_for( SHALLOW_SLEEP ).await;
+
+            if tm.elapsed() > BT_AGENT_IO_OK_TIMEOUT
+            {
+                break;
+            }
+        }
+
+        {
+            let mut ctx = self.arwlctx.write().await;
+            ctx.reset_bt_notice_reply_token();
+            ctx.bt_agent_io_rx_opend = false;
+        }
+
+        ret
     }
 }
 
@@ -511,6 +579,16 @@ pub async fn btctrl_task(
                             recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
                         }
                     }
+                ,   BtctrlRequestType::Reply( reply_token, sw ) =>
+                    {
+                        let mut ctx = arwlctx.write().await;
+
+                        if ctx.bt_agent_io_rx_opend
+                        {
+                            ctx.bt_agent_io_tx.send( BtctrlRequestType::Reply( reply_token, sw ) ).await.ok();
+                        }
+                    }
+
                 ,   _ =>
                     {
                         recv.tx.send( Err( BtctrlErr::new( -9, "" ) ) ).ok();

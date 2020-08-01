@@ -488,29 +488,35 @@ pub async fn get_adapter_status( conn : Arc< SyncConnection >, path : &str, with
     }
 }
 
+pub enum BtAgentIOConfirm
+{
+    Reject
+,   Accept
+,   Confirm
+}
 
 #[async_trait]
 pub trait BtAgentIO
 {
-    ///  false returned after call fn ok()
-    async fn request_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn request_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
-        true
+        BtAgentIOConfirm::Accept
     }
 
-    ///  false returned after call fn ok()
-    async fn display_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn display_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
-        true
+        BtAgentIOConfirm::Accept
     }
 
-    ///  false returned after call fn ok()
-    async fn request_passkey( &self, device : BtDeviceStatus, passkey : &str ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn request_passkey( &self, device : BtDeviceStatus, passkey : &str ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
-        true
+        BtAgentIOConfirm::Accept
     }
 
     async fn display_passkey( &self, device : BtDeviceStatus, passkey : &str, entered : &str )
@@ -518,25 +524,25 @@ pub trait BtAgentIO
         log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
-    ///  false returned after call fn ok()
-    async fn request_confirmation( &self, device : BtDeviceStatus, passkey : &str ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn request_confirmation( &self, device : BtDeviceStatus, passkey : &str ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
-        true
+        BtAgentIOConfirm::Accept
     }
 
-    ///  false returned after call fn ok()
-    async fn request_authorization( &self, device : BtDeviceStatus ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn request_authorization( &self, device : BtDeviceStatus ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:RequestAuthorization dev {:?}", device );
-        true
+        BtAgentIOConfirm::Accept
     }
 
-    ///  false returned after call fn ok()
-    async fn authorize_service( &self, device : BtDeviceStatus, uuid : &str ) -> bool
+    ///  BtAgentIOConfirm::Confirm returned after call fn ok()
+    async fn authorize_service( &self, device : BtDeviceStatus, uuid : &str ) -> BtAgentIOConfirm
     {
         log::debug!( "BtAgentIO:AuthorizeService dev {:?} uuid {:?}", device, uuid );
-        true
+        BtAgentIOConfirm::Accept
     }
 
     async fn cancel( &self )
@@ -674,6 +680,11 @@ impl BtAgentContext for BtAgentContextImpl
 {
     fn make_pincode( &mut self ) -> String
     {
+        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
+        //  RequestPinCode
+        //  The return value should be a string of 1-16 characters
+        //  length. The string can be alphanumeric.
+
         let src = "0123456789".as_bytes();
         let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 4 ).cloned().collect();
 
@@ -682,8 +693,13 @@ impl BtAgentContext for BtAgentContextImpl
 
     fn make_passkey( &mut self ) -> u32
     {
+        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
+        //  RequestPasskey
+        //  The return value should be a numeric value
+        //  between 0-999999.
+
         self.rng.gen_range( 0, 1000000 )
-    }
+   }
 }
 
 impl BtConn
@@ -847,15 +863,27 @@ impl BtConn
                                 ctx.reply(
                                     if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
                                     {
-                                        let ok = agent_io_clone.request_pincode( device_status, &pincpde ).await;
-
-                                        if ok || agent_io_clone.ok().await
+                                        match agent_io_clone.request_pincode( device_status, &pincpde ).await
                                         {
-                                            Ok( ( pincpde, ) )
-                                        }
-                                        else
-                                        {
-                                            MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            BtAgentIOConfirm::Reject =>
+                                            {
+                                                MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        ,   BtAgentIOConfirm::Accept =>
+                                            {
+                                                Ok( ( pincpde, ) )
+                                            }
+                                        ,   BtAgentIOConfirm::Confirm =>
+                                            {
+                                                if agent_io_clone.ok().await
+                                                {
+                                                    Ok( ( pincpde, ) )
+                                                }
+                                                else
+                                                {
+                                                    MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            }
                                         }
                                     }
                                     else
@@ -884,15 +912,27 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            let ok = agent_io_clone.display_pincode( device_status, &pincode ).await;
-
-                                            if ok || agent_io_clone.ok().await
+                                            match agent_io_clone.display_pincode( device_status, &pincode ).await
                                             {
-                                                 Ok( () )
-                                            }
-                                            else
-                                            {
-                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                BtAgentIOConfirm::Reject =>
+                                                {
+                                                    MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            ,   BtAgentIOConfirm::Accept =>
+                                                {
+                                                    Ok( () )
+                                                }
+                                            ,   BtAgentIOConfirm::Confirm =>
+                                                {
+                                                    if agent_io_clone.ok().await
+                                                    {
+                                                        Ok( () )
+                                                    }
+                                                    else
+                                                    {
+                                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                    }
+                                                }
                                             }
                                         }
                                     ,   Err( _ ) =>
@@ -924,15 +964,27 @@ impl BtConn
                                 ctx.reply(
                                     if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
                                     {
-                                        let ok = agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
-
-                                        if ok || agent_io_clone.ok().await
+                                        match agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await
                                         {
-                                             Ok( ( passkey, ) )
-                                        }
-                                        else
-                                        {
-                                            MethodResult::<( u32, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            BtAgentIOConfirm::Reject =>
+                                            {
+                                                MethodResult::<( u32, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        ,   BtAgentIOConfirm::Accept =>
+                                            {
+                                                Ok( ( passkey, ) )
+                                            }
+                                        ,   BtAgentIOConfirm::Confirm =>
+                                            {
+                                                if agent_io_clone.ok().await
+                                                {
+                                                     Ok( ( passkey, ) )
+                                                }
+                                                else
+                                                {
+                                                    MethodResult::<( u32, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            }
                                         }
                                     }
                                     else
@@ -997,15 +1049,27 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            let ok = agent_io_clone.request_confirmation( device_status, &passkey ).await;
-
-                                            if ok || agent_io_clone.ok().await
+                                            match agent_io_clone.request_confirmation( device_status, &passkey ).await
                                             {
-                                                 Ok( () )
-                                            }
-                                            else
-                                            {
-                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                BtAgentIOConfirm::Reject =>
+                                                {
+                                                    MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            ,   BtAgentIOConfirm::Accept =>
+                                                {
+                                                    Ok( () )
+                                                }
+                                            ,   BtAgentIOConfirm::Confirm =>
+                                                {
+                                                    if agent_io_clone.ok().await
+                                                    {
+                                                         Ok( () )
+                                                    }
+                                                    else
+                                                    {
+                                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                    }
+                                                }
                                             }
                                         }
                                     ,   Err( _ ) =>
@@ -1035,15 +1099,27 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            let ok = agent_io_clone.request_authorization( device_status ).await;
-
-                                            if ok || agent_io_clone.ok().await
+                                            match agent_io_clone.request_authorization( device_status ).await
                                             {
-                                                 Ok( () )
-                                            }
-                                            else
-                                            {
-                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                BtAgentIOConfirm::Reject =>
+                                                {
+                                                    MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            ,   BtAgentIOConfirm::Accept =>
+                                                {
+                                                     Ok( () )
+                                                }
+                                            ,   BtAgentIOConfirm::Confirm =>
+                                                {
+                                                    if agent_io_clone.ok().await
+                                                    {
+                                                         Ok( () )
+                                                    }
+                                                    else
+                                                    {
+                                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                    }
+                                                }
                                             }
                                         }
                                     ,   Err( _ ) =>
@@ -1073,15 +1149,27 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            let ok = agent_io_clone.authorize_service( device_status, &uuid ).await;
-
-                                            if ok || agent_io_clone.ok().await
+                                            match agent_io_clone.authorize_service( device_status, &uuid ).await
                                             {
-                                                 Ok( () )
-                                            }
-                                            else
-                                            {
-                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                BtAgentIOConfirm::Reject =>
+                                                {
+                                                    MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                }
+                                            ,   BtAgentIOConfirm::Accept =>
+                                                {
+                                                    Ok( () )
+                                                }
+                                            ,   BtAgentIOConfirm::Confirm =>
+                                                {
+                                                    if agent_io_clone.ok().await
+                                                    {
+                                                         Ok( () )
+                                                    }
+                                                    else
+                                                    {
+                                                        MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                                    }
+                                                }
                                             }
                                         }
                                     ,   Err( _ ) =>
