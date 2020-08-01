@@ -682,7 +682,7 @@ impl BtAgentContext for BtAgentContextImpl
 
     fn make_passkey( &mut self ) -> u32
     {
-        self.rng.gen()
+        self.rng.gen_range( 0, 1000000 )
     }
 }
 
