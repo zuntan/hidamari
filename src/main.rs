@@ -724,8 +724,11 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
 
     let mut last_send_head    = time::Instant::now();
 
-    let mut last_check_bt_statu   = time::Instant::now();
-    let mut last_send_bt_statu    = time::Instant::now();
+    let mut last_check_bt_status  = time::Instant::now();
+    let mut last_send_bt_status   = time::Instant::now();
+
+    let mut last_bt_notice_json   = String::new();
+    let mut last_check_bt_notice  = time::Instant::now();
 
     loop
     {
@@ -803,9 +806,9 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
             }
         }
 
-        if last_check_bt_statu.elapsed() > ws_status_intv
+        if last_check_bt_status.elapsed() > ws_status_intv
         {
-            last_check_bt_statu = time::Instant::now();
+            last_check_bt_status = time::Instant::now();
 
             if
             {
@@ -820,10 +823,45 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
                 {
                     false
                 }
-            } || last_send_bt_statu.elapsed() > ws_send_intv
+            } || last_send_bt_status.elapsed() > ws_send_intv
             {
-                last_send_bt_statu = time::Instant::now();
+                last_send_bt_status = time::Instant::now();
 
+                if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
+                {
+                    log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+                    break;
+                }
+            }
+        }
+
+        if last_check_bt_notice.elapsed() > ws_status_intv
+        {
+            last_check_bt_notice = time::Instant::now();
+
+            if
+            {
+                let ctx = arwlctx.read().await;
+
+                if ctx.bt_notice_json != last_bt_notice_json
+                {
+                    last_bt_notice_json = String::from( &ctx.bt_notice_json );
+
+                    if last_bt_notice_json != ""
+                    {
+                        true
+                    }
+                    else
+                    {
+                        false
+                    }
+                }
+                else
+                {
+                    false
+                }
+            }
+            {
                 if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
                 {
                     log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
@@ -891,6 +929,49 @@ async fn bt_cmd_response( arwlctx : context::ARWLContext, param : BtCmdParam ) -
         }
     )
 }
+
+#[derive(Debug, Deserialize, Clone)]
+struct BtReplyParam
+{
+    token : String
+,   ok    : bool
+}
+
+///
+impl BtReplyParam
+{
+    fn to_request( &self ) -> ( btctrl::BtctrlRequest, sync::oneshot::Receiver< btctrl::BtctrlResult > )
+    {
+        let ( mut req, rx ) = btctrl::BtctrlRequest::new();
+
+        req.req = btctrl::BtctrlRequestType::Reply
+            (
+                String::from( &self.token )
+            ,   self.ok
+            );
+
+        ( req, rx )
+    }
+}
+
+///
+async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam ) -> RespResult
+{
+    log::debug!( "{:?}", &param );
+
+    let ( req, rx ) = param.to_request();
+
+    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
+
+    Ok(
+        match rx.await
+        {
+            Ok(x)  => json_response( &x )
+        ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
+        }
+    )
+}
+
 
 ///
 async fn test_response( _arwlctx : context::ARWLContext, _param : HashMap< String, String > ) -> StrResult
@@ -1055,6 +1136,12 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( make_route_getpost::< BtCmdParam >() )
         .and_then( bt_cmd_response );
 
+    let r_bt_reply  =
+        warp::path!( "bt_reply" )
+        .and( arwlctx_clone_filter() )
+        .and( make_route_getpost::< BtReplyParam >() )
+        .and_then( bt_reply_response );
+
     let routes =
         r_root
         .or( r_favicon )
@@ -1069,6 +1156,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_config )
         .or( r_ws )
         .or( r_bt_cmd )
+        .or( r_bt_reply )
         .or( r_test )
         ;
 

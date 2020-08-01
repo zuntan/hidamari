@@ -492,19 +492,25 @@ pub async fn get_adapter_status( conn : Arc< SyncConnection >, path : &str, with
 #[async_trait]
 pub trait BtAgentIO
 {
-    async fn request_pincode( &self, device : BtDeviceStatus, pincode : &str )
+    ///  false returned after call fn ok()
+    async fn request_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> bool
     {
         log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
+        true
     }
 
-    async fn display_pincode( &self, device : BtDeviceStatus, pincode : &str )
+    ///  false returned after call fn ok()
+    async fn display_pincode( &self, device : BtDeviceStatus, pincode : &str ) -> bool
     {
         log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
+        true
     }
 
-    async fn request_passkey( &self, device : BtDeviceStatus, passkey : &str )
+    ///  false returned after call fn ok()
+    async fn request_passkey( &self, device : BtDeviceStatus, passkey : &str ) -> bool
     {
         log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
+        true
     }
 
     async fn display_passkey( &self, device : BtDeviceStatus, passkey : &str, entered : &str )
@@ -512,9 +518,30 @@ pub trait BtAgentIO
         log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
     }
 
-    async fn request_confirmation( &self, device : BtDeviceStatus, passkey : &str )
+    ///  false returned after call fn ok()
+    async fn request_confirmation( &self, device : BtDeviceStatus, passkey : &str ) -> bool
     {
         log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
+        true
+    }
+
+    ///  false returned after call fn ok()
+    async fn request_authorization( &self, device : BtDeviceStatus ) -> bool
+    {
+        log::debug!( "BtAgentIO:RequestAuthorization dev {:?}", device );
+        true
+    }
+
+    ///  false returned after call fn ok()
+    async fn authorize_service( &self, device : BtDeviceStatus, uuid : &str ) -> bool
+    {
+        log::debug!( "BtAgentIO:AuthorizeService dev {:?} uuid {:?}", device, uuid );
+        true
+    }
+
+    async fn cancel( &self )
+    {
+        log::debug!( "BtAgentIO:Cancel" );
     }
 
     async fn ok( &self ) -> bool
@@ -817,12 +844,25 @@ impl BtConn
 
                             async move
                             {
-                                if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
-                                {
-                                    agent_io_clone.request_pincode( device_status, &pincpde ).await;
-                                };
+                                ctx.reply(
+                                    if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
+                                    {
+                                        let ok = agent_io_clone.request_pincode( device_status, &pincpde ).await;
 
-                                ctx.reply( Ok( ( pincpde, ) ) )
+                                        if ok || agent_io_clone.ok().await
+                                        {
+                                            Ok( ( pincpde, ) )
+                                        }
+                                        else
+                                        {
+                                            MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
+                                    }
+                                    else
+                                    {
+                                        MethodResult::<( String, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                    }
+                                )
                             }
                         }
                     );
@@ -844,9 +884,9 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            agent_io_clone.display_pincode( device_status, &pincode ).await;
+                                            let ok = agent_io_clone.display_pincode( device_status, &pincode ).await;
 
-                                            if agent_io_clone.ok().await
+                                            if ok || agent_io_clone.ok().await
                                             {
                                                  Ok( () )
                                             }
@@ -881,12 +921,25 @@ impl BtConn
 
                             async move
                             {
-                                if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
-                                {
-                                    agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
-                                };
+                                ctx.reply(
+                                    if let Ok( device_status ) = get_device_status( conn_clone, &device ).await
+                                    {
+                                        let ok = agent_io_clone.request_passkey( device_status, &format!( "{:06}", passkey ) ).await;
 
-                                ctx.reply( Ok( ( passkey, ) ) )
+                                        if ok || agent_io_clone.ok().await
+                                        {
+                                             Ok( ( passkey, ) )
+                                        }
+                                        else
+                                        {
+                                            MethodResult::<( u32, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
+                                    }
+                                    else
+                                    {
+                                        MethodResult::<( u32, )>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                    }
+                                )
                             }
                         }
                     );
@@ -913,14 +966,7 @@ impl BtConn
                                         {
                                             agent_io_clone.display_passkey( device_status, &passkey, &entered ).await;
 
-                                            if agent_io_clone.ok().await
-                                            {
-                                                 Ok( () )
-                                            }
-                                            else
-                                            {
-                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
-                                            }
+                                            Ok( () )
                                         }
                                     ,   Err( _ ) =>
                                         {
@@ -951,9 +997,9 @@ impl BtConn
                                     {
                                         Ok( device_status ) =>
                                         {
-                                            agent_io_clone.request_confirmation( device_status, &passkey ).await;
+                                            let ok = agent_io_clone.request_confirmation( device_status, &passkey ).await;
 
-                                            if agent_io_clone.ok().await
+                                            if ok || agent_io_clone.ok().await
                                             {
                                                  Ok( () )
                                             }
@@ -972,30 +1018,99 @@ impl BtConn
                         }
                     );
 
-                    b.method(
+                    let conn_clone = self.conn.clone();
+                    let agent_io_clone = agent_io.clone();
+
+                    b.method_with_cr_async(
                         "RequestAuthorization", ( "device", ), ()
-                    ,   | _, _btactx, ( device, ) : ( Path, ) |
+                    ,   move | mut ctx, _cr, ( device, ) : ( Path, ) |
                         {
-                            log::debug!( "m:RequestAuthorization dev {:?}", device );
-                            Ok( () )
+                            let conn_clone = conn_clone.clone();
+                            let agent_io_clone = agent_io_clone.clone();
+
+                            async move
+                            {
+                                ctx.reply(
+                                    match get_device_status( conn_clone, &device ).await
+                                    {
+                                        Ok( device_status ) =>
+                                        {
+                                            let ok = agent_io_clone.request_authorization( device_status ).await;
+
+                                            if ok || agent_io_clone.ok().await
+                                            {
+                                                 Ok( () )
+                                            }
+                                            else
+                                            {
+                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        }
+                                    ,   Err( _ ) =>
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
+                                    }
+                                )
+                            }
                         }
                     );
 
-                    b.method(
+                    let conn_clone = self.conn.clone();
+                    let agent_io_clone = agent_io.clone();
+
+                    b.method_with_cr_async(
                         "AuthorizeService", ( "device", "uuid" ), ()
-                    ,   | _, _btactx, ( device, uuid ) : ( Path, String ) |
+                    ,   move | mut ctx, _cr, ( device, uuid ) : ( Path, String ) |
                         {
-                            log::debug!( "m:AuthorizeService dev {:?} uuid {:?}", device, uuid );
-                            Ok(())
+                            let conn_clone = conn_clone.clone();
+                            let agent_io_clone = agent_io_clone.clone();
+
+                            async move
+                            {
+                                ctx.reply(
+                                    match get_device_status( conn_clone, &device ).await
+                                    {
+                                        Ok( device_status ) =>
+                                        {
+                                            let ok = agent_io_clone.authorize_service( device_status, &uuid ).await;
+
+                                            if ok || agent_io_clone.ok().await
+                                            {
+                                                 Ok( () )
+                                            }
+                                            else
+                                            {
+                                                MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                            }
+                                        }
+                                    ,   Err( _ ) =>
+                                        {
+                                            MethodResult::<()>::Err( MethodErr::from( ( BLUEZ_ERROR_REJECTED, "" ) ) )
+                                        }
+                                    }
+                                )
+                            }
                         }
                     );
 
-                    b.method(
+                    let conn_clone = self.conn.clone();
+                    let agent_io_clone = agent_io.clone();
+
+                    b.method_with_cr_async(
                         "Cancel", (), ()
-                    ,   | _, _btactx, _ : () |
+                    ,   move | mut ctx, _cr, _ : () |
                         {
-                            log::debug!( "m:Cancel" );
-                            Ok(())
+                            let conn_clone = conn_clone.clone();
+                            let agent_io_clone = agent_io_clone.clone();
+
+                            async move
+                            {
+                                agent_io_clone.cancel().await;
+
+                                ctx.reply( Ok( () ) )
+                            }
+
                         }
                     );
                 }

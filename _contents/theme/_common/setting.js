@@ -363,7 +363,7 @@ function()
 				{
 					bt_disable_update = false;
 				}
-			, 	2000
+			, 	3000
 			);
 		}
 		else

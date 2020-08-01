@@ -22,10 +22,9 @@ use crate::context;
 use crate::event;
 use crate::bt;
 
-const DEEP_SLEEP    : Duration = Duration::from_secs( 2 );
-const SHALLOW_SLEEP : Duration = Duration::from_millis( 500 );
+const DEEP_SLEEP    : Duration = Duration::from_millis( 3000 );
+const SHALLOW_SLEEP : Duration = Duration::from_millis( 1000 );
 
-type BtctrlStatusResult<'a> = Result< &'a BtctrlStatus< 'a >, () >;
 
 #[derive(Debug, Serialize)]
 pub struct BtctrlStatusMember
@@ -34,6 +33,8 @@ pub struct BtctrlStatusMember
 ,   time    : String
 ,   adapter : Vec< bt::BtAdapterStatus >
 }
+
+type BtctrlStatusResult<'a> = Result< &'a BtctrlStatus< 'a >, () >;
 
 #[derive(Debug, Serialize)]
 pub struct BtctrlStatus<'a>
@@ -76,6 +77,7 @@ pub enum BtctrlRequestType
 {
     Nop
 ,   Cmd( String, String, String, bool, Option< String > )
+,   Reply( String, bool )
 ,   Shutdown
 }
 
@@ -102,15 +104,17 @@ impl BtctrlRequest
     }
 }
 
+type BtctrlNoticeResult<'a> = Result< &'a BtctrlNotice, () >;
+
 #[derive(Debug, Serialize)]
 pub struct BtctrlNotice
 {
     title       : String
-,   device      : bt::BtDeviceStatus
-,   pincode     : Option< String >
+,   device      : Option< bt::BtDeviceStatus >
 ,   passkey     : Option< String >
 ,   entered     : Option< String >
-,   reply_token : Option< String >
+,   reply_token : String
+,   cancel      : bool
 }
 
 struct BtAgentIO
@@ -134,31 +138,118 @@ impl BtAgentIO
 #[async_trait]
 impl bt::BtAgentIO for BtAgentIO
 {
-    async fn request_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
-    {
-        log::debug!( "BtAgentIO:RequestPinCode dev {:?} ret {:?}", device, pincode );
+    // async fn request_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bool { true }
+    // async fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str ) -> bool { true }
 
+    async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bool
+    {
         let mut ctx = self.arwlctx.write().await;
-    }
+        let token = ctx.next_bt_notice_reply_token();
 
-    async fn display_pincode( &self, device : bt::BtDeviceStatus, pincode : &str )
-    {
-        log::debug!( "BtAgentIO:DisplayPinCode dev {:?} pincode {}", device, pincode );
-    }
+        log::info!( "BtAgentIO:RequestPasskey dev {:?} ret {:06} token {}", device, passkey, token );
 
-    async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str )
-    {
-        log::debug!( "BtAgentIO:RequestPasskey dev {:?} ret {:06}", device, passkey );
+        let n =
+            BtctrlNotice
+            {
+                title       : String::from( "RequestPasskey" )
+            ,   device      : Some( device )
+            ,   passkey     : Some( String::from( passkey ) )
+            ,   entered     : None
+            ,   reply_token : token
+            ,   cancel      : false
+            };
+
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        {
+            ctx.bt_notice_json = x;
+        }
+
+        false
     }
 
     async fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
     {
-        log::debug!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?}", device, passkey, entered );
+        let mut ctx = self.arwlctx.write().await;
+        let token = ctx.next_bt_notice_reply_token();
+
+        log::info!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?} token {}", device, passkey, entered, token );
+
+        let n =
+            BtctrlNotice
+            {
+                title       : String::from( "RequestPasskey" )
+            ,   device      : Some( device )
+            ,   passkey     : Some( String::from( passkey ) )
+            ,   entered     : Some( String::from( entered ) )
+            ,   reply_token : token
+            ,   cancel      : false
+            };
+
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        {
+            ctx.bt_notice_json = x;
+        }
     }
 
-    async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str )
+    async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bool
     {
-        log::debug!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06}", device, passkey );
+        let mut ctx = self.arwlctx.write().await;
+        let token = ctx.next_bt_notice_reply_token();
+
+        log::info!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06} token {}", device, passkey, token );
+
+        let n =
+            BtctrlNotice
+            {
+                title       : String::from( "RequestPasskey" )
+            ,   device      : Some( device )
+            ,   passkey     : Some( String::from( passkey ) )
+            ,   entered     : None
+            ,   reply_token : token
+            ,   cancel      : false
+            };
+
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        {
+            ctx.bt_notice_json = x;
+        }
+
+        false
+    }
+
+    async fn cancel( &self )
+    {
+        log::debug!( "BtAgentIO:Cancel" );
+
+        let mut ctx = self.arwlctx.write().await;
+        let token = ctx.current_bt_notice_reply_token();
+
+        log::info!( "BtAgentIO:Cancel" );
+
+        let n =
+            BtctrlNotice
+            {
+                title       : String::from( "Cancel" )
+            ,   device      : None
+            ,   passkey     : None
+            ,   entered     : None
+            ,   reply_token : token
+            ,   cancel      : true
+            };
+
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        {
+            ctx.bt_notice_json = x;
+        }
+    }
+
+    async fn ok( &self ) -> bool
+    {
+        let mut ctx = self.arwlctx.write().await;
+
+        ctx.reset_bt_notice_reply_token();
+
+        true
     }
 }
 
@@ -248,8 +339,8 @@ pub async fn btctrl_task(
         btctl_st_m.adapter.sort_by(
             | lhs, rhs |
             {
-                let lhs_name = format!( "{} [{}]", lhs.name, lhs.address );
-                let rhs_name = format!( "{} [{}]", rhs.name, rhs.address );
+                let lhs_name = format!( "{}[{}]", lhs.name, lhs.address );
+                let rhs_name = format!( "{}[{}]", rhs.name, rhs.address );
                 lhs_name.cmp( &rhs_name )
             }
         );
@@ -263,8 +354,8 @@ pub async fn btctrl_task(
                 device_status.sort_by(
                     | lhs, rhs |
                     {
-                        let lhs_name = format!( "{} [{}]", lhs.name, lhs.address );
-                        let rhs_name = format!( "{} [{}]", rhs.name, rhs.address );
+                        let lhs_name = format!( "{}{}[{}]", if lhs.paired { "1" } else { "0" }, lhs.name, lhs.address );
+                        let rhs_name = format!( "{}{}[{}]", if rhs.paired { "1" } else { "0" }, rhs.name, rhs.address );
                         lhs_name.cmp( &rhs_name )
                     }
                 );

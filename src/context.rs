@@ -231,6 +231,8 @@ pub struct Context
 , pub   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
 , pub   bt_status_json  : String
 , pub   bt_notice_json  : String
+, pub   bt_notice_reply_token   : String
+, pub   bt_notice_reply_token_time : time::Instant
 
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
@@ -273,6 +275,8 @@ impl Context
         ,   btctrl_tx
         ,   bt_status_json  : String::new()
         ,   bt_notice_json  : String::new()
+        ,   bt_notice_reply_token : String::new()
+        ,   bt_notice_reply_token_time : time::Instant::now()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
@@ -631,11 +635,30 @@ impl Context
         log::debug!( "sdf_shutdown {}/{}", c, n );
     }
 
-    fn make_random_token( &mut self ) -> String
+    pub fn make_random_token( &mut self ) -> String
     {
         let src = "0123456789abcdef".as_bytes();
         let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 16 ).cloned().collect();
         sel.iter().map( | &s | s as char ).collect::<String>()
+    }
+
+    pub fn current_bt_notice_reply_token( &self ) -> String
+    {
+        String::from( &self.bt_notice_reply_token )
+    }
+
+    pub fn next_bt_notice_reply_token( &mut self ) -> String
+    {
+        self.bt_notice_reply_token = self.make_random_token();
+        self.bt_notice_reply_token_time = time::Instant::now();
+        self.current_bt_notice_reply_token()
+    }
+
+    pub fn reset_bt_notice_reply_token( &mut self )
+    {
+        self.bt_notice_json = String::new();
+        self.bt_notice_reply_token = String::new();
+        self.bt_notice_reply_token_time = time::Instant::now();
     }
 }
 
