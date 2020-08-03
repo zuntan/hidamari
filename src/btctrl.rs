@@ -9,10 +9,10 @@
 
 use std::io;
 
-use std::sync::{ Arc, Mutex };
+use std::sync::Arc;
 
 use tokio::time::{ timeout, delay_for, Duration, Instant };
-use tokio::sync::{ oneshot, mpsc };
+use tokio::sync::{ oneshot, mpsc, RwLock };
 
 use serde::{ Serialize, /* Deserialize */ };
 
@@ -104,10 +104,16 @@ impl BtctrlRequest
     }
 }
 
-type BtctrlNoticeResult<'a> = Result< &'a BtctrlNotice, () >;
+type BtctrlNoticeResult<'a> = Result< &'a BtctrlNotice<'a>, () >;
 
 #[derive(Debug, Serialize)]
-pub struct BtctrlNotice
+pub struct BtctrlNotice<'a>
+{
+    bt_notice : &'a BtctrlNoticeMember
+}
+
+#[derive(Debug, Serialize)]
+pub struct BtctrlNoticeMember
 {
     title       : String
 ,   device      : Option< bt::BtDeviceStatus >
@@ -117,18 +123,31 @@ pub struct BtctrlNotice
 ,   cancel      : bool
 }
 
+#[derive(Debug)]
+struct BtAgentIOContext
+{
+    notice_reply_token      : String
+,   notice_reply_token_time : Instant
+,   bt_agent_io_rx          : mpsc::Receiver< BtctrlRequestType >
+,   bt_agent_io_rx_opend    : bool
+}
+
+type ARWLBAIOContext = Arc< RwLock< BtAgentIOContext > >;
+
 struct BtAgentIO
 {
     arwlctx     : context::ARWLContext
+,   arwlbaioctx : ARWLBAIOContext
 }
 
 impl BtAgentIO
 {
-    fn new( arwlctx : context::ARWLContext ) -> BtAgentIO
+    fn new( arwlctx : context::ARWLContext, arwlbaioctx : ARWLBAIOContext ) -> BtAgentIO
     {
         BtAgentIO
         {
             arwlctx
+        ,   arwlbaioctx
         }
     }
 }
@@ -152,23 +171,26 @@ impl bt::BtAgentIO for BtAgentIO
 
     async fn request_passkey( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bt::BtAgentIOConfirm
     {
-        let mut ctx = self.arwlctx.write().await;
-        let token = ctx.next_bt_notice_reply_token();
+        let mut ctx         = self.arwlctx.write().await;
+        let mut baioctx     = self.arwlbaioctx.write().await;
 
-        log::info!( "BtAgentIO:RequestPasskey dev {:?} ret {:06} token {}", device, passkey, token );
+        baioctx.notice_reply_token      = ctx.make_random_token();
+        baioctx.notice_reply_token_time = Instant::now();
+
+        log::info!( "BtAgentIO:RequestPasskey dev {:?} ret {:06} token {}", device, passkey, baioctx.notice_reply_token );
 
         let n =
-            BtctrlNotice
+            BtctrlNoticeMember
             {
-                title       : String::from( "RequestPasskey" )
+                title       : String::from( "Request Passkey" )
             ,   device      : Some( device )
             ,   passkey     : Some( String::from( passkey ) )
             ,   entered     : None
-            ,   reply_token : token
+            ,   reply_token : String::from( &baioctx.notice_reply_token )
             ,   cancel      : false
             };
 
-        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &BtctrlNotice{ bt_notice : &n } ) )
         {
             ctx.bt_notice_json = x;
         }
@@ -178,23 +200,26 @@ impl bt::BtAgentIO for BtAgentIO
 
     async fn display_passkey( &self, device : bt::BtDeviceStatus, passkey : &str, entered : &str )
     {
-        let mut ctx = self.arwlctx.write().await;
-        let token = ctx.next_bt_notice_reply_token();
+        let mut ctx         = self.arwlctx.write().await;
+        let mut baioctx     = self.arwlbaioctx.write().await;
 
-        log::info!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?} token {}", device, passkey, entered, token );
+        baioctx.notice_reply_token      = ctx.make_random_token();
+        baioctx.notice_reply_token_time = Instant::now();
+
+        log::info!( "BtAgentIO:DisplayPasskey dev {:?} passkey {:?} entered {:?} token {}", device, passkey, entered, baioctx.notice_reply_token );
 
         let n =
-            BtctrlNotice
+            BtctrlNoticeMember
             {
-                title       : String::from( "RequestPasskey" )
+                title       : String::from( "Display Passkey" )
             ,   device      : Some( device )
             ,   passkey     : Some( String::from( passkey ) )
             ,   entered     : Some( String::from( entered ) )
-            ,   reply_token : token
+            ,   reply_token : String::new()
             ,   cancel      : false
             };
 
-        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &BtctrlNotice{ bt_notice : &n } ) )
         {
             ctx.bt_notice_json = x;
         }
@@ -202,24 +227,28 @@ impl bt::BtAgentIO for BtAgentIO
 
     async fn request_confirmation( &self, device : bt::BtDeviceStatus, passkey : &str ) -> bt::BtAgentIOConfirm
     {
-        let mut ctx = self.arwlctx.write().await;
-        let token = ctx.next_bt_notice_reply_token();
+        let mut ctx         = self.arwlctx.write().await;
+        let mut baioctx     = self.arwlbaioctx.write().await;
 
-        log::info!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06} token {}", device, passkey, token );
+        baioctx.notice_reply_token      = ctx.make_random_token();
+        baioctx.notice_reply_token_time = Instant::now();
+
+        log::info!( "BtAgentIO:RequestConfirmation dev {:?} ret {:06} token {}", device, passkey, baioctx.notice_reply_token );
 
         let n =
-            BtctrlNotice
+            BtctrlNoticeMember
             {
-                title       : String::from( "RequestPasskey" )
+                title       : String::from( "Request Confirmation" )
             ,   device      : Some( device )
             ,   passkey     : Some( String::from( passkey ) )
             ,   entered     : None
-            ,   reply_token : token
+            ,   reply_token : String::from( &baioctx.notice_reply_token )
             ,   cancel      : false
             };
 
-        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &BtctrlNotice{ bt_notice : &n } ) )
         {
+            log::debug!( "notice {}", x );
             ctx.bt_notice_json = x;
         }
 
@@ -228,36 +257,33 @@ impl bt::BtAgentIO for BtAgentIO
 
     async fn cancel( &self )
     {
-        log::debug!( "BtAgentIO:Cancel" );
+        let mut ctx     = self.arwlctx.write().await;
+        let baioctx     = self.arwlbaioctx.read().await;
 
-        let mut ctx = self.arwlctx.write().await;
-        let token = ctx.current_bt_notice_reply_token();
-
-        log::info!( "BtAgentIO:Cancel" );
+        log::info!( "BtAgentIO:Cancel token {}", baioctx.notice_reply_token );
 
         let n =
-            BtctrlNotice
+            BtctrlNoticeMember
             {
                 title       : String::from( "Cancel" )
             ,   device      : None
             ,   passkey     : None
             ,   entered     : None
-            ,   reply_token : token
+            ,   reply_token : String::from( &baioctx.notice_reply_token )
             ,   cancel      : true
             };
 
-        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &n ) )
+        if let Ok( x ) = serde_json::to_string( &BtctrlNoticeResult::Ok( &BtctrlNotice{ bt_notice : &n } ) )
         {
             ctx.bt_notice_json = x;
         }
     }
-    //  sync::mpsc::channel::< btctrl::BtctrlRequest >( 128 );
+
     async fn ok( &self ) -> bool
     {
         {
-            let mut ctx = self.arwlctx.write().await;
-            ctx.reset_bt_notice_reply_token();
-            ctx.bt_agent_io_rx_opend = true;
+            let mut baioctx = self.arwlbaioctx.write().await;
+            baioctx.bt_agent_io_rx_opend = true;
         }
 
         let tm = Instant::now();
@@ -267,9 +293,9 @@ impl bt::BtAgentIO for BtAgentIO
         loop
         {
             {
-                let mut ctx = self.arwlctx.write().await;
+                let mut baioctx     = self.arwlbaioctx.write().await;
 
-                match timeout( event::EVENT_WAIT_TIMEOUT, ctx.bt_agent_io_rx.recv() ).await
+                match timeout( event::EVENT_WAIT_TIMEOUT, baioctx.bt_agent_io_rx.recv() ).await
                 {
                     Ok( recv ) =>
                     {
@@ -285,9 +311,9 @@ impl bt::BtAgentIO for BtAgentIO
                             }
                         ,   BtctrlRequestType::Reply( reply_token, sw ) =>
                             {
-                                if reply_token == ctx.current_bt_notice_reply_token()
+                                if reply_token == baioctx.notice_reply_token
                                 {
-                                    if ctx.current_bt_notice_reply_token_elapsed() < BT_AGENT_IO_OK_TIMEOUT
+                                    if baioctx.notice_reply_token_time.elapsed() < BT_AGENT_IO_OK_TIMEOUT
                                     {
                                         ret = sw;
                                         break;
@@ -312,9 +338,11 @@ impl bt::BtAgentIO for BtAgentIO
         }
 
         {
-            let mut ctx = self.arwlctx.write().await;
-            ctx.reset_bt_notice_reply_token();
-            ctx.bt_agent_io_rx_opend = false;
+            let mut ctx     = self.arwlctx.write().await;
+            ctx.bt_notice_json =  String::new();
+
+            let mut baioctx = self.arwlbaioctx.write().await;
+            baioctx.bt_agent_io_rx_opend = false;
         }
 
         ret
@@ -329,13 +357,35 @@ pub async fn btctrl_task(
 {
     log::debug!( "btctrl start." );
 
+    let ( mut bt_agent_io_tx, bt_agent_io_rx ) = mpsc::channel::< BtctrlRequestType >( 4 );
+
+    let arwlbaioctx =
+        Arc::new(
+            RwLock::new(
+                BtAgentIOContext
+                {
+                    notice_reply_token      : String::new()
+                ,   notice_reply_token_time : Instant::now()
+                ,   bt_agent_io_rx          : bt_agent_io_rx
+                ,   bt_agent_io_rx_opend    : false
+                }
+            )
+        );
+
     let bt_conn : Option< bt::BtConn > =
         match bt::BtConn::new().await
         {
             Ok( mut bt_conn ) =>
             {
                 let bt_agent_ctx    = bt::BtAgentContextImpl::new();
-                let bt_agent_io     = Arc::new( BtAgentIO::new( arwlctx.clone() ) );
+
+                let bt_agent_io     =
+                    Arc::new(
+                        BtAgentIO::new(
+                            arwlctx.clone()
+                        ,   arwlbaioctx.clone()
+                        )
+                    );
 
                 bt_conn.setup_agent(
                     bt::BtAgentCapability::DisplayYesNo
@@ -581,12 +631,14 @@ pub async fn btctrl_task(
                     }
                 ,   BtctrlRequestType::Reply( reply_token, sw ) =>
                     {
-                        let mut ctx = arwlctx.write().await;
+                        let baioctx = arwlbaioctx.read().await;
 
-                        if ctx.bt_agent_io_rx_opend
+                        if baioctx.bt_agent_io_rx_opend
                         {
-                            ctx.bt_agent_io_tx.send( BtctrlRequestType::Reply( reply_token, sw ) ).await.ok();
+                            bt_agent_io_tx.send( BtctrlRequestType::Reply( reply_token, sw ) ).await.ok();
                         }
+
+                        recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
                     }
 
                 ,   _ =>

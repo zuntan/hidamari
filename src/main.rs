@@ -862,7 +862,7 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
                 }
             }
             {
-                if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
+                if let Err(x) = ws_tx.send( Message::text( &last_bt_notice_json ) ).await
                 {
                     log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
                     break;
@@ -933,8 +933,8 @@ async fn bt_cmd_response( arwlctx : context::ARWLContext, param : BtCmdParam ) -
 #[derive(Debug, Deserialize, Clone)]
 struct BtReplyParam
 {
-    token : String
-,   ok    : bool
+    reply_token : String
+,   ok          : bool
 }
 
 ///
@@ -946,7 +946,7 @@ impl BtReplyParam
 
         req.req = btctrl::BtctrlRequestType::Reply
             (
-                String::from( &self.token )
+                String::from( &self.reply_token )
             ,   self.ok
             );
 

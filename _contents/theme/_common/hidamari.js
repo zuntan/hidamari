@@ -128,6 +128,89 @@ function()
 								that.bt_status_update();
 							}
 
+							if( j_data.Ok.bt_notice )
+							{
+								var m = $( "#x_bt_notice" );
+
+
+								if( m.length )
+								{
+									var n = j_data.Ok.bt_notice;
+
+									if( n.cancel )
+									{
+										m.modal( 'hide' );
+									}
+									else
+									{
+										$( ".x_bt_notice_title", m ).text( n.title );
+
+										var msg = "";
+
+										if( n.passkey && n.passkey != "" )
+										{
+											msg += "passkey [" + n.passkey + "] ";
+										}
+
+										if( n.entered && n.entered != "" )
+										{
+											msg += "entered [" + n.entered + "] ";
+										}
+
+										$( ".x_bt_notice_msg", m ).text( msg );
+
+										var device = "";
+
+										if( n.device )
+										{
+											device += "Device : " + n.device.name + " [" + n.device.name + "] ";
+
+											if( n.device.audio_source )
+											{
+												device += " (audio source) ";
+											}
+
+											if( n.device.audio_sink )
+											{
+												device += " (audio sink) ";
+											}
+										}
+
+										$( ".x_bt_notice_dev", m ).text( device );
+
+										$( ".x_bt_notice_cancel, .x_bt_notice_apply, .x_bt_notice_close", m ).data( "reply_token", n.reply_token );
+										$( ".x_bt_notice_cancel, .x_bt_notice_apply"	, m	).toggle( n.reply_token != "" );
+										$( ".x_bt_notice_close"  						, m ).toggle( n.reply_token == "" );
+
+										$( ".x_bt_notice_cancel", m ).one( 'click',
+											function()
+											{
+												var reply_token = $(this).data( "reply_token" );
+
+												if( reply_token != "" )
+												{
+													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : false } );
+												}
+											}
+										);
+
+										$( ".x_bt_notice_apply", m ).one( 'click',
+											function()
+											{
+												var reply_token = $(this).data( "reply_token" );
+
+												if( reply_token != "" )
+												{
+													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : true } );
+												}
+											}
+										);
+
+										m.modal( 'show' );
+									}
+								}
+							}
+
 							that.update();
 						}
 					}

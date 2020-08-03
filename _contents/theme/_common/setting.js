@@ -560,5 +560,6 @@ function()
 	ws.update( function() { monitor_update( this ); } );
 	ws.bt_status_update( function() { bt_status_update( this ); } );
 	ws.open();
+
 }
 );

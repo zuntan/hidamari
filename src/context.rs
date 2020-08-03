@@ -231,11 +231,7 @@ pub struct Context
 , pub   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
 , pub   bt_status_json  : String
 , pub   bt_notice_json  : String
-, pub   bt_notice_reply_token   : String
-, pub   bt_notice_reply_token_time : time::Instant
-, pub   bt_agent_io_tx  : sync::mpsc::Sender< btctrl::BtctrlRequestType >
-, pub   bt_agent_io_rx  : sync::mpsc::Receiver< btctrl::BtctrlRequestType >
-, pub   bt_agent_io_rx_opend : bool
+
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
 , pub   rng             : StdRng
@@ -257,7 +253,6 @@ impl Context
     ,   version     : &str
     ) -> Context
     {
-        let ( bt_agent_io_tx, bt_agent_io_rx ) = sync::mpsc::channel::< btctrl::BtctrlRequestType >( 4 );
 
         Context
         {
@@ -279,11 +274,6 @@ impl Context
         ,   btctrl_tx
         ,   bt_status_json  : String::new()
         ,   bt_notice_json  : String::new()
-        ,   bt_notice_reply_token : String::new()
-        ,   bt_notice_reply_token_time : time::Instant::now()
-        ,   bt_agent_io_tx
-        ,   bt_agent_io_rx
-        ,   bt_agent_io_rx_opend : false
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
@@ -648,31 +638,6 @@ impl Context
         let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 16 ).cloned().collect();
         sel.iter().map( | &s | s as char ).collect::<String>()
     }
-
-    pub fn current_bt_notice_reply_token( &self ) -> String
-    {
-        String::from( &self.bt_notice_reply_token )
-    }
-
-    pub fn current_bt_notice_reply_token_elapsed( &self ) -> time::Duration
-    {
-        self.bt_notice_reply_token_time.elapsed()
-    }
-
-    pub fn next_bt_notice_reply_token( &mut self ) -> String
-    {
-        self.bt_notice_reply_token = self.make_random_token();
-        self.bt_notice_reply_token_time = time::Instant::now();
-        self.current_bt_notice_reply_token()
-    }
-
-    pub fn reset_bt_notice_reply_token( &mut self )
-    {
-        self.bt_notice_json = String::new();
-        self.bt_notice_reply_token = String::new();
-        self.bt_notice_reply_token_time = time::Instant::now();
-    }
-
 }
 
 pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
