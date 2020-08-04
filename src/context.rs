@@ -232,6 +232,11 @@ pub struct Context
 , pub   bt_status_json  : String
 , pub   bt_notice_json  : String
 
+, pub   notice_reply_token      : String
+, pub   notice_reply_token_time : time::Instant
+, pub   bt_agent_io_rx_opend    : bool
+, pub   bt_agent_io_tx          : sync::mpsc::Sender< btctrl::BtctrlRepryType >
+
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
 , pub   rng             : StdRng
@@ -245,12 +250,13 @@ pub type UrlTitleList = Vec< ( String, String ) >;
 impl Context
 {
     pub fn new(
-        config      : Config
-    ,   config_dyn  : ConfigDyn
-    ,   mpdcom_tx   : sync::mpsc::Sender< mpdcom::MpdComRequest >
-    ,   btctrl_tx   : sync::mpsc::Sender< btctrl::BtctrlRequest >
-    ,   product     : &str
-    ,   version     : &str
+        config          : Config
+    ,   config_dyn      : ConfigDyn
+    ,   mpdcom_tx       : sync::mpsc::Sender< mpdcom::MpdComRequest >
+    ,   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
+    ,   bt_agent_io_tx  : sync::mpsc::Sender< btctrl::BtctrlRepryType >
+    ,   product         : &str
+    ,   version         : &str
     ) -> Context
     {
 
@@ -274,6 +280,12 @@ impl Context
         ,   btctrl_tx
         ,   bt_status_json  : String::new()
         ,   bt_notice_json  : String::new()
+
+        ,   notice_reply_token      : String::new()
+        ,   notice_reply_token_time : time::Instant::now()
+        ,   bt_agent_io_rx_opend    : false
+        ,   bt_agent_io_tx
+
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
@@ -637,6 +649,19 @@ impl Context
         let src = "0123456789abcdef".as_bytes();
         let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 16 ).cloned().collect();
         sel.iter().map( | &s | s as char ).collect::<String>()
+    }
+
+    pub fn next_notice_reply_token( &mut self ) -> String
+    {
+        self.notice_reply_token      = self.make_random_token();
+        self.notice_reply_token_time = time::Instant::now();
+
+        String::from( &self.notice_reply_token )
+    }
+
+    pub fn current_notice_reply_token( &self ) -> ( String, time::Duration )
+    {
+        ( String::from( &self.notice_reply_token ), self.notice_reply_token_time.elapsed() )
     }
 }
 

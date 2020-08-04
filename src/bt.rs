@@ -9,8 +9,6 @@
 
 use std::sync::{ Arc, Mutex };
 use std::collections::HashMap;
-use std::pin::Pin;
-use std::ops::Fn;
 
 use rand::prelude::*;
 
@@ -56,7 +54,8 @@ static REQUEST_PASSKEY              : u32 = 0;
 pub static AUDIO_SOURCE_UUID        : &'static str = "0000110a-0000-1000-8000-00805f9b34fb";
 pub static AUDIO_SINK_UUID          : &'static str = "0000110b-0000-1000-8000-00805f9b34fb";
 
-const TIME_OUT                      : Duration = Duration::from_secs( 3 );
+const TIME_OUT                      : Duration = Duration::from_secs( 10 );
+const TIME_OUT_FOR_PAIR             : Duration = Duration::from_secs( 90 );
 
 pub type Result< T >    = std::result::Result< T, dbus::Error >;
 
@@ -236,7 +235,25 @@ pub async fn call_void_func( conn : Arc< SyncConnection >, path : &str, interfac
         }
     ,   Err( x ) =>
         {
-            log::debug!( "{:?}", x );
+            log::debug!( "{:?} {:?} {:?}", x, interface, func_name );
+            Err( x )
+        }
+    }
+}
+
+pub async fn call_void_func_for_pair( conn : Arc< SyncConnection >, path : &str, interface : &str, func_name : &str ) -> Result< () >
+{
+    let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT_FOR_PAIR, conn );
+
+    match proxy.method_call::< (), _, _, _ >( interface, func_name, () ).await
+    {
+        Ok( _ ) =>
+        {
+            Ok( () )
+        }
+    ,   Err( x ) =>
+        {
+            log::debug!( "{:?} {:?} {:?}", x, interface, func_name );
             Err( x )
         }
     }
@@ -256,7 +273,7 @@ pub async fn call_void_func_a< T : dbus::arg::Arg + dbus::arg::Append >
         }
     ,   Err( x ) =>
         {
-            log::debug!( "{:?}", x );
+            log::debug!( "{:?} {:?} {:?}", x, interface, func_name );
             Err( x )
         }
     }
@@ -1459,7 +1476,7 @@ impl BtDevice
 
     pub async fn pair( &self ) -> Result< () >
     {
-        call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Pair" ).await
+        call_void_func_for_pair( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Pair" ).await
     }
 
     pub async fn cancel_pairing( &self ) -> Result< () >

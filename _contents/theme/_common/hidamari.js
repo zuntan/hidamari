@@ -149,7 +149,7 @@ function()
 
 										if( n.passkey && n.passkey != "" )
 										{
-											msg += "passkey [" + n.passkey + "] ";
+											msg += "passkey <b>[" + n.passkey + "]</b> ";
 										}
 
 										if( n.entered && n.entered != "" )
@@ -157,26 +157,19 @@ function()
 											msg += "entered [" + n.entered + "] ";
 										}
 
-										$( ".x_bt_notice_msg", m ).text( msg );
+										$( ".x_bt_notice_msg", m ).empty().append( $( "<span>" + msg + "</span>" ) );
 
 										var device = "";
 
 										if( n.device )
 										{
-											device += "Device : " + n.device.alias + " [" + n.device.address + "] ";
-
-											if( n.device.audio_source )
-											{
-												device += " (audio source) ";
-											}
-
-											if( n.device.audio_sink )
-											{
-												device += " (audio sink) ";
-											}
+											device += "Device : <b>" + n.device.alias + "</b> [" + n.device.address + "] </span>";
 										}
 
-										$( ".x_bt_notice_dev", m ).text( device );
+										$( ".x_bt_notice_dev", m ).empty().append( $( "<span>" + device + "</span>" ) );
+
+										$( ".x_bt_notice_dev_source", 	m ).toggle( n.device.audio_source );
+										$( ".x_bt_notice_dev_sink",		m ).toggle( n.device.audio_sink );
 
 										$( ".x_bt_notice_cancel, .x_bt_notice_apply, .x_bt_notice_close", m ).data( "reply_token", n.reply_token );
 										$( ".x_bt_notice_cancel, .x_bt_notice_apply"	, m	).toggle( n.reply_token != "" );
@@ -201,7 +194,14 @@ function()
 
 												if( reply_token != "" )
 												{
-													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : true } );
+													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : true } )
+													.fail(
+														function(jqXHR, textStatus, errorThrown)
+														{
+														    console.log("err:" + textStatus);
+														    console.log("text:" + jqXHR.responseText);
+														}
+													);
 												}
 											}
 										);

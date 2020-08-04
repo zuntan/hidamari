@@ -937,39 +937,22 @@ struct BtReplyParam
 ,   ok          : bool
 }
 
-///
-impl BtReplyParam
-{
-    fn to_request( &self ) -> ( btctrl::BtctrlRequest, sync::oneshot::Receiver< btctrl::BtctrlResult > )
-    {
-        let ( mut req, rx ) = btctrl::BtctrlRequest::new();
-
-        req.req = btctrl::BtctrlRequestType::Reply
-            (
-                String::from( &self.reply_token )
-            ,   self.ok
-            );
-
-        ( req, rx )
-    }
-}
 
 ///
 async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam ) -> RespResult
 {
     log::debug!( "{:?}", &param );
 
-    let ( req, rx ) = param.to_request();
+    let req = btctrl::BtctrlRepryType::Reply( String::from( &param.reply_token ), param.ok );
 
-    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
+    let mut ctx = arwlctx.write().await;
 
-    Ok(
-        match rx.await
-        {
-            Ok(x)  => json_response( &x )
-        ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
-        }
-    )
+    if ctx.bt_agent_io_rx_opend
+    {
+        let _ = ctx.bt_agent_io_tx.send( req ).await;
+    }
+
+    Ok( json_response( "{Ok:{}}" ) )
 }
 
 
@@ -1198,11 +1181,12 @@ async fn main() -> std::io::Result< () >
 
     let ( mpdcom_tx,    mpdcom_rx ) = sync::mpsc::channel::< mpdcom::MpdComRequest >( 128 );
     let ( btctrl_tx,    btctrl_rx ) = sync::mpsc::channel::< btctrl::BtctrlRequest >( 128 );
+    let ( bt_agent_io_tx, bt_agent_io_rx ) = sync::mpsc::channel::< btctrl::BtctrlRepryType >( 4 );
 
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                context::Context::new( config, config_dyn, mpdcom_tx, btctrl_tx, PKG_NAME, PKG_VERSION )
+                context::Context::new( config, config_dyn, mpdcom_tx, btctrl_tx, bt_agent_io_tx, PKG_NAME, PKG_VERSION )
             )
         );
 
@@ -1219,7 +1203,7 @@ async fn main() -> std::io::Result< () >
     let h_mpdfifo : task::JoinHandle< _ > = task::spawn( mpdfifo::mpdfifo_task( arwlctx_c, mpdfifo_rx ) );
 
     let arwlctx_c = arwlctx.clone();
-    let h_btctrl : task::JoinHandle< _ > = task::spawn( btctrl::btctrl_task( arwlctx_c, btctrl_rx ) );
+    let h_btctrl : task::JoinHandle< _ > = task::spawn( btctrl::btctrl_task( arwlctx_c, btctrl_rx, bt_agent_io_rx ) );
 
     log::debug!( "http server init." );
 
@@ -1279,6 +1263,15 @@ async fn main() -> std::io::Result< () >
     let _ = tx.send( () );
     let _ = join!( h_server );
     log::info!( "http server shutdown." );
+
+    {
+        let mut ctx = arwlctx.write().await;
+
+        if ctx.bt_agent_io_rx_opend
+        {
+            let _ = ctx.bt_agent_io_tx.send( btctrl::BtctrlRepryType::Shutdown ).await;
+        }
+    }
 
     let ( mut req, _ ) = btctrl::BtctrlRequest::new();
     req.req = btctrl::BtctrlRequestType::Shutdown;
