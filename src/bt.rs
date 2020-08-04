@@ -46,6 +46,7 @@ static BLUEZ_AGENT_MANAGER_INTERFACE : &'static str = "org.bluez.AgentManager1";
 static BLUEZ_AGENT_PATH             : &'static str = "/net/zuntan/bt";
 
 static BLUEZ_ERROR_REJECTED         : &'static str = "org.bluez.Error.Rejected";
+#[allow(dead_code)]
 static BLUEZ_ERROR_CANCELED         : &'static str = "org.bluez.Error.Canceled";
 
 static REQUEST_PINCODE              : &'static str = "0000";
@@ -82,6 +83,7 @@ pub async fn get_managed_objects<'a>( conn : Arc< SyncConnection > ) -> Result< 
     }
 }
 
+#[allow(dead_code)]
 pub fn pretty_dump_managed_objects<'a>( mo : &GetManagedObjectsRetType<'a> ) -> String
 {
     let mut keys_1 : Vec< dbus::strings::Path<'a> > = Vec::new();
@@ -201,6 +203,7 @@ pub async fn get_device_path( conn : Arc< SyncConnection >, adapter_path : &str 
     Ok( ret )
 }
 
+#[allow(dead_code)]
 pub async fn get_adapter_path_from_device_path( conn : Arc< SyncConnection >, device_path : &str ) -> Result< String >
 {
     let mo = get_managed_objects( conn ).await?;
@@ -748,6 +751,7 @@ pub trait BtAgentIO
     }
 }
 
+#[allow(dead_code)]
 pub struct BtConn
 {
     conn        : Arc< SyncConnection >
@@ -845,11 +849,13 @@ impl BtConn
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_adapter_uncheck( &self, path : &str ) -> BtAdapter
     {
         BtAdapter{ conn : self.conn.clone(), path : String::from( path ) }
     }
 
+    #[allow(dead_code)]
     pub async fn get_first_adapter( &self ) -> Result< BtAdapter >
     {
         let paths = get_adapter_paths( self.conn.clone() ).await?;
@@ -1247,14 +1253,14 @@ impl BtConn
                         }
                     );
 
-                    let conn_clone = self.conn.clone();
+                    // let conn_clone = self.conn.clone();
                     let agent_io_clone = agent_io.clone();
 
                     b.method_with_cr_async(
                         "Cancel", (), ()
                     ,   move | mut ctx, _cr, _ : () |
                         {
-                            let conn_clone = conn_clone.clone();
+                            // let conn_clone = conn_clone.clone();
                             let agent_io_clone = agent_io_clone.clone();
 
                             async move
@@ -1348,6 +1354,7 @@ impl Drop for BtConn
 ///
 impl BtAdapter
 {
+    #[allow(dead_code)]
     pub fn get_id( &self ) -> &str
     {
         &self.path
@@ -1358,16 +1365,19 @@ impl BtAdapter
         get_adapter_status( self.conn.clone(), &self.path, with_devices ).await
     }
 
+    #[allow(dead_code)]
     pub async fn set_alias( &self, value : &str ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Alias", value ).await
     }
 
+    #[allow(dead_code)]
     pub async fn set_discoverable( &self, value : bool ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Discoverable", value ).await
     }
 
+    #[allow(dead_code)]
     pub async fn set_discoverable_timeout( &self, value: u64 ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "DiscoverableTimeout", value ).await
@@ -1378,6 +1388,7 @@ impl BtAdapter
         set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "Pairable", value ).await
     }
 
+    #[allow(dead_code)]
     pub async fn set_pairable_timeout( &self, value: u64 ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "PairableTimeout", value ).await
@@ -1404,6 +1415,7 @@ impl BtAdapter
         call_void_func_a( self.conn.clone(), &self.path, BLUEZ_ADAPTER_INTERFACE, "RemoveDevice", device_path ).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_devices( &self ) -> Result< Vec< BtDevice > >
     {
         let devices = get_device_path( self.conn.clone(), &self.path ).await?;
@@ -1429,11 +1441,13 @@ impl BtAdapter
 ///
 impl BtDevice
 {
+    #[allow(dead_code)]
     pub fn get_id( &self ) -> &str
     {
         &self.path
     }
 
+    #[allow(dead_code)]
     pub async fn get_status( &self ) -> Result< BtDeviceStatus >
     {
         get_device_status( self.conn.clone(), &self.path ).await
@@ -1449,6 +1463,7 @@ impl BtDevice
         set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Blocked", value ).await
     }
 
+    #[allow(dead_code)]
     pub async fn set_wake_allowed( &self, value : bool ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "WakeAllowed", value ).await
@@ -1464,11 +1479,13 @@ impl BtDevice
         call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Disconnect" ).await
     }
 
+    #[allow(dead_code)]
     pub async fn connect_profile( &self, uuid : &str ) -> Result< () >
     {
         call_void_func_a( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "ConnectProfile", uuid ).await
     }
 
+    #[allow(dead_code)]
     pub async fn disconnect_profile( &self, uuid : &str ) -> Result< () >
     {
          call_void_func_a( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "DisconnectProfile", uuid ).await
@@ -1479,6 +1496,7 @@ impl BtDevice
         call_void_func_for_pair( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Pair" ).await
     }
 
+    #[allow(dead_code)]
     pub async fn cancel_pairing( &self ) -> Result< () >
     {
         call_void_func( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "CancelPairing" ).await
