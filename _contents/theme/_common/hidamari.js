@@ -163,7 +163,7 @@ function()
 
 										if( n.device )
 										{
-											device += "Device : " + n.device.name + " [" + n.device.name + "] ";
+											device += "Device : " + n.device.alias + " [" + n.device.address + "] ";
 
 											if( n.device.audio_source )
 											{

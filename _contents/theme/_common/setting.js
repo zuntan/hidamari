@@ -397,7 +397,7 @@ function()
 				var h = "";
 				h += '<option value="' + adpt.id  + '" ';
 				h += ( adpt.id == sel_id ? ' selected="selected" ' : '' );
-				h += '>' + adpt.name + ' [' + adpt.address + '] </option>';
+				h += '>' + adpt.alias + ' [' + adpt.address + '] </option>';
 
 				t.append( $( h ) );
 			}
@@ -438,7 +438,7 @@ function()
 						tr.removeClass( "x_bt_dev_z" );
 						tr.addClass( "x_bt_dev" );
 
-						$( ".x_bt_dev_name"		, tr ).text( dev.name + ' [' + dev.address + ']' );
+						$( ".x_bt_dev_alias"	, tr ).text( dev.alias + ' [' + dev.address + ']' );
 						$( ".x_bt_dev_source"	, tr ).toggle( dev.audio_source );
 						$( ".x_bt_dev_sink"		, tr ).toggle( dev.audio_sink );
 

@@ -282,6 +282,54 @@ pub async fn set< T : dbus::arg::Arg + dbus::arg::Append >
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct BtAdapterStatus
+{
+    pub id                  : String
+,   pub address             : String
+,   pub address_type        : String
+,   pub alias               : String
+,   pub class               : u32
+,   pub discoverable        : bool
+,   pub discoverable_timeout : u32
+,   pub discovering         : bool
+,   pub modalias            : Option< String >
+,   pub name                : String
+,   pub pairable            : bool
+,   pub pairable_timeout    : u32
+,   pub powered             : bool
+,   pub uuids               : Vec< String >
+
+,   pub device_status       : Option< Vec< BtDeviceStatus > >
+}
+
+#[derive(Debug, Serialize)]
+pub struct BtDeviceStatus
+{
+    pub id              : String
+,   pub adapter         : String
+,   pub address         : String
+,   pub address_type    : String
+,   pub alias           : String
+,   pub appearance      : Option< i16 >
+,   pub blocked         : bool
+,   pub class           : Option< u32 >
+,   pub connected       : bool
+,   pub icon            : Option< String >
+,   pub legacy_pairing  : bool
+,   pub modalias        : Option< String >
+,   pub name            : Option< String >
+,   pub paired          : bool
+,   pub rssi            : Option< i16 >
+,   pub services_resolved : bool
+,   pub trusted         : bool
+,   pub tx_power        : Option< i16 >
+,   pub uuids           : Option< Vec< String > >
+,   pub wake_allowed    : Option< bool >
+,   pub audio_source    : bool
+,   pub audio_sink      : bool
+}
+
 pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> Result< BtDeviceStatus >
 {
     let proxy = Proxy::new( BLUEZ_SERVICE_NAME, path, TIME_OUT, conn );
@@ -306,9 +354,29 @@ pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> R
                 };
 
             let blocked         = *props.get( "Blocked" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-            let class           = *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap();
+
+            let class           =
+                if props.contains_key( "Class" )
+                {
+                    Some( *props.get( "Class" ).unwrap().0.as_any().downcast_ref::<u32>().unwrap() )
+                }
+                else
+                {
+                    None
+                };
+
             let connected       = *props.get( "Connected" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
-            let icon            = String::from( props.get( "Icon" ).unwrap().0.as_str().unwrap() );
+
+            let icon            =
+                if props.contains_key( "Icon" )
+                {
+                    Some( String::from( props.get( "Icon" ).unwrap().0.as_str().unwrap() ) )
+                }
+                else
+                {
+                    None
+                };
+
             let legacy_pairing  = *props.get( "LegacyPairing" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
 
             let modalias =
@@ -321,7 +389,16 @@ pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> R
                     None
                 };
 
-            let name            = String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() );
+            let name            =
+                if props.contains_key( "Name" )
+                {
+                    Some( String::from( props.get( "Name" ).unwrap().0.as_str().unwrap() ) )
+                }
+                else
+                {
+                    None
+                };
+
             let paired          = *props.get( "Paired" ).unwrap().0.as_any().downcast_ref::<bool>().unwrap();
 
             let rssi =
@@ -347,10 +424,28 @@ pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> R
                     None
                 };
 
-            let uuids : Vec< String > = props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec<String> >().unwrap().iter().map( | x | String::from( x ) ).collect();
+            let uuids : Option< Vec< String > > =
+                if props.contains_key( "UUIDs" )
+                {
+                    Some( props.get( "UUIDs" ).unwrap().0.as_any().downcast_ref::< Vec< String > >().unwrap().iter().map( | x | String::from( x ) ).collect() )
+                }
+                else
+                {
+                    None
+                };
 
-            let audio_source    = uuids.iter().find( | &x | x == AUDIO_SOURCE_UUID ).is_some();
-            let audio_sink      = uuids.iter().find( | &x | x == AUDIO_SINK_UUID ).is_some();
+            let wake_allowed    =
+                if props.contains_key( "WakeAllowed" )
+                {
+                    Some( *props.get( "WakeAllowed " ).unwrap().0.as_any().downcast_ref::<bool>().unwrap() )
+                }
+                else
+                {
+                    None
+                };
+
+            let audio_source    = if uuids.is_none() { false } else { uuids.as_ref().unwrap().iter().find( | &x | x == AUDIO_SOURCE_UUID ).is_some() };
+            let audio_sink      = if uuids.is_none() { false } else { uuids.as_ref().unwrap().iter().find( | &x | x == AUDIO_SINK_UUID ).is_some() };
 
             Ok(
                 BtDeviceStatus
@@ -374,6 +469,7 @@ pub async fn get_device_status( conn : Arc< SyncConnection >, path : &str ) -> R
                 ,   trusted
                 ,   tx_power
                 ,   uuids
+                ,   wake_allowed
                 ,   audio_source
                 ,   audio_sink
                 }
@@ -488,6 +584,85 @@ pub async fn get_adapter_status( conn : Arc< SyncConnection >, path : &str, with
     }
 }
 
+#[derive(Debug)]
+pub enum BtAgentCapability
+{
+    DisplayOnly
+,   DisplayYesNo
+,   KeyboardOnly
+,   NoInputNoOutput
+,   KeyboardDisplay
+}
+
+impl From< BtAgentCapability > for String
+{
+    fn from( x: BtAgentCapability ) -> String
+    {
+        String::from(
+            match x
+            {
+                BtAgentCapability::DisplayOnly      => "DisplayOnly"
+            ,   BtAgentCapability::DisplayYesNo     => "DisplayYesNo"
+            ,   BtAgentCapability::KeyboardOnly     => "KeyboardOnly"
+            ,   BtAgentCapability::NoInputNoOutput  => "NoInputNoOutput"
+            ,   BtAgentCapability::KeyboardDisplay  => "KeyboardDisplay"
+            }
+        )
+    }
+}
+
+pub trait BtAgentContext
+{
+    fn make_pincode( &mut self ) -> String
+    {
+        String::from( REQUEST_PINCODE )
+    }
+
+    fn make_passkey( &mut self ) -> u32
+    {
+        REQUEST_PASSKEY
+    }
+}
+
+pub struct BtAgentContextImpl
+{
+    rng : StdRng
+}
+
+impl BtAgentContextImpl
+{
+    pub fn new() -> BtAgentContextImpl
+    {
+        BtAgentContextImpl { rng : SeedableRng::from_rng( thread_rng() ).unwrap() }
+    }
+}
+
+impl BtAgentContext for BtAgentContextImpl
+{
+    fn make_pincode( &mut self ) -> String
+    {
+        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
+        //  RequestPinCode
+        //  The return value should be a string of 1-16 characters
+        //  length. The string can be alphanumeric.
+
+        let src = "0123456789".as_bytes();
+        let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 4 ).cloned().collect();
+
+        sel.iter().map( | &s | s as char ).collect::<String>()
+    }
+
+    fn make_passkey( &mut self ) -> u32
+    {
+        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
+        //  RequestPasskey
+        //  The return value should be a numeric value
+        //  between 0-999999.
+
+        self.rng.gen_range( 0, 1000000 )
+   }
+}
+
 pub enum BtAgentIOConfirm
 {
     Reject
@@ -569,137 +744,10 @@ pub struct BtAdapter
 ,   path        : String
 }
 
-#[derive(Debug, Serialize)]
-pub struct BtAdapterStatus
-{
-    pub id                  : String
-,   pub address             : String
-,   pub address_type        : String
-,   pub alias               : String
-,   pub class               : u32
-,   pub discoverable        : bool
-,   pub discoverable_timeout : u32
-,   pub discovering         : bool
-,   pub modalias            : Option< String >
-,   pub name                : String
-,   pub pairable            : bool
-,   pub pairable_timeout    : u32
-,   pub powered             : bool
-,   pub uuids               : Vec< String >
-
-,   pub device_status       : Option< Vec< BtDeviceStatus > >
-}
-
 pub struct BtDevice
 {
     conn        : Arc< SyncConnection >
 ,   path        : String
-}
-
-#[derive(Debug, Serialize)]
-pub struct BtDeviceStatus
-{
-    pub id              : String
-,   pub adapter         : String
-,   pub address         : String
-,   pub address_type    : String
-,   pub alias           : String
-,   pub appearance      : Option< i16 >
-,   pub blocked         : bool
-,   pub class           : u32
-,   pub connected       : bool
-,   pub icon            : String
-,   pub legacy_pairing  : bool
-,   pub modalias        : Option< String >
-,   pub name            : String
-,   pub paired          : bool
-,   pub rssi            : Option< i16 >
-,   pub services_resolved : bool
-,   pub trusted         : bool
-,   pub tx_power        : Option< i16 >
-,   pub uuids           : Vec< String >
-,   pub audio_source    : bool
-,   pub audio_sink      : bool
-}
-
-
-#[derive(Debug)]
-pub enum BtAgentCapability
-{
-    DisplayOnly
-,   DisplayYesNo
-,   KeyboardOnly
-,   NoInputNoOutput
-,   KeyboardDisplay
-}
-
-impl From< BtAgentCapability > for String
-{
-    fn from( x: BtAgentCapability ) -> String
-    {
-        String::from(
-            match x
-            {
-                BtAgentCapability::DisplayOnly      => "DisplayOnly"
-            ,   BtAgentCapability::DisplayYesNo     => "DisplayYesNo"
-            ,   BtAgentCapability::KeyboardOnly     => "KeyboardOnly"
-            ,   BtAgentCapability::NoInputNoOutput  => "NoInputNoOutput"
-            ,   BtAgentCapability::KeyboardDisplay  => "KeyboardDisplay"
-            }
-        )
-    }
-}
-
-pub trait BtAgentContext
-{
-    fn make_pincode( &mut self ) -> String
-    {
-        String::from( REQUEST_PINCODE )
-    }
-
-    fn make_passkey( &mut self ) -> u32
-    {
-        REQUEST_PASSKEY
-    }
-}
-
-pub struct BtAgentContextImpl
-{
-    rng : StdRng
-}
-
-impl BtAgentContextImpl
-{
-    pub fn new() -> BtAgentContextImpl
-    {
-        BtAgentContextImpl { rng : SeedableRng::from_rng( thread_rng() ).unwrap() }
-    }
-}
-
-impl BtAgentContext for BtAgentContextImpl
-{
-    fn make_pincode( &mut self ) -> String
-    {
-        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
-        //  RequestPinCode
-        //  The return value should be a string of 1-16 characters
-        //  length. The string can be alphanumeric.
-
-        let src = "0123456789".as_bytes();
-        let sel : Vec< u8 > = src.choose_multiple( &mut self.rng, 4 ).cloned().collect();
-
-        sel.iter().map( | &s | s as char ).collect::<String>()
-    }
-
-    fn make_passkey( &mut self ) -> u32
-    {
-        // https://git.kernel.org/pub/scm/bluetooth/bluez.git/tree/doc/agent-api.txt
-        //  RequestPasskey
-        //  The return value should be a numeric value
-        //  between 0-999999.
-
-        self.rng.gen_range( 0, 1000000 )
-   }
 }
 
 impl BtConn
@@ -1382,6 +1430,11 @@ impl BtDevice
     pub async fn set_blocked( &self, value : bool ) -> Result< () >
     {
         set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "Blocked", value ).await
+    }
+
+    pub async fn set_wake_allowed( &self, value : bool ) -> Result< () >
+    {
+        set( self.conn.clone(), &self.path, BLUEZ_DEVICE_INTERFACE, "WakeAllowed", value ).await
     }
 
     pub async fn connect( &self ) -> Result< () >

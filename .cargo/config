@@ -1,3 +1,6 @@
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
-rustflags = ["-C", "link-args=-l ogg"]
+rustflags = [ "-C", "link-args=-l ogg -l systemd -l lzma -l lz4 -l gcrypt -l gpg-error" ]
+
+# rustc-link-search = ["/usr/lib/arm-linux-gnueabihf"]
+# rustc-link-lib = [ "ogg", "systemd", "lzma", "lz4", "gcrypt", "gpg-error" ]

@@ -457,9 +457,9 @@ pub async fn btctrl_task(
         btctl_st_m.adapter.sort_by(
             | lhs, rhs |
             {
-                let lhs_name = format!( "{}[{}]", lhs.name, lhs.address );
-                let rhs_name = format!( "{}[{}]", rhs.name, rhs.address );
-                lhs_name.cmp( &rhs_name )
+                let lhs_key = format!( "{}[{}]", lhs.alias, lhs.address );
+                let rhs_key = format!( "{}[{}]", rhs.alias, rhs.address );
+                lhs_key.cmp( &rhs_key )
             }
         );
 
@@ -472,9 +472,9 @@ pub async fn btctrl_task(
                 device_status.sort_by(
                     | lhs, rhs |
                     {
-                        let lhs_name = format!( "{}{}[{}]", if lhs.paired { "1" } else { "0" }, lhs.name, lhs.address );
-                        let rhs_name = format!( "{}{}[{}]", if rhs.paired { "1" } else { "0" }, rhs.name, rhs.address );
-                        lhs_name.cmp( &rhs_name )
+                        let lhs_key = format!( "{}{}[{}]", if lhs.paired { "A" } else { "B" }, lhs.alias, lhs.address );
+                        let rhs_key = format!( "{}{}[{}]", if rhs.paired { "A" } else { "B" }, rhs.alias, rhs.address );
+                        lhs_key.cmp( &rhs_key )
                     }
                 );
             }
