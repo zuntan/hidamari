@@ -26,12 +26,12 @@ const DEEP_SLEEP    : Duration = Duration::from_millis( 3000 );
 const SHALLOW_SLEEP : Duration = Duration::from_millis( 1000 );
 
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct BtctrlStatusMember
 {
-    enable  : bool
-,   time    : String
-,   adapter : Vec< bt::BtAdapterStatus >
+    pub enable  : bool
+,   pub time    : String
+,   pub adapter : Vec< bt::BtAdapterStatus >
 }
 
 type BtctrlStatusResult<'a> = Result< &'a BtctrlStatus< 'a >, () >;
@@ -43,13 +43,23 @@ pub struct BtctrlStatus<'a>
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct BtctrlOk {}
+pub enum BtctrlOkInner
+{
+    None
+,   Status( BtctrlStatusMember )
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BtctrlOk
+{
+    pub inner : BtctrlOkInner
+}
 
 impl BtctrlOk
 {
     fn new() -> BtctrlOk
     {
-        BtctrlOk{}
+        BtctrlOk{ inner : BtctrlOkInner::None }
     }
 }
 
@@ -490,6 +500,8 @@ pub async fn btctrl_task(
 
                 ,   BtctrlRequestType::Cmd( cmd, aid, did, sw, _arg ) =>
                     {
+                        let mut ok = BtctrlOk::new();
+
                         if let Some( err ) =
                             match bt_conn
                             {
@@ -592,6 +604,11 @@ pub async fn btctrl_task(
                                                         }
                                                     }
                                                 }
+                                            ,   "bt_status" =>
+                                                {
+                                                    ok.inner = BtctrlOkInner::Status( btctl_st_m );
+                                                    None
+                                                }
                                             ,   _ =>
                                                 {
                                                     Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
@@ -610,7 +627,7 @@ pub async fn btctrl_task(
                         }
                         else
                         {
-                            recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
+                            recv.tx.send( Ok( ok ) ).ok();
                         }
                     }
 

@@ -17,13 +17,13 @@ use tokio::time::{ timeout, Duration, Instant };
 use tokio::sync::{ oneshot, mpsc };
 use tokio::prelude::*;
 
-use serde::{ Serialize, /* Deserialize */ };
+use serde::{ Serialize, Deserialize };
 
 use crate::context;
 use crate::event;
 
 ///
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MpdComOk
 {
     pub flds:       Vec< ( String, String ) >

@@ -302,7 +302,7 @@ pub async fn set< T : dbus::arg::Arg + dbus::arg::Append >
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct BtAdapterStatus
 {
     pub id                  : String
@@ -323,7 +323,7 @@ pub struct BtAdapterStatus
 ,   pub device_status       : Option< Vec< BtDeviceStatus > >
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct BtDeviceStatus
 {
     pub id              : String

@@ -955,6 +955,169 @@ async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam
     Ok( json_response( "{Ok:{}}" ) )
 }
 
+#[derive(Debug, Serialize)]
+enum IoItemType
+{
+    AuxIn
+,   MpdOut
+,   BtIn
+,   BtOut
+}
+
+#[derive(Debug, Serialize)]
+struct IoItem
+{
+    r#type  : IoItemType
+,   name    : String
+,   url     : String
+,   enable  : bool
+}
+
+#[derive(Debug, Serialize)]
+struct IoList<'a>
+{
+    io_list : &'a Vec< IoItem >
+}
+
+type IoListResult<'a> = Result< &'a IoList< 'a >, () >;
+
+async fn io_list_response( arwlctx : context::ARWLContext ) -> RespResult
+{
+    let mut io_list = Vec::< IoItem >::new();
+
+    for ( url, title ) in arwlctx.write().await.aux_in_urllist()
+    {
+        io_list.push(
+            IoItem
+            {
+                r#type  : IoItemType::AuxIn
+            ,   name    : title
+            ,   url
+            ,   enable  : true
+            }
+        );
+    }
+
+    let param = CmdParam { cmd : String::from( "outputs" ), arg1 : None, arg2 : None, arg3 : None };
+
+    let ( req, rx ) = param.to_request();
+
+    let _ = arwlctx.write().await.mpdcom_tx.send( req ).await;
+
+    match rx.await
+    {
+        Ok(x)  =>
+        {
+            if let Ok( mpdcomok ) = x
+            {
+                let mut outputenabled   : Option< bool >    = None;
+                let mut plugin          : Option< String >  = None;
+                let mut outputname      : Option< String >  = None;
+
+                for ( k, v ) in mpdcomok.flds.iter().rev()
+                {
+                    match k.as_str()
+                    {
+                        "outputenabled" =>
+                        {
+                            outputenabled = Some( v == "1" );
+                        }
+
+                    ,   "plugin"        =>
+                        {
+                            plugin = Some( String::from( v ) );
+                        }
+
+                    ,   "outputname"    =>
+                        {
+                            outputname = Some( String::from( v ) );
+                        }
+
+                    ,   "outputid"      =>
+                        {
+                            let outputid = v;
+
+                            io_list.push(
+                                IoItem
+                                {
+                                    r#type  : IoItemType::MpdOut
+                                ,   name    : outputname.unwrap_or( String::new() )
+                                ,   url     : format!( "osound://mpdout/{}?plugin={}", outputid, plugin.unwrap_or( String::new() ) )
+                                ,   enable  : outputenabled.unwrap_or( false )
+                                }
+                            );
+
+                            outputenabled   = None;
+                            plugin          = None;
+                            outputname      = None;
+                        }
+                    ,   _ => {}
+                    }
+                }
+            }
+        }
+    ,   Err(_) => {}
+    }
+
+    let param = BtCmdParam
+    {
+        cmd : String::from( "bt_status" )
+    ,   aid : String::new()
+    ,   did : String::new()
+    ,   sw  : false
+    ,   arg : None
+    };
+
+    let ( req, rx ) = param.to_request();
+
+    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
+
+    if let Ok( x ) = rx.await
+    {
+        if let Ok( btctrlok ) = x
+        {
+            if let btctrl::BtctrlOkInner::Status( bt_status ) = btctrlok.inner
+            {
+                for adapter_status in bt_status.adapter
+                {
+                    if let Some( device_status_list ) = adapter_status.device_status
+                    {
+                        for device_status in device_status_list
+                        {
+                            if device_status.audio_source
+                            {
+                                io_list.push(
+                                    IoItem
+                                    {
+                                        r#type  : IoItemType::BtIn
+                                    ,   name    : String::from( &device_status.alias )
+                                    ,   url     : format!( "asound://bluealsa:DEV={}", device_status.address )
+                                    ,   enable  : true
+                                    }
+                                );
+                            }
+
+                            if device_status.audio_sink
+                            {
+                                io_list.push(
+                                    IoItem
+                                    {
+                                        r#type  : IoItemType::BtOut
+                                    ,   name    : String::from( &device_status.alias )
+                                    ,   url     : format!( "osound://bluealsa:DEV={}", device_status.address )
+                                    ,   enable  : arwlctx.read().await.bt_output_enabled( &device_status.address )
+                                    }
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok( json_response( &IoListResult::Ok( &IoList{ io_list : &io_list } ) ) )
+}
 
 ///
 async fn test_response( _arwlctx : context::ARWLContext, _param : HashMap< String, String > ) -> StrResult
@@ -1125,6 +1288,12 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( make_route_getpost::< BtReplyParam >() )
         .and_then( bt_reply_response );
 
+    let r_io_list =
+        warp::path!( "io_list" )
+        .and( arwlctx_clone_filter() )
+        .and( warp::get() )
+        .and_then( io_list_response );
+
     let routes =
         r_root
         .or( r_favicon )
@@ -1140,6 +1309,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_ws )
         .or( r_bt_cmd )
         .or( r_bt_reply )
+        .or( r_io_list )
         .or( r_test )
         ;
 
