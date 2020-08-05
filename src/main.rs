@@ -889,7 +889,6 @@ struct BtReplyParam
 ,   ok          : bool
 }
 
-
 ///
 async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam ) -> RespResult
 {
@@ -910,6 +909,21 @@ async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam
 async fn io_list_response( arwlctx : context::ARWLContext ) -> RespResult
 {
     Ok( json_response( &iolist::io_list_result( arwlctx ).await ) )
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct OutputParam
+{
+    url : String
+,   sw  : bool
+}
+
+///
+async fn output_response( arwlctx : context::ARWLContext, param : OutputParam ) -> RespResult
+{
+    log::debug!( "{:?}", &param );
+
+    Ok( json_response( "{Ok:{}}" ) )
 }
 
 ///
@@ -1085,6 +1099,12 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and_then( io_list_response );
+
+    let r_output  =
+        warp::path!( "output" )
+        .and( arwlctx_clone_filter() )
+        .and( make_route_getpost::< OutputParam >() )
+        .and_then( output_response );
 
     let routes =
         r_root
