@@ -1408,13 +1408,13 @@ function()
 			$( "input.x_output_input" ).change(
 				function ()
 				{
-					var url  	= $( this ).data( "x_aux_url" );
-					var name 	= $( this ).data( "x_aux_name" );
-					var sw 		= $(this).prop( 'checked' );
+					var url  	= $( this ).data( "x_out_url" );
+					var name 	= $( this ).data( "x_out_name" );
+					var sw 		= $( this ).prop( 'checked' );
 
 					if( url != "" )
 					{
-						$.getJSON( "/output", { url : url, sw : sw } );
+						$.getJSON( "/set_output", { url : url, sw : sw } );
 
 						setTimeout(
 							function()

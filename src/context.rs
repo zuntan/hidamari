@@ -37,13 +37,19 @@ pub const THEME_DEFAULT_DIR : &str = "_default";
 pub const THEME_COMMON_DIR  : &str = "_common";
 pub const THEME_HIDE_DIR    : &str = "^[_.]";
 
-pub const TESTSOUND_DIR     : &str = "tsound";
+pub const TESTSOUND_DIR     : &str = "tsource";
 pub const TESTSOUND_NAME    : &str = r"^test-\d+-\d-\d+-\d+s-(.+).mp3";
 //pub const TESTSOUND_NAME  : &str = r"^test-44100-1-16-10s-cord_a.mp3";
 
-pub const TESTSOUND_URL_PATH    : &str = "tsound";
-pub const _ALSASOUND_URL_PATH    : &str = "asound";
-pub const HIDAMARI_EXT_PROTO    : &str = "^([at]sound)://";
+pub const TESTSOUND_URL_PATH        : &str = "tsource";
+pub const HIDAMARI_EXT_SOURCE_PROTO : &str = "^([at]source)://";
+
+pub const ALSA_SOURCE_PROTO         : &str = "asource://";
+pub const MPD_SINK_PROTO            : &str = "mpdsink://";
+pub const ALSA_SINK_PROTO           : &str = "asink://";
+
+pub const HIDAMARI_EXT_SINK_MPD_PROTO   : &str = "^mpdsink://([0-9]+)";
+pub const HIDAMARI_EXT_SINK_ALSA_PROTO  : &str = "^asink://";
 
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
 
@@ -565,7 +571,7 @@ impl Context
             lazy_static!
             {
                 static ref RE : regex::Regex =
-                    regex::Regex::new( HIDAMARI_EXT_PROTO ).unwrap();
+                    regex::Regex::new( HIDAMARI_EXT_SOURCE_PROTO ).unwrap();
             }
 
             match RE.captures( &url )
@@ -588,21 +594,6 @@ impl Context
     {
         make_uniq_list( &self.config_dyn.aux_in )
     }
-/*
-    pub fn aux_in_urllist( &self ) -> UrlTitleList
-    {
-        let mut ret = UrlTitleList::new();
-
-        for ( i, url ) in make_uniq_list( &self.config_dyn.aux_in ).iter().enumerate()
-        {
-            let url = self.update_hidamari_url( url );
-
-            ret.push( ( url, String::from( format!( "AUX IN {}", i + 1 ) ) ) );
-        }
-
-        ret
-    }
-*/
 
     pub fn sdf_add( &mut self, wsf : asyncread::WmShutdownFlag )
     {

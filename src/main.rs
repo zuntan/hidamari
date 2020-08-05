@@ -912,14 +912,14 @@ async fn io_list_response( arwlctx : context::ARWLContext ) -> RespResult
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct OutputParam
+struct SetOutputParam
 {
     url : String
 ,   sw  : bool
 }
 
 ///
-async fn output_response( arwlctx : context::ARWLContext, param : OutputParam ) -> RespResult
+async fn set_output_response( arwlctx : context::ARWLContext, param : SetOutputParam ) -> RespResult
 {
     log::debug!( "{:?}", &param );
 
@@ -1012,7 +1012,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         );
 
     let r_tsound =
-        warp::path!( "tsound" / .. )
+        warp::path!( "tsource" / .. )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::header::headers_cloned() )
@@ -1024,7 +1024,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         );
 
     let r_asound =
-        warp::path!( "asound" / String )
+        warp::path!( "asource" / String )
         .and( arwlctx_clone_filter() )
         .and( warp::get() )
         .and( warp::header::headers_cloned() )
@@ -1101,10 +1101,10 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and_then( io_list_response );
 
     let r_output  =
-        warp::path!( "output" )
+        warp::path!( "set_output" )
         .and( arwlctx_clone_filter() )
-        .and( make_route_getpost::< OutputParam >() )
-        .and_then( output_response );
+        .and( make_route_getpost::< SetOutputParam >() )
+        .and_then( set_output_response );
 
     let routes =
         r_root
@@ -1122,6 +1122,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_bt_cmd )
         .or( r_bt_reply )
         .or( r_io_list )
+        .or( r_output )
         .or( r_test )
         ;
 
