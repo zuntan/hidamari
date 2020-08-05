@@ -11,7 +11,7 @@ use std::io;
 
 use std::sync::Arc;
 
-use tokio::time::{ timeout, delay_for, Duration, Instant };
+use tokio::time::{ timeout, interval, Duration, Instant };
 use tokio::sync::{ oneshot, mpsc, RwLock };
 
 use serde::{ Serialize, /* Deserialize */ };
@@ -22,9 +22,9 @@ use crate::context;
 use crate::event;
 use crate::bt;
 
-const DEEP_SLEEP    : Duration = Duration::from_millis( 3000 );
-const SHALLOW_SLEEP : Duration = Duration::from_millis( 1000 );
-
+const INTERVAL      : Duration = Duration::from_millis( 500 );
+const EXEC_SPAN     : Duration = Duration::from_millis( 1000 );
+const OK_INTERVAL   : Duration = Duration::from_millis( 1000 );
 
 #[derive(Debug, Serialize, Clone)]
 pub struct BtctrlStatusMember
@@ -87,6 +87,7 @@ pub enum BtctrlRequestType
 {
     Nop
 ,   Cmd( String, String, String, bool, Option< String > )
+,   CmdInner( String )
 ,   Shutdown
 }
 
@@ -288,62 +289,71 @@ impl bt::BtAgentIO for BtAgentIO
             ctx.bt_agent_io_rx_opend = true;
         }
 
+        let mut interval = interval( OK_INTERVAL );
+
+        interval.tick().await;
+
         let tm = Instant::now();
 
         let mut ret = false;
 
         loop
         {
+            if tm.elapsed() > BT_AGENT_IO_OK_TIMEOUT
             {
-                let mut arwlbaio_rx = self.arwlbaio_rx.write().await;
+                log::debug!( "BtAgentIO : timeout" );
+                break;
+            }
 
-                match timeout( event::EVENT_WAIT_TIMEOUT, arwlbaio_rx.recv() ).await
+            let mut arwlbaio_rx = self.arwlbaio_rx.write().await;
+
+            match timeout( event::EVENT_WAIT_TIMEOUT, arwlbaio_rx.recv() ).await
+            {
+                Ok( recv ) =>
                 {
-                    Ok( recv ) =>
+                    let recv = recv.unwrap();
+
+                    log::debug!( "BtAgentIO recv [{:?}]", recv );
+
+                    match recv
                     {
-                        let recv = recv.unwrap();
-
-                        log::debug!( "BtAgentIO recv [{:?}]", recv );
-
-                        match recv
+                        BtctrlRepryType::Shutdown =>
                         {
-                            BtctrlRepryType::Shutdown =>
+                            break;
+                        }
+
+                    ,   BtctrlRepryType::Reply( reply_token, sw ) =>
+                        {
+                            log::debug!( "BtAgentIO:ok reply_token {} sw {}", reply_token, sw );
+
+                            let ctx = self.arwlctx.read().await;
+
+                            let ( current_notice_reply_token, current_notice_reply_token_time_elapsed ) = ctx.current_notice_reply_token();
+
+
+                            if      reply_token == current_notice_reply_token
+                                &&  current_notice_reply_token_time_elapsed < BT_AGENT_IO_OK_TIMEOUT
                             {
+                                log::debug!( "BtAgentIO:ok (accepted)" );
+
+                                ret = sw;
                                 break;
                             }
-                        ,   BtctrlRepryType::Reply( reply_token, sw ) =>
+                            else
                             {
-                                log::debug!( "BtAgentIO:ok reply_token {} sw {}", reply_token, sw );
-
-                                let ctx = self.arwlctx.read().await;
-
-                                let ( current_notice_reply_token, current_notice_reply_token_time_elapsed ) = ctx.current_notice_reply_token();
-
-
-                                if      reply_token == current_notice_reply_token
-                                    &&  current_notice_reply_token_time_elapsed < BT_AGENT_IO_OK_TIMEOUT
-                                {
-                                    log::debug!( "BtAgentIO:ok (accepted)" );
-
-                                    ret = sw;
-                                    break;
-                                }
+                                log::debug!( "BtAgentIO:ok (droped)" );
                             }
                         }
                     }
-                ,   Err( _ ) =>
-                    {
-                    }
+                }
+            ,   Err( _ ) =>
+                {
                 }
             }
 
             log::debug!( "BtAgentIO : wait" );
-            delay_for( SHALLOW_SLEEP ).await;
 
-            if tm.elapsed() > BT_AGENT_IO_OK_TIMEOUT
-            {
-                break;
-            }
+            interval.tick().await;
         }
 
         {
@@ -352,8 +362,89 @@ impl bt::BtAgentIO for BtAgentIO
             ctx.bt_agent_io_rx_opend = false;
         }
 
+        log::debug!( "BtAgentIO : ret {}", ret );
+
         ret
     }
+}
+
+async fn btctrl_status( bt_conn : & Option< bt::BtConn > ) -> BtctrlStatusMember
+{
+    let mut btctl_st_m =
+        BtctrlStatusMember
+        {
+            enable : false
+        ,   time :  chrono::Local::now().to_rfc3339()
+        ,   adapter : Vec::< bt::BtAdapterStatus >::new()
+        };
+
+    // get adapter_status
+
+    match bt_conn
+    {
+        None =>
+        {
+        }
+    ,   Some( ref bt_conn ) =>
+        {
+            btctl_st_m.enable = true;
+
+            match bt_conn.get_adapters().await
+            {
+                Ok( bt_adapters ) =>
+                {
+                    for bt_adapter in bt_adapters
+                    {
+                        match bt_adapter.get_status( true ).await
+                        {
+                            Ok( bt_adapter_status ) =>
+                            {
+                                btctl_st_m.adapter.push( bt_adapter_status );
+                            }
+                        ,   Err( x ) =>
+                            {
+                                log::error!( "btctrl error {:?}", x );
+                            }
+                        }
+                    }
+                }
+            ,   Err( x ) =>
+                {
+                    log::error!( "btctrl error {:?}", x );
+                }
+            }
+        }
+    }
+
+    // sort adapter_status
+
+    btctl_st_m.adapter.sort_by(
+        | lhs, rhs |
+        {
+            let lhs_key = format!( "{}{}", lhs.alias, lhs.address );
+            let rhs_key = format!( "{}{}", rhs.alias, rhs.address );
+            lhs_key.cmp( &rhs_key )
+        }
+    );
+
+    // sort device_status
+
+    for adapter_status in btctl_st_m.adapter.iter_mut()
+    {
+        if let Some( device_status ) = adapter_status.device_status.as_mut()
+        {
+            device_status.sort_by(
+                | lhs, rhs |
+                {
+                    let lhs_key = format!( "{}{}{}", if lhs.paired { "A" } else { "B" }, lhs.alias, lhs.address );
+                    let rhs_key = format!( "{}{}{}", if rhs.paired { "A" } else { "B" }, rhs.alias, rhs.address );
+                    lhs_key.cmp( &rhs_key )
+                }
+            );
+        }
+    }
+
+    btctl_st_m
 }
 
 pub async fn btctrl_task(
@@ -395,100 +486,27 @@ pub async fn btctrl_task(
             }
         };
 
+    let mut interval = interval( INTERVAL );
+
+    interval.tick().await;
+
+    let mut tm = Instant::now();
+
     loop
     {
-        // status update
-
-        let mut btctl_st_m =
-            BtctrlStatusMember
-            {
-                enable : false
-            ,   time :  chrono::Local::now().to_rfc3339()
-            ,   adapter : Vec::< bt::BtAdapterStatus >::new()
-            };
-
-        // get adapter_status
-
-        match bt_conn
-        {
-            None =>
-            {
-            }
-        ,   Some( ref bt_conn ) =>
-            {
-                btctl_st_m.enable = true;
-
-                match bt_conn.get_adapters().await
-                {
-                    Ok( bt_adapters ) =>
-                    {
-                        for bt_adapter in bt_adapters
-                        {
-                            match bt_adapter.get_status( true ).await
-                            {
-                                Ok( bt_adapter_status ) =>
-                                {
-                                    btctl_st_m.adapter.push( bt_adapter_status );
-                                }
-                            ,   Err( x ) =>
-                                {
-                                    log::error!( "btctrl error {:?}", x );
-                                }
-                            }
-                        }
-                    }
-                ,   Err( x ) =>
-                    {
-                        log::error!( "btctrl error {:?}", x );
-                    }
-                }
-            }
-        }
-
-        // sort adapter_status
-
-        btctl_st_m.adapter.sort_by(
-            | lhs, rhs |
-            {
-                let lhs_key = format!( "{}{}", lhs.alias, lhs.address );
-                let rhs_key = format!( "{}{}", rhs.alias, rhs.address );
-                lhs_key.cmp( &rhs_key )
-            }
-        );
-
-        // sort device_status
-
-        for adapter_status in btctl_st_m.adapter.iter_mut()
-        {
-            if let Some( device_status ) = adapter_status.device_status.as_mut()
-            {
-                device_status.sort_by(
-                    | lhs, rhs |
-                    {
-                        let lhs_key = format!( "{}{}{}", if lhs.paired { "A" } else { "B" }, lhs.alias, lhs.address );
-                        let rhs_key = format!( "{}{}{}", if rhs.paired { "A" } else { "B" }, rhs.alias, rhs.address );
-                        lhs_key.cmp( &rhs_key )
-                    }
-                );
-            }
-        }
-
-        {
-            let mut ctx = arwlctx.write().await;
-
-            if let Ok( x ) = serde_json::to_string( &BtctrlStatusResult::Ok( &BtctrlStatus{ bt_status : &btctl_st_m } ) )
-            {
-                ctx.bt_status_json = x;
-            }
-        }
-
         match timeout( event::EVENT_WAIT_TIMEOUT, rx.recv() ).await
         {
             Ok( recv ) =>
             {
                 let recv = recv.unwrap();
 
-                log::debug!( "recv [{:?}]", recv.req );
+                if let BtctrlRequestType::CmdInner( ref _cmd ) = recv.req
+                {
+                }
+                else
+                {
+                    log::debug!( "recv [{:?}]", recv.req );
+                }
 
                 match recv.req
                 {
@@ -498,157 +516,164 @@ pub async fn btctrl_task(
                         break;
                     }
 
-                ,   BtctrlRequestType::Cmd( cmd, aid, did, sw, _arg ) =>
+                ,   BtctrlRequestType::CmdInner( cmd ) =>
                     {
-                        let mut ok = BtctrlOk::new();
-
-                        if let Some( err ) =
-                            match bt_conn
-                            {
-                                None =>
-                                {
-                                    Some( BtctrlErr::new( -1, "BtConn init error" ) )
-                                }
-                            ,   Some( ref bt_conn ) =>
-                                {
-                                    match bt_conn.get_adapter( &aid ).await
-                                    {
-                                        Ok( bt_adapter ) =>
-                                        {
-                                            macro_rules! exec
-                                            {
-                                                ( $e : expr ) =>
-                                                {
-                                                    if let Err( x ) = $e.await
-                                                    {
-                                                        log::debug!( "error {:?}", x );
-                                                        Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
-                                                    }
-                                                    else { None }
-                                                }
-                                            }
-
-                                            match cmd.as_str()
-                                            {
-                                                "ad_power" =>
-                                                {
-                                                    exec!( bt_adapter.set_powered( sw ) )
-                                                }
-                                            ,   "ad_pairable" =>
-                                                {
-                                                    exec!( bt_adapter.set_pairable( sw ) )
-                                                }
-                                            ,   "ad_discoverable" =>
-                                                {
-                                                    exec!( bt_adapter.set_discoverable( sw ) )
-                                                }
-                                            ,   "ad_discovering" =>
-                                                {
-                                                    if sw
-                                                    {
-                                                        exec!( bt_adapter.start_discovery() )
-                                                    }
-                                                    else
-                                                    {
-                                                        exec!( bt_adapter.stop_discovery() )
-                                                    }
-                                                }
-                                            ,   "dev_remove" =>
-                                                {
-                                                    exec!( bt_adapter.remove_device( &did ) )
-                                                }
-                                            ,   "dev_connect" | "dev_pair" | "dev_trust" | "dev_block" =>
-                                                {
-                                                    match bt_adapter.get_device( &did ).await
-                                                    {
-                                                        Ok( bt_device ) =>
-                                                        {
-                                                            match cmd.as_str()
-                                                            {
-                                                                "dev_connect" =>
-                                                                {
-                                                                    if sw
-                                                                    {
-                                                                        exec!( bt_device.connect() )
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        exec!( bt_device.disconnect() )
-                                                                    }
-                                                                }
-                                                            ,   "dev_pair" =>
-                                                                {
-                                                                    if sw
-                                                                    {
-                                                                        exec!( bt_device.pair() )
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        Some( BtctrlErr::new( -7, &format!( "Invarid parameter [{}]", &sw ) ) )
-                                                                    }
-                                                                }
-                                                            ,   "dev_trust" =>
-                                                                {
-                                                                    exec!( bt_device.set_trusted( sw ) )
-                                                                }
-                                                            ,   "dev_block" =>
-                                                                {
-                                                                    exec!( bt_device.set_blocked( sw ) )
-                                                                }
-                                                            ,   _ => { None }
-                                                            }
-                                                        }
-                                                    ,   Err( x ) =>
-                                                        {
-                                                            Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
-                                                        }
-                                                    }
-                                                }
-                                            ,   "bt_status" =>
-                                                {
-                                                    ok.inner = BtctrlOkInner::Status( btctl_st_m );
-                                                    None
-                                                }
-                                            ,   _ =>
-                                                {
-                                                    Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
-                                                }
-                                            }
-                                        }
-                                    ,   Err( x ) =>
-                                        {
-                                            Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
-                                        }
-                                    }
-                                }
-                            }
+                        if cmd.as_str() == "bt_status"
                         {
-                            recv.tx.send( Err( err ) ).ok();
+                            let mut ok = BtctrlOk::new();
+
+                            let btctl_st_m = btctrl_status( &bt_conn ).await;
+
+                            ok.inner = BtctrlOkInner::Status( btctl_st_m );
+
+                            recv.tx.send( Ok( ok ) ).ok();
                         }
                         else
                         {
+                            recv.tx.send( Err( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) ) ).ok();
+                        }
+                    }
+
+                ,   BtctrlRequestType::Cmd( cmd, aid, did, sw, _arg ) =>
+                    {
+                        if cmd.as_str() == "bt_status"
+                        {
+                            let mut ok = BtctrlOk::new();
+
+                            let btctl_st_m = btctrl_status( &bt_conn ).await;
+
+                            ok.inner = BtctrlOkInner::Status( btctl_st_m );
+
                             recv.tx.send( Ok( ok ) ).ok();
                         }
-                    }
-
-                    /*
-                ,   BtctrlRequestType::Reply( reply_token, sw ) =>
-                    {
-                        if
+                        else
                         {
-                            let baioctx = arwlbaioctx.read().await;
-                            baioctx.bt_agent_io_rx_opend
-                        }
-                        {
-                            let send =  BtctrlRequestType::Reply( reply_token, sw );
-                            log::debug!( "BtAgentIO send [{:?}]", send );
-                            bt_agent_io_tx.send( send ).await.ok();
-                        }
+                            let ok = BtctrlOk::new();
 
-                        recv.tx.send( Ok( BtctrlOk::new() ) ).ok();
+                            if let Some( err ) =
+                                match bt_conn
+                                {
+                                    None =>
+                                    {
+                                        Some( BtctrlErr::new( -1, "BtConn init error" ) )
+                                    }
+                                ,   Some( ref bt_conn ) =>
+                                    {
+                                        match bt_conn.get_adapter( &aid ).await
+                                        {
+                                            Ok( bt_adapter ) =>
+                                            {
+                                                macro_rules! exec
+                                                {
+                                                    ( $e : expr ) =>
+                                                    {
+                                                        if let Err( x ) = $e.await
+                                                        {
+                                                            log::debug!( "error {:?}", x );
+                                                            Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                        }
+                                                        else { None }
+                                                    }
+                                                }
+
+                                                match cmd.as_str()
+                                                {
+                                                    "ad_power" =>
+                                                    {
+                                                        exec!( bt_adapter.set_powered( sw ) )
+                                                    }
+                                                ,   "ad_pairable" =>
+                                                    {
+                                                        exec!( bt_adapter.set_pairable( sw ) )
+                                                    }
+                                                ,   "ad_discoverable" =>
+                                                    {
+                                                        exec!( bt_adapter.set_discoverable( sw ) )
+                                                    }
+                                                ,   "ad_discovering" =>
+                                                    {
+                                                        if sw
+                                                        {
+                                                            exec!( bt_adapter.start_discovery() )
+                                                        }
+                                                        else
+                                                        {
+                                                            exec!( bt_adapter.stop_discovery() )
+                                                        }
+                                                    }
+                                                ,   "dev_remove" =>
+                                                    {
+                                                        exec!( bt_adapter.remove_device( &did ) )
+                                                    }
+                                                ,   "dev_connect" | "dev_pair" | "dev_trust" | "dev_block" =>
+                                                    {
+                                                        match bt_adapter.get_device( &did ).await
+                                                        {
+                                                            Ok( bt_device ) =>
+                                                            {
+                                                                match cmd.as_str()
+                                                                {
+                                                                    "dev_connect" =>
+                                                                    {
+                                                                        if sw
+                                                                        {
+                                                                            exec!( bt_device.connect() )
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            exec!( bt_device.disconnect() )
+                                                                        }
+                                                                    }
+                                                                ,   "dev_pair" =>
+                                                                    {
+                                                                        if sw
+                                                                        {
+                                                                            exec!( bt_device.pair() )
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            Some( BtctrlErr::new( -7, &format!( "Invarid parameter [{}]", &sw ) ) )
+                                                                        }
+                                                                    }
+                                                                ,   "dev_trust" =>
+                                                                    {
+                                                                        exec!( bt_device.set_trusted( sw ) )
+                                                                    }
+                                                                ,   "dev_block" =>
+                                                                    {
+                                                                        exec!( bt_device.set_blocked( sw ) )
+                                                                    }
+                                                                ,   _ => { None }
+                                                                }
+                                                            }
+                                                        ,   Err( x ) =>
+                                                            {
+                                                                Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                                            }
+                                                        }
+                                                    }
+                                                ,   _ =>
+                                                    {
+                                                        Some( BtctrlErr::new( -8, &format!( "No such command [{}]", &cmd ) ) )
+                                                    }
+                                                }
+                                            }
+                                        ,   Err( x ) =>
+                                            {
+                                                Some( BtctrlErr::new( -2, &format!( "{:?}", x ) ) )
+                                            }
+                                        }
+                                    }
+                                }
+                            {
+                                recv.tx.send( Err( err ) ).ok();
+                            }
+                            else
+                            {
+                                recv.tx.send( Ok( ok ) ).ok();
+                            }
+                        }
                     }
-                    */
-
                 ,   _ =>
                     {
                         recv.tx.send( Err( BtctrlErr::new( -9, "" ) ) ).ok();
@@ -657,9 +682,28 @@ pub async fn btctrl_task(
             }
         ,   Err( _ ) =>
             {
-                delay_for( if btctl_st_m.enable { SHALLOW_SLEEP } else { DEEP_SLEEP } ).await;
             }
         }
+
+        // status update
+
+        if tm.elapsed() > EXEC_SPAN
+        {
+            let btctl_st_m = btctrl_status( &bt_conn ).await;
+
+            {
+                let mut ctx = arwlctx.write().await;
+
+                if let Ok( x ) = serde_json::to_string( &BtctrlStatusResult::Ok( &BtctrlStatus{ bt_status : &btctl_st_m } ) )
+                {
+                    ctx.bt_status_json = x;
+                }
+            }
+
+            tm = Instant::now();
+        }
+
+        interval.tick().await;
     }
 
     log::debug!( "btctrl stop." );

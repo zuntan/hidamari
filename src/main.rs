@@ -48,6 +48,7 @@ mod event;
 mod asyncread;
 mod bt;
 mod btctrl;
+mod iolist;
 
 use crate::asyncread::GetWakeShutdownFlag;
 use crate::asyncread::GetMimeType;
@@ -443,7 +444,7 @@ impl CmdParam
                                 String::new()
                             };
 
-                        mpdcom::MpdComRequestType::AddUrl( ( url, arg ) )
+                        mpdcom::MpdComRequestType::AddUrl( url, arg )
                     }
                     else
                     {
@@ -454,9 +455,19 @@ impl CmdParam
                 {
                     if self.arg1.is_some()
                     {
-                        let no = String::from( self.arg1.as_ref().unwrap().as_str() );
+                        let url = String::from( self.arg1.as_ref().unwrap().as_str() );
 
-                        mpdcom::MpdComRequestType::AddAuxIn( no )
+                        let arg =
+                            if self.arg2.is_some()
+                            {
+                                String::from( self.arg2.as_ref().unwrap().as_str() )
+                            }
+                            else
+                            {
+                                String::new()
+                            };
+
+                        mpdcom::MpdComRequestType::AddAuxIn( url, arg )
                     }
                     else
                     {
@@ -603,6 +614,7 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
     ,       last_spec_head_json
     ,   mut last_spec_data_json
     ,   mut last_bt_status_json
+    ,   mut last_io_list_json
     ) =
     {
         let mut ctx = arwlctx.write().await;
@@ -628,6 +640,7 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
         ,   String::from( &ctx.spec_head_json )
         ,   String::from( &ctx.spec_data_json )
         ,   String::from( &ctx.bt_status_json )
+        ,   String::from( &ctx.io_list_json )
         )
     };
 
@@ -652,32 +665,14 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
 
     let ( mut ws_tx, mut ws_rx ) = ws.split();
 
-    if let Err(x) = ws_tx.send( Message::text( &last_mpd_status_json ) ).await
+    for x in vec![ &last_mpd_status_json, &last_spec_head_json, &last_spec_data_json, &last_io_list_json ]
     {
-        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-        cleanup!();
-        return;
-    }
-
-    if let Err(x) = ws_tx.send( Message::text( &last_spec_head_json ) ).await
-    {
-        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-        cleanup!();
-        return;
-    }
-
-    if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
-    {
-        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-        cleanup!();
-        return;
-    }
-
-    if let Err(x) = ws_tx.send( Message::text( &last_bt_status_json ) ).await
-    {
-        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-        cleanup!();
-        return;
+        if let Err(x) = ws_tx.send( Message::text( x ) ).await
+        {
+            log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+            cleanup!();
+            return;
+        }
     }
 
     let ( mut ev_tx1, mut ev_rx1 ) = event::make_channel();
@@ -716,19 +711,57 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
         }
     );
 
-    let mut last_check_status = time::Instant::now();
-    let mut last_send_status  = time::Instant::now();
+    let mut last_check_mpd_status   = time::Instant::now();
+    let mut last_send_mpd_status    = time::Instant::now();
 
-    let mut last_check_data   = time::Instant::now();
-    let mut last_send_data    = time::Instant::now();
+    let mut last_check_data         = time::Instant::now();
+    let mut last_send_data          = time::Instant::now();
 
-    let mut last_send_head    = time::Instant::now();
+    let mut last_check_bt_status    = time::Instant::now();
+    let mut last_send_bt_status     = time::Instant::now();
 
-    let mut last_check_bt_status  = time::Instant::now();
-    let mut last_send_bt_status   = time::Instant::now();
+    let mut last_check_io_list      = time::Instant::now();
+    let mut last_send_io_list       = time::Instant::now();
 
-    let mut last_bt_notice_json   = String::new();
-    let mut last_check_bt_notice  = time::Instant::now();
+    let mut last_send_head          = time::Instant::now();
+
+    let mut last_bt_notice_json     = String::new();
+    let mut last_check_bt_notice    = time::Instant::now();
+
+    macro_rules! check_n_send
+    {
+        ( $intv:expr, $last_check:expr, $last_send:expr, $last_json:expr, $src_json:ident ) =>
+        {
+            if $last_check.elapsed() > $intv
+            {
+                $last_check = time::Instant::now();
+
+                if
+                {
+                    let ctx = arwlctx.read().await;
+
+                    if ctx.$src_json != $last_json
+                    {
+                        $last_json = String::from( &ctx.$src_json );
+                        true
+                    }
+                    else
+                    {
+                        false
+                    }
+                } || $last_send.elapsed() > ws_send_intv
+                {
+                    $last_send = time::Instant::now();
+
+                    if let Err(x) = ws_tx.send( Message::text( &$last_json ) ).await
+                    {
+                        log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     loop
     {
@@ -737,63 +770,10 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
             break;
         }
 
-        if last_check_status.elapsed() > ws_status_intv
-        {
-            last_check_status = time::Instant::now();
-
-            if
-            {
-                let ctx = arwlctx.read().await;
-
-                if ctx.mpd_status_json != last_mpd_status_json
-                {
-                    last_mpd_status_json = String::from( &ctx.mpd_status_json );
-                    true
-                }
-                else
-                {
-                    false
-                }
-            } || last_send_status.elapsed() > ws_send_intv
-            {
-                last_send_status = time::Instant::now();
-
-                if let Err(x) = ws_tx.send( Message::text( &last_mpd_status_json ) ).await
-                {
-                    log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-                    break;
-                }
-            }
-        }
-
-        if last_check_data.elapsed() > ws_data_intv
-        {
-            last_check_data = time::Instant::now();
-
-            if
-            {
-                let ctx = arwlctx.read().await;
-
-                if ctx.spec_data_json != last_spec_data_json
-                {
-                    last_spec_data_json = String::from( &ctx.spec_data_json );
-                    true
-                }
-                else
-                {
-                    false
-                }
-            } || last_send_data.elapsed() > ws_send_intv
-            {
-                last_send_data = time::Instant::now();
-
-                if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
-                {
-                    log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-                    break;
-                }
-            }
-        }
+        check_n_send!( ws_status_intv,  last_check_mpd_status,  last_send_mpd_status,   last_mpd_status_json,   mpd_status_json );
+        check_n_send!( ws_data_intv,    last_check_data,        last_send_data,         last_spec_data_json,    spec_data_json );
+        check_n_send!( ws_status_intv,  last_check_bt_status,   last_send_bt_status,    last_bt_status_json,    bt_status_json );
+        check_n_send!( ws_status_intv,  last_check_io_list,     last_send_io_list,      last_io_list_json,      io_list_json );
 
         if last_send_head.elapsed() > ws_send_intv
         {
@@ -803,35 +783,6 @@ async fn ws_response( arwlctx : context::ARWLContext, ws : WebSocket, addr: Opti
             {
                 log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
                 break;
-            }
-        }
-
-        if last_check_bt_status.elapsed() > ws_status_intv
-        {
-            last_check_bt_status = time::Instant::now();
-
-            if
-            {
-                let ctx = arwlctx.read().await;
-
-                if ctx.bt_status_json != last_bt_status_json
-                {
-                    last_bt_status_json = String::from( &ctx.bt_status_json );
-                    true
-                }
-                else
-                {
-                    false
-                }
-            } || last_send_bt_status.elapsed() > ws_send_intv
-            {
-                last_send_bt_status = time::Instant::now();
-
-                if let Err(x) = ws_tx.send( Message::text( &last_spec_data_json ) ).await
-                {
-                    log::debug!( "web socket error. {:?} {:?}", &x, &ws_sig );
-                    break;
-                }
             }
         }
 
@@ -899,7 +850,8 @@ impl BtCmdParam
 
         let ( mut req, rx ) = btctrl::BtctrlRequest::new();
 
-        req.req = btctrl::BtctrlRequestType::Cmd
+        req.req =
+            btctrl::BtctrlRequestType::Cmd
             (
                 cmd
             ,   String::from( &self.aid )
@@ -955,168 +907,9 @@ async fn bt_reply_response( arwlctx : context::ARWLContext, param : BtReplyParam
     Ok( json_response( "{Ok:{}}" ) )
 }
 
-#[derive(Debug, Serialize)]
-enum IoItemType
-{
-    AuxIn
-,   MpdOut
-,   BtIn
-,   BtOut
-}
-
-#[derive(Debug, Serialize)]
-struct IoItem
-{
-    r#type  : IoItemType
-,   name    : String
-,   url     : String
-,   enable  : bool
-}
-
-#[derive(Debug, Serialize)]
-struct IoList<'a>
-{
-    io_list : &'a Vec< IoItem >
-}
-
-type IoListResult<'a> = Result< &'a IoList< 'a >, () >;
-
 async fn io_list_response( arwlctx : context::ARWLContext ) -> RespResult
 {
-    let mut io_list = Vec::< IoItem >::new();
-
-    for ( url, title ) in arwlctx.write().await.aux_in_urllist()
-    {
-        io_list.push(
-            IoItem
-            {
-                r#type  : IoItemType::AuxIn
-            ,   name    : title
-            ,   url
-            ,   enable  : true
-            }
-        );
-    }
-
-    let param = CmdParam { cmd : String::from( "outputs" ), arg1 : None, arg2 : None, arg3 : None };
-
-    let ( req, rx ) = param.to_request();
-
-    let _ = arwlctx.write().await.mpdcom_tx.send( req ).await;
-
-    match rx.await
-    {
-        Ok(x)  =>
-        {
-            if let Ok( mpdcomok ) = x
-            {
-                let mut outputenabled   : Option< bool >    = None;
-                let mut plugin          : Option< String >  = None;
-                let mut outputname      : Option< String >  = None;
-
-                for ( k, v ) in mpdcomok.flds.iter().rev()
-                {
-                    match k.as_str()
-                    {
-                        "outputenabled" =>
-                        {
-                            outputenabled = Some( v == "1" );
-                        }
-
-                    ,   "plugin"        =>
-                        {
-                            plugin = Some( String::from( v ) );
-                        }
-
-                    ,   "outputname"    =>
-                        {
-                            outputname = Some( String::from( v ) );
-                        }
-
-                    ,   "outputid"      =>
-                        {
-                            let outputid = v;
-
-                            io_list.push(
-                                IoItem
-                                {
-                                    r#type  : IoItemType::MpdOut
-                                ,   name    : outputname.unwrap_or( String::new() )
-                                ,   url     : format!( "osound://mpdout/{}?plugin={}", outputid, plugin.unwrap_or( String::new() ) )
-                                ,   enable  : outputenabled.unwrap_or( false )
-                                }
-                            );
-
-                            outputenabled   = None;
-                            plugin          = None;
-                            outputname      = None;
-                        }
-                    ,   _ => {}
-                    }
-                }
-            }
-        }
-    ,   Err(_) => {}
-    }
-
-    let param = BtCmdParam
-    {
-        cmd : String::from( "bt_status" )
-    ,   aid : String::new()
-    ,   did : String::new()
-    ,   sw  : false
-    ,   arg : None
-    };
-
-    let ( req, rx ) = param.to_request();
-
-    let _ = arwlctx.write().await.btctrl_tx.send( req ).await;
-
-    if let Ok( x ) = rx.await
-    {
-        if let Ok( btctrlok ) = x
-        {
-            if let btctrl::BtctrlOkInner::Status( bt_status ) = btctrlok.inner
-            {
-                for adapter_status in bt_status.adapter
-                {
-                    if let Some( device_status_list ) = adapter_status.device_status
-                    {
-                        for device_status in device_status_list
-                        {
-                            if device_status.audio_source
-                            {
-                                io_list.push(
-                                    IoItem
-                                    {
-                                        r#type  : IoItemType::BtIn
-                                    ,   name    : String::from( &device_status.alias )
-                                    ,   url     : format!( "asound://bluealsa:DEV={}", device_status.address )
-                                    ,   enable  : true
-                                    }
-                                );
-                            }
-
-                            if device_status.audio_sink
-                            {
-                                io_list.push(
-                                    IoItem
-                                    {
-                                        r#type  : IoItemType::BtOut
-                                    ,   name    : String::from( &device_status.alias )
-                                    ,   url     : format!( "osound://bluealsa:DEV={}", device_status.address )
-                                    ,   enable  : arwlctx.read().await.bt_output_enabled( &device_status.address )
-                                    }
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok( json_response( &IoListResult::Ok( &IoList{ io_list : &io_list } ) ) )
+    Ok( json_response( &iolist::io_list_result( arwlctx ).await ) )
 }
 
 ///
@@ -1215,7 +1008,6 @@ async fn make_route( arwlctx : context::ARWLContext )
                 theme_file_response( arwlctx, headers, FileResponse::Tsound( String::from( path.as_str() ) ) ).await
             }
         );
-
 
     let r_asound =
         warp::path!( "asound" / String )
@@ -1375,6 +1167,11 @@ async fn main() -> std::io::Result< () >
     let arwlctx_c = arwlctx.clone();
     let h_btctrl : task::JoinHandle< _ > = task::spawn( btctrl::btctrl_task( arwlctx_c, btctrl_rx, bt_agent_io_rx ) );
 
+    let ( mut iolist_tx,   iolist_rx ) = event::make_channel();
+
+    let arwlctx_c = arwlctx.clone();
+    let h_iolist : task::JoinHandle< _ > = task::spawn( iolist::iolist_task( arwlctx_c, iolist_rx ) );
+
     log::debug!( "http server init." );
 
     let ( tx, rx ) = sync::oneshot::channel();
@@ -1442,6 +1239,12 @@ async fn main() -> std::io::Result< () >
             let _ = ctx.bt_agent_io_tx.send( btctrl::BtctrlRepryType::Shutdown ).await;
         }
     }
+
+    let ( mut req, _ ) = event::new_request();
+    req.req = event::EventRequestType::Shutdown;
+    let _ = iolist_tx.send( req ).await;
+    let _ = join!( h_iolist );
+    log::info!( "iolist_task shutdown." );
 
     let ( mut req, _ ) = btctrl::BtctrlRequest::new();
     req.req = btctrl::BtctrlRequestType::Shutdown;

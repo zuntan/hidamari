@@ -15,6 +15,8 @@ function()
 			,	ws_spec_t		: null
 			,	ws_spec_h		: null
 			,	ws_bt_status	: null
+			,	ws_bt_notice	: null
+			,	ws_io_list		: null
 
 			,	update : function( func )
 				{
@@ -65,6 +67,19 @@ function()
 					else
 					{
 						if( this._cb_bt_status_update ) { var that = this; $.each( this._cb_bt_status_update, function( i, o ) { o.call( that ) } ) }
+					}
+				}
+
+			,	io_list_update : function( func )
+				{
+					if( arguments.length > 0 )
+					{
+						if( !this._cb_io_list_update ) { this._cb_io_list_update = Array(); }
+						this._cb_io_list_update.push( func );
+					}
+					else
+					{
+						if( this._cb_io_list_update ) { var that = this; $.each( this._cb_io_list_update, function( i, o ) { o.call( that ) } ) }
 					}
 				}
 
@@ -130,8 +145,9 @@ function()
 
 							if( j_data.Ok.bt_notice )
 							{
-								var m = $( "#x_bt_notice" );
+								that.ws_bt_notice = j_data.Ok.bt_notice
 
+								var m = $( "#x_bt_notice" );
 
 								if( m.length )
 								{
@@ -194,14 +210,7 @@ function()
 
 												if( reply_token != "" )
 												{
-													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : true } )
-													.fail(
-														function(jqXHR, textStatus, errorThrown)
-														{
-														    console.log("err:" + textStatus);
-														    console.log("text:" + jqXHR.responseText);
-														}
-													);
+													$.getJSON( "/bt_reply", { reply_token : reply_token , ok : true } );
 												}
 											}
 										);
@@ -209,6 +218,12 @@ function()
 										m.modal( 'show' );
 									}
 								}
+							}
+
+							if( j_data.Ok.io_list )
+							{
+								that.ws_io_list = j_data.Ok.io_list
+								that.io_list_update();
 							}
 
 							that.update();

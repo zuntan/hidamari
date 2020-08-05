@@ -102,10 +102,11 @@ pub enum MpdComRequestType
 {
     Nop
 ,   Cmd( String )
+,   CmdInner( String )
 ,   SetVol( String )
 ,   SetMute( String )
-,   AddUrl( ( String, String ) )
-,   AddAuxIn( String )
+,   AddUrl( String, String )
+,   AddAuxIn( String, String )
 ,   TestSound
 ,   Shutdown
 }
@@ -480,7 +481,13 @@ pub async fn mpdcom_task(
             {
                 let recv = recv.unwrap();
 
-                log::debug!( "recv [{:?}]", recv.req );
+                if let MpdComRequestType::CmdInner( ref _cmd ) = recv.req
+                {
+                }
+                else
+                {
+                    log::debug!( "recv [{:?}]", recv.req );
+                }
 
                 match recv.req
                 {
@@ -590,7 +597,7 @@ pub async fn mpdcom_task(
                         }
                     }
 
-                ,   MpdComRequestType::AddUrl( ( url, append ) ) =>
+                ,   MpdComRequestType::AddUrl( url, append ) =>
                     {
                         let append = match append.to_lowercase().as_str()
                             {
@@ -639,114 +646,89 @@ pub async fn mpdcom_task(
                         }
                     }
 
-                ,   MpdComRequestType::AddAuxIn( no ) =>
+                ,   MpdComRequestType::AddAuxIn( url, name ) =>
                     {
-                        let aux_in_urllist =
-                        {
-                            arwlctx.read().await.aux_in_urllist()
-                        };
-
                         let mut ret_ok = MpdComOk::new();
                         let mut ret_err : Option< MpdComErr > = None;
 
-                        match usize::from_str( &no )
+                        let url = arwlctx.read().await.update_hidamari_url( &url );
+
+                        let cmd = String::from( "addid " ) + &quote_arg( &url );
+
+                        log::debug!( "addauxin {}", &cmd );
+
+                        match mpd_exec.exec( cmd, mpd_protolog ).await
                         {
-                            Ok( no ) if no >= 1 && no <= aux_in_urllist.len() =>
+                            Ok( x ) =>
                             {
-                                let no = no - 1;
-
-                                let url = String::from( &aux_in_urllist[ no ].0 );
-                                let cmd = String::from( "addid " ) + &quote_arg( &url );
-
-                                log::debug!( "addauxin {}", &cmd );
-
-                                match mpd_exec.exec( cmd, mpd_protolog ).await
+                                match x
                                 {
-                                    Ok( x ) =>
+                                    Ok( mut x ) =>
                                     {
-                                        match x
+                                        ret_ok.flds.push( ( String::from( "file" ), String::from( &url ) ) );
+                                        ret_ok.flds.append( &mut x.flds );
+
+                                        if name != ""
                                         {
-                                            Ok( mut x ) =>
+                                            if let Some( x ) = ret_ok.flds.iter().find( | x | x.0 == "Id" )
                                             {
-                                                ret_ok.flds.push( ( String::from( "file" ), String::from( &url ) ) );
-                                                ret_ok.flds.append( &mut x.flds );
+                                                let id = &x.1;
 
-                                                if let Some( x ) = ret_ok.flds.iter().find( | x | x.0 == "Id" )
+                                                let cmd = String::from( "addtagid " ) + &quote_arg( id ) + r#" "Title" "# + &quote_arg_f( &name );
+
+                                                log::debug!( "addauxin [{}]", &cmd );
+
+                                                match mpd_exec.exec( cmd, mpd_protolog ).await
                                                 {
-                                                    let id = &x.1;
-
-                                                    let cmd = String::from( "addtagid " ) + &quote_arg( id ) + r#" "Title" "# + &quote_arg_f( &aux_in_urllist[ no ].1 );
-
-                                                    log::debug!( "addauxin [{}]", &cmd );
-
-                                                    match mpd_exec.exec( cmd, mpd_protolog ).await
+                                                    Ok( x ) =>
                                                     {
-                                                        Ok( x ) =>
+                                                        match x
                                                         {
-                                                            match x
+                                                            Ok( _ ) =>
                                                             {
-                                                                Ok( _ ) =>
-                                                                {
-                                                                    ret_ok.flds.push( ( String::from( "Title" ), String::from( &aux_in_urllist[ no ].1 ) ) );
-                                                                }
-                                                            ,   Err( x ) =>
-                                                                {
-                                                                    log::warn!( "error [{:?}]", x );
-                                                                    ret_err = Some( x );
-                                                                }
+                                                                ret_ok.flds.push( ( String::from( "Title" ), String::from( &name ) ) );
+                                                            }
+                                                        ,   Err( x ) =>
+                                                            {
+                                                                log::warn!( "error [{:?}]", x );
+                                                                ret_err = Some( x );
                                                             }
                                                         }
-                                                    ,   Err(x) =>
-                                                        {
-                                                            log::warn!( "connection error [{:?}]", x );
-                                                            mpd_exec.conn.as_mut().unwrap().shutdown();
-                                                            mpd_exec.conn = None;
-                                                            conn_try_time = Some( Instant::now() );
-                                                        }
+                                                    }
+                                                ,   Err(x) =>
+                                                    {
+                                                        log::warn!( "connection error [{:?}]", x );
+                                                        mpd_exec.conn.as_mut().unwrap().shutdown();
+                                                        mpd_exec.conn = None;
+                                                        conn_try_time = Some( Instant::now() );
                                                     }
                                                 }
                                             }
-                                        ,   Err( x ) =>
-                                            {
-                                                log::warn!( "error [{:?}]", x );
-                                                ret_err = Some( x );
-                                            }
                                         }
                                     }
-                                ,   Err(x) =>
+                                ,   Err( x ) =>
                                     {
-                                        log::warn!( "connection error [{:?}]", x );
-                                        mpd_exec.conn.as_mut().unwrap().shutdown();
-                                        mpd_exec.conn = None;
-                                        conn_try_time = Some( Instant::now() );
+                                        log::warn!( "error [{:?}]", x );
+                                        ret_err = Some( x );
                                     }
                                 }
-
-                                if let Some( x ) = ret_err
-                                {
-                                    recv.tx.send( Err( x ) ).ok();
-                                }
-                                else
-                                {
-                                    recv.tx.send( Ok( ret_ok ) ).ok();
-                                }
                             }
-                        ,   Ok( x ) =>
+                        ,   Err(x) =>
                             {
-                                let mut err = MpdComErr::new( -4 );
-
-                                err.msg_text = String::from( format!( "Range error [{:?}]", x ) );
-
-                                recv.tx.send( Err( err ) ).ok();
+                                log::warn!( "connection error [{:?}]", x );
+                                mpd_exec.conn.as_mut().unwrap().shutdown();
+                                mpd_exec.conn = None;
+                                conn_try_time = Some( Instant::now() );
                             }
-                        ,   Err( x ) =>
-                            {
-                                let mut err = MpdComErr::new( -4 );
+                        }
 
-                                err.msg_text = String::from( format!( "{:?}", x ) );
-
-                                recv.tx.send( Err( err ) ).ok();
-                            }
+                        if let Some( x ) = ret_err
+                        {
+                            recv.tx.send( Err( x ) ).ok();
+                        }
+                        else
+                        {
+                            recv.tx.send( Ok( ret_ok ) ).ok();
                         }
                     }
 
@@ -856,6 +838,32 @@ pub async fn mpdcom_task(
                         if cmd != "close" && mpd_exec.conn.is_some()
                         {
                             match mpd_exec.exec( cmd, mpd_protolog ).await
+                            {
+                                Ok(x) =>
+                                {
+                                    recv.tx.send( x ).ok();
+                                }
+                            ,   Err(x) =>
+                                {
+                                    log::warn!( "connection error [{:?}]", x );
+                                    mpd_exec.conn.as_mut().unwrap().shutdown();
+                                    mpd_exec.conn = None;
+                                    conn_try_time = Some( Instant::now() );
+
+                                    recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            recv.tx.send( Err( MpdComErr::new( -2 ) ) ).ok();
+                        }
+                    }
+                ,   MpdComRequestType::CmdInner( cmd ) =>
+                    {
+                        if cmd != "close" && mpd_exec.conn.is_some()
+                        {
+                            match mpd_exec.exec( cmd, false ).await
                             {
                                 Ok(x) =>
                                 {

@@ -237,6 +237,8 @@ pub struct Context
 , pub   bt_agent_io_rx_opend    : bool
 , pub   bt_agent_io_tx          : sync::mpsc::Sender< btctrl::BtctrlRepryType >
 
+, pub   io_list_json    : String
+
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
 , pub   rng             : StdRng
@@ -286,6 +288,7 @@ impl Context
         ,   bt_agent_io_rx_opend    : false
         ,   bt_agent_io_tx
 
+        ,   io_list_json    : String::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
@@ -581,6 +584,11 @@ impl Context
         String::from( url )
     }
 
+    pub fn aux_in( &self ) -> Vec< String >
+    {
+        make_uniq_list( &self.config_dyn.aux_in )
+    }
+/*
     pub fn aux_in_urllist( &self ) -> UrlTitleList
     {
         let mut ret = UrlTitleList::new();
@@ -594,6 +602,7 @@ impl Context
 
         ret
     }
+*/
 
     pub fn sdf_add( &mut self, wsf : asyncread::WmShutdownFlag )
     {

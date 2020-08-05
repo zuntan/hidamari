@@ -1195,8 +1195,6 @@ function()
 		}
 	}
 
-	$( ".x_aux_in_add_m" ).hide();
-
 	var update_config = function()
 	{
 		$.getJSON( "/config" )
@@ -1210,7 +1208,6 @@ function()
 				{
 					update_theme( json );
 					update_url( json );
-					update_aux_in( json );
 				}
 			);
 	}
@@ -1308,6 +1305,86 @@ function()
 		}
 	);
 
+	// io_list
+
+	$( ".x_aux_in_add_m" ).hide();
+	$( ".x_bt_in_add_m" ).hide();
+
+	var io_list_update = function()
+	{
+		if( ws.ws_io_list )
+		{
+			$( ".x_aux_in_add" ).remove();
+			$( ".x_bt_in_add" ).remove();
+
+			var m_aux_in = $( ".x_aux_in_add_m" );
+			var m_bt_in  = $( ".x_bt_in_add_m" );
+
+			for( var i = 0 ; i < ws.ws_io_list.length ; ++i )
+			{
+				var item = ws.ws_io_list[ i ];
+
+				if( item.type == "AuxIn" || item.type == "BtIn" )
+				{
+					var m = ( item.type == "AuxIn" ) ? m_aux_in : m_bt_in;
+					var t = m.clone();
+
+					if( item.type == "AuxIn" )
+					{
+						t.removeClass( "x_aux_in_add_m" );
+						t.addClass( "x_aux_in_add" );
+					}
+					else
+					{
+						t.removeClass( "x_bt_in_add_m" );
+						t.addClass( "x_bt_in_add" );
+					}
+
+					t.text( item.name );
+					t.data( "x_aux_url",  item.url );
+					t.data( "x_aux_name", item.name );
+					m.before( t );
+					t.show();
+				}
+				else if( item.type == "MpdOut" || item.type == "BtOut" )
+				{
+				}
+			}
+
+			$( ".x_aux_in_add, .x_bt_in_add" ).click(
+				function()
+				{
+					var id = $( this ).data( "x_aux_id" );
+
+					var url  = $( this ).data( "x_aux_url" );
+					var name = $( this ).data( "x_aux_name" );
+
+					if( url != "" )
+					{
+						$.getJSON( "/cmd", { cmd : "addauxin", arg1 : url, arg2 : name } )
+							.done( function( json )
+								{
+									if( json.Ok )
+									{
+										var kv = $.hidamari.parse_flds( json.Ok.flds )
+
+										if( kv[ 'Id' ] )
+										{
+											$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+										}
+									}
+									else if( json.Err && json.Err.msg_text )
+									{
+										url_add_error( url, json.Err.msg_text );
+									}
+								}
+							);
+					}
+				}
+			);
+		}
+	}
+
 	// websocket
 
 	$.hidamari.ajax_setup();
@@ -1315,6 +1392,8 @@ function()
 	var ws = $.hidamari.websocket();
 
 	ws.status_update( function() { update_player(); } );
+	ws.io_list_update( function() { io_list_update(); } );
+
 	ws.open();
 
 	$( ".x_canvas-indicator" ).click(
