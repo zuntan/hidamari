@@ -1309,16 +1309,23 @@ function()
 
 	$( ".x_aux_in_add_m" ).hide();
 	$( ".x_bt_in_add_m" ).hide();
+	$( ".x_output_m" ).hide();
+
+	var disable_io_list_update = false;
 
 	var io_list_update = function()
 	{
+		if( disable_io_list_update ) { return; }
+
 		if( ws.ws_io_list )
 		{
 			$( ".x_aux_in_add" ).remove();
 			$( ".x_bt_in_add" ).remove();
+			$( ".x_output" ).remove();
 
 			var m_aux_in = $( ".x_aux_in_add_m" );
 			var m_bt_in  = $( ".x_bt_in_add_m" );
+			var m_output = $( ".x_output_m" );
 
 			for( var i = 0 ; i < ws.ws_io_list.length ; ++i )
 			{
@@ -1348,14 +1355,29 @@ function()
 				}
 				else if( item.type == "MpdOut" || item.type == "BtOut" )
 				{
+					var t = m_output.clone();
+
+					t.removeClass( "x_output_m" );
+					t.addClass( "x_output" );
+
+					$( ".x_output_type", t ).text( ( item.type == "MpdOut" ) ? "MPD" : "BT" );
+					$( ".x_output_name", t ).text( item.name );
+
+					$( "input.x_output_input", t ).attr( "id",  "x_output_input_" + i );
+					$( "label.x_output_input", t ).attr( "for", "x_output_input_" + i );
+
+					$( "input.x_output_input", t ).data( "x_out_url",  item.url );
+					$( "input.x_output_input", t ).data( "x_out_name", item.name );
+					$( "input.x_output_input", t ).prop( 'checked', item.enable );
+
+					m_output.before( t );
+					t.show();
 				}
 			}
 
 			$( ".x_aux_in_add, .x_bt_in_add" ).click(
 				function()
 				{
-					var id = $( this ).data( "x_aux_id" );
-
 					var url  = $( this ).data( "x_aux_url" );
 					var name = $( this ).data( "x_aux_name" );
 
@@ -1379,6 +1401,28 @@ function()
 									}
 								}
 							);
+					}
+				}
+			);
+
+			$( "input.x_output_input" ).change(
+				function ()
+				{
+					var url  	= $( this ).data( "x_aux_url" );
+					var name 	= $( this ).data( "x_aux_name" );
+					var sw 		= $(this).prop( 'checked' );
+
+					if( url != "" )
+					{
+						$.getJSON( "/output", { url : url, sw : sw } );
+
+						setTimeout(
+							function()
+							{
+								disable_io_list_update = false;
+							}
+						, 	3000
+						);
 					}
 				}
 			);

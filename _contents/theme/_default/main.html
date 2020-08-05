@@ -183,56 +183,84 @@ a.carousel-control-prev, a.carousel-control-next
 
     <div class="pos-f-t">
 
-        <div class="collapse" id="navbarToggleExternalContent">
+        <div class="collapse " id="navbarToggleExternalContent">
             <div class="bg-dark text-white px-4 py-2">
-                <h6 class="mt-4">Other music source</h6>
 
-                <div class="input-group input-group-sm my-2">
+                <h6 class="mt-2">Other music source</h6>
+                <div class="container-fluid">
 
-                    <div class="input-group-prepend">
-                        <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">URL</button>
+                    <div class="input-group input-group-sm my-2">
 
-                        <div class="dropdown-menu x_url_list">
-                            <a class="dropdown-item" href="#"></a>
+                        <div class="input-group-prepend">
+                            <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">URL</button>
+
+                            <div class="dropdown-menu x_url_list">
+                                <a class="dropdown-item" href="#"></a>
+                            </div>
+                        </div>
+
+                        <input type="text" class="form-control x_url" >
+
+                        <div class="input-group-append">
+                            <button class="btn btn-primary x_url_add" type="button">Add</button>
                         </div>
                     </div>
 
-                    <input type="text" class="form-control x_url" >
+                    <div class="alert alert-danger alert-dismissible fade show x_url_add_err_m" role="alert" >
+                        <strong>Error </strong>Could not add this URL. <strong>[<span class="x_url_add_err_url"></span>]</strong> [<span class="x_url_add_err_msg"></span>]
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
 
-                    <div class="input-group-append">
-                        <button class="btn btn-primary x_url_add" type="button">Add</button>
+                    <div>
+                        <button class="btn btn-primary btn-sm mr-2 mb-1 x_aux_in_add_m"  type="button">AUX-IN</button>
+                        <button class="btn btn-primary btn-sm mr-2 mb-1 x_bt_in_add_m"   type="button">BT-IN</button>
+                        <button class="btn btn-primary btn-sm mr-2 mb-1 x_testsound_add" type="button">Test Sound</button>
                     </div>
                 </div>
 
-                <div class="alert alert-danger alert-dismissible fade show x_url_add_err_m" role="alert" >
-                    <strong>Error </strong>Could not add this URL. <strong>[<span class="x_url_add_err_url"></span>]</strong> [<span class="x_url_add_err_msg"></span>]
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
+                <h6 class="mt-2">Outputs</h6>
+                <div class="container-fluid d-flex flex-row flex-wrap">
 
-                <div>
-                    <button class="btn btn-primary btn-sm mr-2 mb-2 x_aux_in_add_m"  type="button">AUX-IN</button>
-                    <button class="btn btn-primary btn-sm mr-2 mb-2 x_bt_in_add_m"   type="button">BT-IN</button>
-                    <button class="btn btn-primary btn-sm mr-2 mb-2 x_testsound_add" type="button">Test Sound</button>
-                </div>
-
-                <h6 class="mt-4">Change Theme</h6>
-
-                <div class="input-group input-group-sm">
-
-                    <div class="input-group-prepend">
-                        <label class="input-group-text" for="x_st_theme">Theme</label>
+                    <div class="input-group input-group-sm flex-nowrap w-auto mr-1 mb-1 x_output_m" >
+                        <div class="input-group-prepend">
+                            <label class="input-group-text" style="width:18em;">
+                                <span class="x_output_type"></span>
+                                <span class="mx-1">:</span>
+                                <span class="x_output_name font-weight-bold"></span>
+                            </label>
+                        </div>
+                        <div class="input-group-append">
+                            <div class="input-group-text bg-white " >
+                                <div class="custom-control custom-switch mx-2">
+                                    <input type="checkbox" class="custom-control-input shadow x_output_input" id="x_output_input" >
+                                    <label class="custom-control-label x_output_input" for="x_output_input"></label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <select class="custom-select x_st_themes" id="x_st_themes">
-                        <option value="_default" >Default</option>
-                    </select>
+                </div>
 
-                    <div class="input-group-append">
-                        <button class="btn btn-primary x_st_theme_apply" type="button">Apply</button>
+                <h6 class="mt-2">Change Theme</h6>
+                <div class="container-fluid">
+
+                    <div class="input-group input-group-sm">
+
+                        <div class="input-group-prepend">
+                            <label class="input-group-text" for="x_st_theme">Theme</label>
+                        </div>
+
+                        <select class="custom-select x_st_themes" id="x_st_themes">
+                            <option value="_default" >Default</option>
+                        </select>
+
+                        <div class="input-group-append">
+                            <button class="btn btn-primary x_st_theme_apply" type="button">Apply</button>
+                        </div>
+
                     </div>
-
                 </div>
 
                 <h6 class="mt-4">Settings
