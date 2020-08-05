@@ -1197,7 +1197,20 @@ async fn main() -> std::io::Result< () >
 {
     std::env::set_var( "LIBASOUND_THREAD_SAFE", "0" );              // for bluealsa and ALSA thread-safe API (alsa-lib >= 1.1.2).
 
-    std::env::set_var( "RUST_LOG", "debug,hyper=info" );
+    if let None = std::env::var_os( "RUST_LOG" )
+    {
+        std::env::set_var(
+            "RUST_LOG"
+        ,   if cfg!(debug_assertions)
+            {
+                "debug,hyper=info"
+            }
+            else
+            {
+                "info"
+            }
+        );
+    }
 
     pretty_env_logger::init();
 
