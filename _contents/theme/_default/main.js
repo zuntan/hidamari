@@ -1311,7 +1311,7 @@ function()
 	$( ".x_bt_in_add_m" ).hide();
 	$( ".x_output_m" ).hide();
 
-	var disable_io_list_update = false;
+	var disable_io_list_update = null;
 
 	var io_list_update = function()
 	{
@@ -1414,15 +1414,17 @@ function()
 
 					if( url != "" )
 					{
-						$.getJSON( "/set_output", { url : url, sw : sw } );
+						if( disable_io_list_update ) { clearTimeout( disable_io_list_update ); }
 
-						setTimeout(
+						disable_io_list_update = setTimeout(
 							function()
 							{
-								disable_io_list_update = false;
+								disable_io_list_update = null;
 							}
 						, 	3000
 						);
+
+						$.getJSON( "/set_output", { url : url, sw : sw } );
 					}
 				}
 			);

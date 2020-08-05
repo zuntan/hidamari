@@ -51,6 +51,8 @@ pub const ALSA_SINK_PROTO           : &str = "asink://";
 pub const HIDAMARI_EXT_SINK_MPD_PROTO   : &str = "^mpdsink://([0-9]+)";
 pub const HIDAMARI_EXT_SINK_ALSA_PROTO  : &str = "^asink://";
 
+pub const IGNORE_CHECK_URL          : &str =  "^([at]source|alsa|mpdsink|asink)://";
+
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
 
 pub const _HEADER_SHOUTCAST_ICY_METADATA_KEY    : &str = "icy-metadata";
@@ -63,8 +65,6 @@ pub const _HEADER_SHOUTCAST_ICY_PUB_KEY         : &str = "icy-pub";
 pub const _HEADER_SHOUTCAST_ICY_PUB_VAL         : &str = "1";
 pub const _HEADER_SHOUTCAST_ICY_DESC_KEY        : &str = "icy-description";
 
-// pub const PROTP_ALSA : &str = "alsa://";
-pub const IGNORE_CHECK_URL  : &str =  "^([at]sound|alsa)://";
 
 ///
 #[derive(Debug, Deserialize, Clone)]

@@ -82,6 +82,14 @@ fn internal_server_error( t : &str ) -> Response
 }
 
 ///
+fn bad_request( t : &str ) -> Response
+{
+    let mut r = Response::new( String::from( t ).into() );
+    *r.status_mut() = StatusCode::BAD_REQUEST;
+    r
+}
+
+///
 #[derive(Debug, Deserialize, Clone)]
 struct AsoundParam
 {
@@ -544,8 +552,8 @@ async fn cmd_response( arwlctx : context::ARWLContext, param : CmdParam ) -> Res
     Ok(
         match rx.await
         {
-            Ok(x)  => json_response( &x )
-        ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
+            Ok( x )  => json_response( &x )
+        ,   Err( x ) => internal_server_error( &format!( "{:?}", x ) )
         }
     )
 }
@@ -876,8 +884,8 @@ async fn bt_cmd_response( arwlctx : context::ARWLContext, param : BtCmdParam ) -
     Ok(
         match rx.await
         {
-            Ok(x)  => json_response( &x )
-        ,   Err(x) => internal_server_error( &format!( "{:?}", x ) )
+            Ok( x )  => json_response( &x )
+        ,   Err( x ) => internal_server_error( &format!( "{:?}", x ) )
         }
     )
 }
@@ -923,7 +931,51 @@ async fn set_output_response( arwlctx : context::ARWLContext, param : SetOutputP
 {
     log::debug!( "{:?}", &param );
 
-    Ok( json_response( "{Ok:{}}" ) )
+    lazy_static!
+    {
+        static ref RE_MPD : regex::Regex =
+            regex::Regex::new( context::HIDAMARI_EXT_SINK_MPD_PROTO ).unwrap();
+
+        static ref RE_ALSEA : regex::Regex =
+            regex::Regex::new( context::HIDAMARI_EXT_SINK_ALSA_PROTO ).unwrap();
+    }
+
+    if let Some( cap ) = RE_MPD.captures( &param.url )
+    {
+        let id = cap.get( 1 ).unwrap().as_str();
+
+        let ( mut req, rx ) = mpdcom::MpdComRequest::new();
+
+        req.req = mpdcom::MpdComRequestType::Cmd
+            (
+                format!
+                (
+                    "{} {}"
+                ,   if param.sw { "enableoutput" } else { "disableoutput" }
+                ,   mpdcom::quote_arg( id )
+                )
+            );
+
+        let _ = arwlctx.write().await.mpdcom_tx.send( req ).await;
+
+        Ok(
+            match rx.await
+            {
+                Ok( x )  => json_response( &x )
+            ,   Err( x ) => internal_server_error( &format!( "{:?}", x ) )
+            }
+        )
+    }
+    else if let Some( cap ) = RE_ALSEA.captures( &param.url )
+    {
+        let tail = &param.url[ cap.get( 0 ).unwrap().end() .. ];
+
+        Ok( json_response( "{Ok:{}}" ) )
+    }
+    else
+    {
+        Ok( bad_request( "Invalid url value" ) )
+    }
 }
 
 ///

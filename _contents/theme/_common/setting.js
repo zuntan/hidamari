@@ -341,14 +341,25 @@ function()
 
 	// bluetooth
 
-	var bt_disable_update = false;
+	var disable_bt_update = null;
 
 	var bt_command = function( cmd, aid, did, sw )
 	{
 		if( cmd == "" ){ return; }
 		sw = !!sw;
 
-		bt_disable_update = true;
+		if( disable_bt_update ) { clearTimeout( disable_bt_update ); }
+
+		if( cmd != "dev_remove" )
+		{
+			disable_bt_update = setTimeout(
+				function()
+				{
+					disable_bt_update = null;
+				}
+			, 	3000
+			);
+		}
 
 		$.getJSON( "/bt_cmd", { cmd : cmd , aid : aid, did : did, sw : sw } )
 			.done( function( json )
@@ -357,28 +368,13 @@ function()
 					update_ok( json, ".x_st_bt_cmd_ok" );
 				}
 			);
-
-		if( cmd != "dev_remove" )
-		{
-			setTimeout(
-				function()
-				{
-					bt_disable_update = false;
-				}
-			, 	3000
-			);
-		}
-		else
-		{
-			bt_disable_update = false;
-		}
 	}
 
 	$( ".x_bt_dev_z" ).hide();
 
 	var bt_status_update = function( ws )
 	{
-		if( bt_disable_update ) { return; }
+		if( disable_bt_update ) { return; }
 
 		var st = ws.ws_bt_status;
 
