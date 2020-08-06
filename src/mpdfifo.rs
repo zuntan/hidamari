@@ -16,16 +16,83 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{ AsRawFd };
 use libc;
 
-use tokio::time::{ delay_for, Duration, Instant };
-use tokio::sync::{ mpsc };
+use tokio::time::{ delay_for, timeout, Duration, Instant };
+use tokio::sync::{ mpsc, oneshot };
 
 use serde::{ Serialize, /* Deserialize */ };
 
 use chfft::CFft1D;
 use num_complex::Complex;
 
+use alsa::{ Direction, ValueOr };
+use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
+
 use crate::context;
 use crate::event;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct MpdfifoOk
+{
+}
+
+impl MpdfifoOk
+{
+    fn new() -> MpdfifoOk
+    {
+        MpdfifoOk {}
+    }
+}
+
+
+#[derive(Debug, Serialize, Clone)]
+pub struct MpdfifoErr
+{
+    pub err_code : i32
+,   pub err_msg : String
+}
+
+impl MpdfifoErr
+{
+    fn new( err_code : i32, err_msg : &str ) -> MpdfifoErr
+    {
+        MpdfifoErr{ err_code, err_msg : String::from( err_msg ) }
+    }
+}
+
+///
+pub type MpdfifoResult       = Result< MpdfifoOk, MpdfifoErr >;
+
+#[derive(Debug)]
+pub enum MpdfifoRequestType
+{
+    Nop
+,   AlsaEnable( String, bool )
+,   AlsaIsEnabled( String )
+,   Shutdown
+}
+
+///
+pub struct MpdfifoRequest
+{
+    pub req  : MpdfifoRequestType
+,   pub tx   : oneshot::Sender< MpdfifoResult >
+}
+
+impl MpdfifoRequest
+{
+    pub fn new() -> ( MpdfifoRequest, oneshot::Receiver< MpdfifoResult > )
+    {
+        let ( tx, rx ) = oneshot::channel::< MpdfifoResult >();
+
+        (
+            MpdfifoRequest{
+                req         : MpdfifoRequestType::Nop
+            ,   tx
+            }
+        ,   rx
+        )
+    }
+}
 
 #[derive(Debug, Serialize, Clone)]
 struct SpecData
@@ -84,7 +151,6 @@ fn open_fifo( fifo_name : &str ) -> io::Result< File >
     Ok( fifo )
 }
 
-
 const FIFO_ERROR_SLEEP  : Duration = Duration::from_millis( 1000 );
 const FIFO_STALL_SLEEP  : Duration = Duration::from_millis( 15 );
 const FIFO_STALL_RESET  : Duration = Duration::from_millis( 60 );
@@ -101,7 +167,7 @@ const CORRECTION_3      : f32 = 20.0;
 
 pub async fn mpdfifo_task(
     arwlctx : context::ARWLContext
-,   mut rx  : mpsc::Receiver< event::EventRequest >
+,   mut rx  : mpsc::Receiver< MpdfifoRequest >
 )
 -> io::Result< ()  >
 {
@@ -434,9 +500,38 @@ pub async fn mpdfifo_task(
 
     loop
     {
-        if event::event_shutdown( &mut rx ).await
+        match timeout( event::EVENT_WAIT_TIMEOUT, rx.recv() ).await
         {
-            break;
+            Ok( recv ) =>
+            {
+                let recv = recv.unwrap();
+
+                log::debug!( "recv [{:?}]", recv.req );
+
+                match recv.req
+                {
+                    MpdfifoRequestType::Shutdown =>
+                    {
+                        recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                        break;
+                    }
+
+                ,   MpdfifoRequestType::AlsaEnable( String, bool ) =>
+                    {
+                        recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                    }
+
+                ,   MpdfifoRequestType::AlsaIsEnabled( String ) =>
+                    {
+                        recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                    }
+
+                ,   _ => {}
+                }
+            }
+        ,   Err( _ ) =>
+            {
+            }
         }
 
         match fifo

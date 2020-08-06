@@ -26,6 +26,7 @@ use serde::{ Deserialize, Serialize };
 
 use crate::event;
 use crate::mpdcom;
+use crate::mpdfifo;
 use crate::asyncread;
 use crate::btctrl;
 
@@ -222,6 +223,8 @@ pub struct Context
 , pub   mpd_volume      : u8
 , pub   mpd_mute        : bool
 
+, pub   mpdfifo_tx      : sync::mpsc::Sender< mpdfifo::MpdfifoRequest >
+
 , pub   spec_enable     : bool
 , pub   spec_data_json  : String
 , pub   spec_head_json  : String
@@ -261,6 +264,7 @@ impl Context
         config          : Config
     ,   config_dyn      : ConfigDyn
     ,   mpdcom_tx       : sync::mpsc::Sender< mpdcom::MpdComRequest >
+    ,   mpdfifo_tx      : sync::mpsc::Sender< mpdfifo::MpdfifoRequest >
     ,   btctrl_tx       : sync::mpsc::Sender< btctrl::BtctrlRequest >
     ,   bt_agent_io_tx  : sync::mpsc::Sender< btctrl::BtctrlRepryType >
     ,   product         : &str
@@ -276,6 +280,7 @@ impl Context
         ,   mpd_status_json : String::new()
         ,   mpd_volume      : 0
         ,   mpd_mute        : false
+        ,   mpdfifo_tx
         ,   spec_enable     : false
         ,   spec_data_json  : String::new()
         ,   spec_head_json  : String::new()

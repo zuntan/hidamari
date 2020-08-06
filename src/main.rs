@@ -1227,14 +1227,15 @@ async fn main() -> std::io::Result< () >
     let bind_addr   = config.bind_addr();
     let mpd_addr    = config.mpd_addr();
 
-    let ( mpdcom_tx,    mpdcom_rx ) = sync::mpsc::channel::< mpdcom::MpdComRequest >( 128 );
-    let ( btctrl_tx,    btctrl_rx ) = sync::mpsc::channel::< btctrl::BtctrlRequest >( 128 );
-    let ( bt_agent_io_tx, bt_agent_io_rx ) = sync::mpsc::channel::< btctrl::BtctrlRepryType >( 4 );
+    let ( mpdcom_tx,        mpdcom_rx )         = sync::mpsc::channel::< mpdcom::MpdComRequest      >( 128 );
+    let ( mpdfifo_tx,       mpdfifo_rx )        = sync::mpsc::channel::< mpdfifo::MpdfifoRequest    >( 128 );
+    let ( btctrl_tx,        btctrl_rx )         = sync::mpsc::channel::< btctrl::BtctrlRequest      >( 128 );
+    let ( bt_agent_io_tx,   bt_agent_io_rx )    = sync::mpsc::channel::< btctrl::BtctrlRepryType    >( 16 );
 
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
-                context::Context::new( config, config_dyn, mpdcom_tx, btctrl_tx, bt_agent_io_tx, PKG_NAME, PKG_VERSION )
+                context::Context::new( config, config_dyn, mpdcom_tx, mpdfifo_tx, btctrl_tx, bt_agent_io_tx, PKG_NAME, PKG_VERSION )
             )
         );
 
@@ -1244,8 +1245,6 @@ async fn main() -> std::io::Result< () >
     let h_mpdcom : task::JoinHandle< _ > = task::spawn( mpdcom::mpdcom_task( arwlctx_c, mpdcom_rx ) );
 
     log::info!( "mpdfifo_task start. " );
-
-    let ( mut mpdfifo_tx,   mpdfifo_rx ) = event::make_channel();
 
     let arwlctx_c = arwlctx.clone();
     let h_mpdfifo : task::JoinHandle< _ > = task::spawn( mpdfifo::mpdfifo_task( arwlctx_c, mpdfifo_rx ) );
@@ -1338,9 +1337,9 @@ async fn main() -> std::io::Result< () >
     let _ = join!( h_btctrl );
     log::info!( "btctrl_task shutdown." );
 
-    let ( mut req, _ ) = event::new_request();
-    req.req = event::EventRequestType::Shutdown;
-    let _ = mpdfifo_tx.send( req ).await;
+    let ( mut req, _ ) = mpdfifo::MpdfifoRequest::new();
+    req.req = mpdfifo::MpdfifoRequestType::Shutdown;
+    let _ = arwlctx.write().await.mpdfifo_tx.send( req ).await;
     let _ = join!( h_mpdfifo );
     log::info!( "mpdfifo_task shutdown." );
 

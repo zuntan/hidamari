@@ -29,9 +29,7 @@ use alsa::{ Direction, ValueOr };
 use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
 
 use lame_sys;
-
-
-//  use crate::context;
+use flac_sys;
 
 #[derive(Debug)]
 pub enum ShutdownFlag
