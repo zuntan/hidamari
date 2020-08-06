@@ -105,69 +105,72 @@ struct AsoundParam
 
 async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, dev : String, param : AsoundParam  ) -> RespResult
 {
-    let aclep = asyncread::AlsaCaptureEncodeParam
+    if !arwlctx.read().await.shutdown
     {
-        a_rate      : param.a_rate
-    ,   a_channels  : param.a_channels
-    ,   a_buffer_t  : param.a_buffer_t
-    ,   a_period_t  : param.a_period_t
-    ,   lm_brate    : None
-    ,   lm_a_brate  : None
-    };
-
-    let use_lame    = false;
-
-    if use_lame
-    {
-        match asyncread::AlsaCaptureLameEncode::new( dev, aclep )
+        let aclep = asyncread::AlsaCaptureEncodeParam
         {
-            Ok( acle ) =>
+            a_rate      : param.a_rate
+        ,   a_channels  : param.a_channels
+        ,   a_buffer_t  : param.a_buffer_t
+        ,   a_period_t  : param.a_period_t
+        ,   lm_brate    : None
+        ,   lm_a_brate  : None
+        };
+
+        let use_lame    = false;
+
+        if use_lame
+        {
+            match asyncread::AlsaCaptureLameEncode::new( dev, aclep )
             {
-                let mime_type = acle.get_mime_type();
+                Ok( acle ) =>
+                {
+                    let mime_type = acle.get_mime_type();
 
-                arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
+                    arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
 
-                let stream = FramedRead::new( acle, BytesCodec::new() );
-                let body = Body::wrap_stream( stream );
-                let mut resp = Response::new( body );
+                    let stream = FramedRead::new( acle, BytesCodec::new() );
+                    let body = Body::wrap_stream( stream );
+                    let mut resp = Response::new( body );
 
-                resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
-                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
-                resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
-                resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
+                    resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+                    resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+                    resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
+                    resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
 
-                return Ok( resp );
-            }
-        ,   Err( x ) =>
-            {
-                log::error!( "asound_response error. {:?}", x );
+                    return Ok( resp );
+                }
+            ,   Err( x ) =>
+                {
+                    log::error!( "asound_response error. {:?}", x );
+                }
             }
         }
-    }
-    else
-    {
-        match asyncread::AlsaCaptureFlacEncode::new( dev, aclep )
+        else
         {
-            Ok( acle ) =>
+            match asyncread::AlsaCaptureFlacEncode::new( dev, aclep )
             {
-                let mime_type = acle.get_mime_type();
+                Ok( acle ) =>
+                {
+                    let mime_type = acle.get_mime_type();
 
-                arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
+                    arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
 
-                let stream = FramedRead::new( acle, BytesCodec::new() );
-                let body = Body::wrap_stream( stream );
-                let mut resp = Response::new( body );
+                    let stream = FramedRead::new( acle, BytesCodec::new() );
+                    let body = Body::wrap_stream( stream );
+                    let mut resp = Response::new( body );
 
-                resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
-                resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
-                resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
-                resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
+                    resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+                    resp.headers_mut().typed_insert( headers::AcceptRanges::bytes() );
+                    resp.headers_mut().typed_insert( headers::Pragma::no_cache() );
+                    resp.headers_mut().typed_insert( headers::CacheControl::new().with_no_store().with_no_cache() );
 
-                return Ok( resp );
-            }
-        ,   Err( x ) =>
-            {
-                log::error!( "asound_response error. {:?}", x );
+                    return Ok( resp );
+                }
+            ,   Err( x ) =>
+                {
+                    log::error!( "asound_response error. {:?}", x );
+                }
             }
         }
     }
@@ -1140,9 +1143,17 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( arwlctx_clone_filter() )
         .and( warp::ws() )
         .and( warp::addr::remote() )
-        .map( | arwlctx : context::ARWLContext, ws: warp::ws::Ws, addr: Option< SocketAddr > |
+        .and_then( | arwlctx : context::ARWLContext, ws: warp::ws::Ws, addr: Option< SocketAddr > |
+            async move
             {
-                ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws, addr ) )
+                if !arwlctx.read().await.shutdown
+                {
+                    Ok( ws.on_upgrade( move | ws : WebSocket | ws_response( arwlctx, ws, addr ) ) )
+                }
+                else
+                {
+                    Err( warp::reject::not_found() )
+                }
             }
         );
 
@@ -1289,11 +1300,11 @@ async fn main() -> std::io::Result< () >
 
     signal::ctrl_c().await?;
 
-    {
-        arwlctx.read().await.sdf_shutdown();
-    }
+    arwlctx.write().await.shutdown = true;
 
     log::info!( "" );
+
+    arwlctx.read().await.sdf_shutdown();
 
     {
         log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
@@ -1327,6 +1338,8 @@ async fn main() -> std::io::Result< () >
     let _ = tx.send( () );
     let _ = join!( h_server );
     log::info!( "http server shutdown." );
+
+    arwlctx.read().await.sdf_shutdown();
 
     {
         let mut ctx = arwlctx.write().await;

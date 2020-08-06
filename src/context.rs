@@ -250,6 +250,8 @@ pub struct Context
 
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 
+, pub   shutdown        : bool
+
 , pub   rng             : StdRng
 
 , pub   product         : String
@@ -301,6 +303,7 @@ impl Context
 
         ,   io_list_json    : String::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
+        ,   shutdown        : false
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
         ,   product         : String::from( product )
         ,   version         : String::from( version )

@@ -202,8 +202,29 @@ fn split_alsa_dev_param<'a>( dev_param : &'a str ) -> ( &'a str, AlsaParam )
     ( dev, param )
 }
 
-fn open_alsa( dev : &str, param : &AlsaParam ) -> io::Result< PCM >
+struct AlsaOutput
 {
+    pcm         : PCM
+,   buf         : VecDeque< i16 >
+,   buf_flag    : bool
+}
+
+pub const DEFALUT_A_BUFFER_T        : u32 = 1_000_000 / 12;
+pub const DEFALUT_A_PERIOD_T        : u32 = 1_000_000 / 60;
+pub const ALSA_INIT_BUFFERING_SIZE  : usize = 4410;
+
+fn open_alsa( dev : &str, mut param : AlsaParam ) -> io::Result< AlsaOutput >
+{
+    if param.a_buffer_t.is_none()
+    {
+        param.a_buffer_t = Some( DEFALUT_A_BUFFER_T );
+    }
+
+    if param.a_period_t.is_none()
+    {
+        param.a_period_t = Some( DEFALUT_A_PERIOD_T );
+    }
+
     match PCM::new( &dev, Direction::Playback, true )
     {
         Ok( pcm ) =>
@@ -273,7 +294,7 @@ fn open_alsa( dev : &str, param : &AlsaParam ) -> io::Result< PCM >
                 }
             }
 
-            if let Err( x ) = pcm.start()
+            if let Err( x ) = pcm.prepare()
             {
                 log::error!( "AlsaCaptureLameEncode start error. {:?}", x );
 
@@ -281,7 +302,7 @@ fn open_alsa( dev : &str, param : &AlsaParam ) -> io::Result< PCM >
             }
             else
             {
-                Ok( pcm )
+                Ok( AlsaOutput{ pcm, buf : VecDeque::new(), buf_flag : false } )
             }
         }
     ,   Err( x ) =>
@@ -627,7 +648,7 @@ pub async fn mpdfifo_task(
 
     // alsa
 
-    let mut alsa_open_devices : HashMap< String, PCM > = HashMap::new();
+    let mut alsa_open_devices : HashMap< String, AlsaOutput > = HashMap::new();
 
     log::debug!( "mpdfifo start." );
 
@@ -639,7 +660,13 @@ pub async fn mpdfifo_task(
             {
                 let recv = recv.unwrap();
 
-                log::debug!( "recv [{:?}]", recv.req );
+                if let MpdfifoRequestType::AlsaIsEnable( ref _dev_param ) = recv.req
+                {
+                }
+                else
+                {
+                    log::debug!( "recv [{:?}]", recv.req );
+                }
 
                 match recv.req
                 {
@@ -655,11 +682,11 @@ pub async fn mpdfifo_task(
 
                         if sw && !alsa_open_devices.contains_key( dev )
                         {
-                            match open_alsa( dev, &param )
+                            match open_alsa( dev, param )
                             {
-                                Ok( pcm ) =>
+                                Ok( ao ) =>
                                 {
-                                    alsa_open_devices.insert( String::from( dev ), pcm );
+                                    alsa_open_devices.insert( String::from( dev ), ao );
                                     recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
                                 }
                             ,   Err( x ) =>
@@ -751,32 +778,119 @@ pub async fn mpdfifo_task(
                             {
                                 let mut discon = Vec::<String>::new();
 
-                                for ( dev, pcm ) in alsa_open_devices.iter()
+                                for ( dev, ao ) in alsa_open_devices.iter_mut()
                                 {
-                                    if pcm.state() == alsa::pcm::State::Disconnected
-                                    {
-                                        log::warn!( "Alsa device disconnected. [{}]", dev );
-                                        discon.push( String::from( dev ) );
-                                    }
-                                    else
-                                    {
-                                        log::debug!( "pcm state. [{:?}]", pcm.state() );
+                                    let state = ao.pcm.state();
 
-                                        let io = pcm.io_i16().unwrap();
-
-                                        let n = n / 2;
-
-                                        match io.writei( &a_buf[ 0..n ] )
+                                    let buffering =
+                                        match state
                                         {
-                                            Ok( x ) if x != n / CHANNELS =>
+                                            alsa::pcm::State::Disconnected =>
                                             {
-                                                log::warn!( "Alsa device write bytes unmatch. write:{} src:{}", x, n/2 );
+                                                log::warn!( "Alsa device disconnected. [{}]", dev );
+                                                discon.push( String::from( dev ) );
+                                                false
                                             }
-                                        ,   Ok( _ ) => {}
-                                        ,   Err( x ) =>
+                                        ,   alsa::pcm::State::XRun =>
                                             {
-                                                log::warn!( "Alsa device write error. [{}]", x );
+                                                log::debug!( "state [{:?}]", state );
+
+                                                if let Ok( ( avail, delay ) ) = ao.pcm.avail_delay()
+                                                {
+                                                    log::debug!( "state [{:?}] avail:{} delay:{}", state, avail, delay );
+                                                }
+
+                                                let _ = ao.pcm.prepare();
+
+                                                ao.buf.clear();
+                                                ao.buf_flag = true;
+                                                true
                                             }
+                                        ,   alsa::pcm::State::Prepared =>
+                                            {
+                                                log::debug!( "state [{:?}]", state );
+                                                let _ = ao.pcm.start();
+                                                true
+                                            }
+
+                                        ,   alsa::pcm::State::Running =>
+                                            {
+                                                if ao.buf_flag == true && ao.buf.len() < ALSA_INIT_BUFFERING_SIZE
+                                                {
+                                                    true
+                                                }
+                                                else
+                                                {
+                                                    let io = ao.pcm.io_i16().unwrap();
+
+                                                    if ao.buf.len() != 0
+                                                    {
+                                                        log::debug!( "Alsa init buffring initbuf:{} + read:{} = {}", ao.buf.len(), n / 2, ao.buf.len() + n / 2 );
+
+                                                        let slices = ao.buf.as_slices();
+
+                                                        for slice in vec![ slices.0, slices.1 ]
+                                                        {
+                                                            let samples = slice.len();
+
+                                                            if samples != 0
+                                                            {
+                                                                match io.writei( slice )
+                                                                {
+                                                                    Ok( x ) if x != samples / CHANNELS =>
+                                                                    {
+                                                                        log::warn!( "Alsa device write bytes unmatch. write:{} src:{}", x, n/2 );
+                                                                    }
+                                                                ,   Ok( _ ) => {}
+                                                                ,   Err( x ) =>
+                                                                    {
+                                                                        log::warn!( "Alsa device write error. [{}]", x );
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        ao.buf.clear();
+                                                        ao.buf_flag = false;
+                                                    }
+
+                                                    let samples = n / 2;
+
+                                                    match io.writei( &a_buf[ 0..samples ] )
+                                                    {
+                                                        Ok( x ) if x != samples / CHANNELS =>
+                                                        {
+                                                            log::warn!( "Alsa device write bytes unmatch. write:{} src:{}", x, n/2 );
+                                                        }
+                                                    ,   Ok( _ ) => {}
+                                                    ,   Err( x ) =>
+                                                        {
+                                                            log::warn!( "Alsa device write error. [{}]", x );
+                                                        }
+                                                    }
+
+                                                    false
+                                                }
+                                            }
+                                        ,   _ =>
+                                            {
+                                                log::debug!( "state [{:?}]", state );
+                                                true
+                                            }
+                                        };
+
+                                    if buffering
+                                    {
+                                        while ao.buf.len() > F_BUF_SIZE / 2
+                                        {
+                                            ao.buf.pop_front();
+                                        }
+
+                                        let samples = n / 2;
+
+                                        for i in 0..samples
+                                        {
+                                            ao.buf.push_back( a_buf[ i ] );
                                         }
                                     }
                                 }

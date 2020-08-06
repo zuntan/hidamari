@@ -739,7 +739,6 @@ function()
 
 		if( _f )
 		{
-			volume = -1;
 			update_volume( 0 );
 		}
 	};
@@ -795,40 +794,60 @@ function()
 
 	var update_volume = function( d )
 	{
-		var volume = parseInt( $( ".x_volval" ).text() );
-		volume += d;
+		var i_volume = parseInt( $( ".x_volval" ).text() );
 
-		if( volume >= 100 ) { volume = 100; }
-		if( volume <= 0   ) { volume = 0; }
+		if( !isNaN( i_volume ) )
+		{
+			i_volume += d;
 
-		set_volume( volume, true );
+			if( i_volume >= 100 ) { i_volume = 100; }
+			if( i_volume <= 0   ) { i_volume = 0; }
 
-		return volume;
+			set_volume( i_volume, true );
+
+			return i_volume;
+		}
+		else
+		{
+			return -1;
+		}
 	}
 
 	var set_volume = function( volume, force )
 	{
 		if( !force && ( volume_timer_a != null || volume_timer_b != null ) ) { return; }
 
-		if( volume >= 100 ) { volume = 100; }
-		if( volume <= 0   ) { volume = 0; }
+		var i_volume = parseInt( volume );
 
-		$( ".x_volval" ).text( volume );
+		if( !isNaN( i_volume ) )
+		{
+			if( i_volume  >= 100 ) { i_volume = 100; }
+			if( i_volume  <= 0   ) { i_volume = 0; }
 
-		if( is_mut() || volume <= 0 )
-		{
-			$( ".x_volicon_high, .x_volicon_low" ).hide();
-			$( ".x_volicon_mut" ).show();
-		}
-		else if( volume <= 50 )
-		{
-			$( ".x_volicon_high, .x_volicon_mut" ).hide();
-			$( ".x_volicon_low" ).show();
+			$( ".x_volval" ).text( i_volume );
+
+			if( is_mut() || volume <= 0 )
+			{
+				$( ".x_volicon_high, .x_volicon_low" ).hide();
+				$( ".x_volicon_mut" ).show();
+			}
+			else if( volume <= 50 )
+			{
+				$( ".x_volicon_high, .x_volicon_mut" ).hide();
+				$( ".x_volicon_low" ).show();
+			}
+			else
+			{
+				$( ".x_volicon_low, .x_volicon_mut" ).hide();
+				$( ".x_volicon_high" ).show();
+			}
 		}
 		else
 		{
-			$( ".x_volicon_low, .x_volicon_mut" ).hide();
-			$( ".x_volicon_high" ).show();
+			$( ".x_volval" ).text( volume ? volume : "" );
+
+			$( ".x_volicon_high, .x_volicon_low" ).hide();
+			$( ".x_volicon_mut" ).show();
 		}
 	}
 
@@ -939,7 +958,7 @@ function()
 
 			$( ".x_play" ).data( "x_state", d[ 'state' ] );
 
-			set_volume( parseInt( d[ 'volume' ] ), false );
+			set_volume( d[ 'volume' ], false );
 			set_mute( d[ 'mute' ] );
 
 			if( current_songid != d[ 'songid' ] )
@@ -1254,7 +1273,12 @@ function()
 
 								if( kv[ 'Id' ] )
 								{
-									$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+									$.getJSON( "/cmd", { cmd : "stop" } )
+										.done( function( json )
+											{
+												$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+											}
+										);
 								}
 
 								$( ".x_url" ).val( "" );
@@ -1392,7 +1416,12 @@ function()
 
 										if( kv[ 'Id' ] )
 										{
-											$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+											$.getJSON( "/cmd", { cmd : "stop" } )
+												.done( function( json )
+													{
+														$.getJSON( "/cmd", { cmd : "playid", arg1 : kv[ 'Id' ] } );
+													}
+												);
 										}
 									}
 									else if( json.Err && json.Err.msg_text )

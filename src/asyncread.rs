@@ -165,8 +165,8 @@ pub struct AlsaCaptureEncodeParam
 
 pub const DEFALUT_A_RATE        : u32 = 44100;
 pub const DEFALUT_A_CHANNELS    : u8 = 2;
-pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 * 1;
-pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 40;
+pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 / 12;
+pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 60;
 pub const DEFALUT_LM_BRATE      : u32 = 192;
 
 pub const ALSA_PENDING_DELAY    : u32 = DEFALUT_A_PERIOD_T / 2;
