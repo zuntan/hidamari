@@ -29,6 +29,7 @@ use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
 
 use crate::context;
 use crate::event;
+use crate::asyncread;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdfifoOk
@@ -209,8 +210,9 @@ struct AlsaOutput
 ,   buf_flag    : bool
 }
 
-pub const DEFALUT_A_BUFFER_T        : u32 = 1_000_000 / 12;
-pub const DEFALUT_A_PERIOD_T        : u32 = 1_000_000 / 60;
+pub const DEFALUT_A_BUFFER_T        : u32 = asyncread::DEFALUT_A_BUFFER_T;
+pub const DEFALUT_A_PERIOD_T        : u32 = asyncread::DEFALUT_A_PERIOD_T;
+
 pub const ALSA_INIT_BUFFERING_SIZE  : usize = 4410;
 
 fn open_alsa( dev : &str, mut param : AlsaParam ) -> io::Result< AlsaOutput >
