@@ -8,7 +8,7 @@
 ///
 
 use std::io::{ self, Read };
-use std::collections::VecDeque;
+use std::collections::{ VecDeque, HashMap };
 use std::fs::File;
 
 use std::fs::OpenOptions;
@@ -19,7 +19,7 @@ use libc;
 use tokio::time::{ delay_for, timeout, Duration, Instant };
 use tokio::sync::{ mpsc, oneshot };
 
-use serde::{ Serialize, /* Deserialize */ };
+use serde::{ Serialize, Deserialize };
 
 use chfft::CFft1D;
 use num_complex::Complex;
@@ -33,13 +33,14 @@ use crate::event;
 #[derive(Debug, Serialize, Clone)]
 pub struct MpdfifoOk
 {
+    pub enable      : Option< bool >
 }
 
 impl MpdfifoOk
 {
     fn new() -> MpdfifoOk
     {
-        MpdfifoOk {}
+        MpdfifoOk { enable : None }
     }
 }
 
@@ -67,7 +68,7 @@ pub enum MpdfifoRequestType
 {
     Nop
 ,   AlsaEnable( String, bool )
-,   AlsaIsEnabled( String )
+,   AlsaIsEnable( String )
 ,   Shutdown
 }
 
@@ -165,6 +166,133 @@ const CORRECTION_1      : f32 = 4.0;
 const CORRECTION_2      : f32 = 10.0;
 const CORRECTION_3      : f32 = 20.0;
 
+#[derive(Debug, Deserialize, Clone)]
+struct AlsaParam
+{
+    a_buffer_t  : Option<u32>           // u sec    1 sec = 1000_000 u sec
+,   a_period_t  : Option<u32>           // u sec    1 sec = 1000_000 u sec
+}
+
+fn split_alsa_dev_param<'a>( dev_param : &'a str ) -> ( &'a str, AlsaParam )
+{
+    let dev_param =
+        if let Some( x ) = dev_param.strip_prefix( context::ALSA_SINK_PROTO )
+        {
+            x
+        }
+        else
+        {
+            dev_param
+        };
+
+    let v: Vec< &str > = dev_param.splitn( 2, "?" ).collect();
+
+    let dev = v[0];
+
+    let mut param = AlsaParam { a_buffer_t : None, a_period_t : None };
+
+    if v.len() >= 2
+    {
+        if let Ok( x ) = serde_urlencoded::from_str::< AlsaParam >( v[1] )
+        {
+            param = x;
+        }
+    }
+
+    ( dev, param )
+}
+
+fn open_alsa( dev : &str, param : &AlsaParam ) -> io::Result< PCM >
+{
+    match PCM::new( &dev, Direction::Playback, true )
+    {
+        Ok( pcm ) =>
+        {
+            {
+                let hwp = HwParams::any( &pcm ).unwrap();
+
+                if let Err( x ) = hwp.set_rate( SAMPLING_RATE as u32, ValueOr::Nearest )
+                {
+                    log::error!( "Alsa hwp.set_rate error. {:?}", x );
+                }
+
+                if let Err( x ) = hwp.set_channels( CHANNELS as u32 )
+                {
+                    log::error!( "Alsa hwp.set_channels error. {:?}", x );
+                }
+
+                if let Err( x ) = hwp.set_format( Format::s16() )
+                {
+                    log::error!( "Alsa hwp.set_format error. {:?}", x );
+                }
+
+                if let Some( x ) = param.a_buffer_t
+                {
+                    if let Err( x ) = hwp.set_buffer_time_near( x, ValueOr::Nearest )
+                    {
+                        log::error!( "Alsa hwp.set_buffer_time_near error. {:?}", x );
+                    }
+                }
+
+                if let Some( x ) = param.a_period_t
+                {
+                    if let Err( x ) = hwp.set_period_time_near( x, ValueOr::Nearest )
+                    {
+                        log::error!( "Alsa hwp.set_period_time_near error. {:?}", x );
+                    }
+                }
+
+                if let Err( x ) = hwp.set_access( Access::RWInterleaved )
+                {
+                    log::error!( "Alsa hwp.set_access error. {:?}", x );
+                }
+
+                if let Err( x ) = pcm.hw_params( &hwp )
+                {
+                    log::error!( "Alsa hw_params error. {:?}", x );
+
+                    return Err( io::Error::new( io::ErrorKind::ConnectionRefused, x ) );
+                }
+
+                if log::log_enabled!( log::Level::Debug )
+                {
+                    let rate    = hwp.get_rate().unwrap();
+                    let ch      = hwp.get_channels().unwrap();
+                    let fmt     = hwp.get_format().unwrap();
+                    let b_size  = hwp.get_buffer_size().unwrap();
+                    let p_size  = hwp.get_period_size().unwrap();
+
+                    log::debug!(
+                        "ALSA HWP rate:{:?} channels:{:?} format:{:?} buffer_time:{:?} period_time:{:?}"
+                    ,   rate
+                    ,   ch
+                    ,   fmt
+                    ,   b_size as f32 / rate as f32
+                    ,   p_size as f32 / rate as f32
+                    );
+                }
+            }
+
+            if let Err( x ) = pcm.start()
+            {
+                log::error!( "AlsaCaptureLameEncode start error. {:?}", x );
+
+                Err( io::Error::new( io::ErrorKind::ConnectionRefused, x ) )
+            }
+            else
+            {
+                Ok( pcm )
+            }
+        }
+    ,   Err( x ) =>
+        {
+            log::error!( "Alsa open error. {:?}", x );
+
+            Err( io::Error::new( io::ErrorKind::NotFound, x ) )
+        }
+    }
+}
+
 pub async fn mpdfifo_task(
     arwlctx : context::ARWLContext
 ,   mut rx  : mpsc::Receiver< MpdfifoRequest >
@@ -238,7 +366,8 @@ pub async fn mpdfifo_task(
 
     let mut fft_engine_chfft = CFft1D::<f32>::with_len( fft_buf_size );
 
-    let mut f_buf = [ 0u8 ;  F_BUF_SIZE ];
+    let mut f_buf = [ 0u8  ;  F_BUF_SIZE ];
+    let mut a_buf = [ 0i16 ;  F_BUF_SIZE / 2];
     let mut s_buf = VecDeque::< i16 >::with_capacity( fft_buf_size * 2 );
 
     let mut fft_i_l     : Vec::< Complex< f32 > > = vec![ Complex::new( 0.0, 0.0 ); fft_buf_size ];
@@ -496,6 +625,10 @@ pub async fn mpdfifo_task(
         }
     }
 
+    // alsa
+
+    let mut alsa_open_devices : HashMap< String, PCM > = HashMap::new();
+
     log::debug!( "mpdfifo start." );
 
     loop
@@ -516,14 +649,39 @@ pub async fn mpdfifo_task(
                         break;
                     }
 
-                ,   MpdfifoRequestType::AlsaEnable( String, bool ) =>
+                ,   MpdfifoRequestType::AlsaEnable( dev_param, sw ) =>
                     {
-                        recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                        let ( dev, param ) = split_alsa_dev_param( &dev_param );
+
+                        if sw && !alsa_open_devices.contains_key( dev )
+                        {
+                            match open_alsa( dev, &param )
+                            {
+                                Ok( pcm ) =>
+                                {
+                                    alsa_open_devices.insert( String::from( dev ), pcm );
+                                    recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                                }
+                            ,   Err( x ) =>
+                                {
+                                    recv.tx.send( Err( MpdfifoErr::new( -1, &format!( "Alsa open error [{:?}]", x ) ) ) ).ok();
+                                }
+                            }
+                        }
+                        else if !sw
+                        {
+                            let _ = alsa_open_devices.remove( dev );
+                            recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                        }
                     }
 
-                ,   MpdfifoRequestType::AlsaIsEnabled( String ) =>
+                ,   MpdfifoRequestType::AlsaIsEnable( dev_param ) =>
                     {
-                        recv.tx.send( Ok( MpdfifoOk::new() ) ).ok();
+                        let ( dev, _ ) = split_alsa_dev_param( &dev_param );
+
+                        let enable = Some( alsa_open_devices.contains_key( dev ) );
+
+                        recv.tx.send( Ok( MpdfifoOk{ enable } ) ).ok();
                     }
 
                 ,   _ => {}
@@ -570,15 +728,63 @@ pub async fn mpdfifo_task(
                                 fifo_stall_reset = false;
                             }
 
+                            let mut b = [ 0u8 ; 2 ];
+
+                            let do_alsa = !alsa_open_devices.is_empty();
+
                             for i in 0..n / 2
                             {
-                                let mut b = [ 0u8 ; 2 ];
-
                                 b[ 0 ] = f_buf[ i * CHANNELS ];
                                 b[ 1 ] = f_buf[ i * CHANNELS + 1 ];
 
                                 let x = i16::from_le_bytes( b );
+
+                                if do_alsa
+                                {
+                                    a_buf[ i ] = x;
+                                }
+
                                 s_buf.push_back( x );
+                            }
+
+                            if do_alsa
+                            {
+                                let mut discon = Vec::<String>::new();
+
+                                for ( dev, pcm ) in alsa_open_devices.iter()
+                                {
+                                    if pcm.state() == alsa::pcm::State::Disconnected
+                                    {
+                                        log::warn!( "Alsa device disconnected. [{}]", dev );
+                                        discon.push( String::from( dev ) );
+                                    }
+                                    else
+                                    {
+                                        log::debug!( "pcm state. [{:?}]", pcm.state() );
+
+                                        let io = pcm.io_i16().unwrap();
+
+                                        let n = n / 2;
+
+                                        match io.writei( &a_buf[ 0..n ] )
+                                        {
+                                            Ok( x ) if x != n / CHANNELS =>
+                                            {
+                                                log::warn!( "Alsa device write bytes unmatch. write:{} src:{}", x, n/2 );
+                                            }
+                                        ,   Ok( _ ) => {}
+                                        ,   Err( x ) =>
+                                            {
+                                                log::warn!( "Alsa device write error. [{}]", x );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                for dev in discon
+                                {
+                                    let _ = alsa_open_devices.remove( &dev );
+                                }
                             }
                         }
 

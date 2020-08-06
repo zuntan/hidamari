@@ -668,11 +668,6 @@ impl Context
     {
         ( String::from( &self.notice_reply_token ), self.notice_reply_token_time.elapsed() )
     }
-
-    pub fn bt_output_enabled( &self, bt_address : &str ) -> bool
-    {
-        false
-    }
 }
 
 pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >

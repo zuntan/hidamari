@@ -970,7 +970,19 @@ async fn set_output_response( arwlctx : context::ARWLContext, param : SetOutputP
     {
         let tail = &param.url[ cap.get( 0 ).unwrap().end() .. ];
 
-        Ok( json_response( "{Ok:{}}" ) )
+        let ( mut req, rx ) = mpdfifo::MpdfifoRequest::new();
+
+        req.req = mpdfifo::MpdfifoRequestType::AlsaEnable( String::from( tail ), param.sw );
+
+        let _ = arwlctx.write().await.mpdfifo_tx.send( req ).await;
+
+        Ok(
+            match rx.await
+            {
+                Ok( x )  => json_response( &x )
+            ,   Err( x ) => internal_server_error( &format!( "{:?}", x ) )
+            }
+        )
     }
     else
     {
