@@ -188,13 +188,13 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
         {
             match asyncread::AlsaCaptureFlacEncode::new( dev, aclep )
             {
-                Ok( acle ) =>
+                Ok( acfe ) =>
                 {
-                    let mime_type = acle.get_mime_type();
+                    let mime_type = acfe.get_mime_type();
 
-                    arwlctx.write().await.sdf_add( acle.get_wake_shutdown_flag() );
+                    arwlctx.write().await.sdf_add( acfe.get_wake_shutdown_flag() );
 
-                    let stream = FramedRead::new( acle, BytesCodec::new() );
+                    let stream = FramedRead::new( acfe, BytesCodec::new() );
                     let body = Body::wrap_stream( stream );
                     let mut resp = Response::new( body );
 
