@@ -1384,7 +1384,7 @@ function()
 					t.removeClass( "x_output_m" );
 					t.addClass( "x_output" );
 
-					$( ".x_output_type", t ).text( ( item.type == "MpdOut" ) ? "MPD" : "BT" );
+					$( ".x_output_type", t ).text( ( item.type == "MpdOut" | item.type == "MpdProxyStream" ) ? "MPD" : "BT" );
 					$( ".x_output_name", t ).text( item.name );
 
 					$( "input.x_output_input", t ).attr( "id",  "x_output_input_" + i );
@@ -1393,6 +1393,16 @@ function()
 					$( "input.x_output_input", t ).data( "x_out_url",  item.url );
 					$( "input.x_output_input", t ).data( "x_out_name", item.name );
 					$( "input.x_output_input", t ).prop( 'checked', item.enable );
+
+					if( item.link && item.link != "" )
+					{
+						$( "a.x_output_link", t ).attr( "href", item.link );
+						$( "a.x_output_link", t ).show();
+					}
+					else
+					{
+						$( "a.x_output_link", t ).hide();
+					}
 
 					m_output.before( t );
 					t.show();

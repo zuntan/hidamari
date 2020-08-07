@@ -52,6 +52,9 @@ pub const ALSA_SINK_PROTO           : &str = "asink://";
 pub const HIDAMARI_EXT_SINK_MPD_PROTO   : &str = "^mpdsink://([0-9]+)";
 pub const HIDAMARI_EXT_SINK_ALSA_PROTO  : &str = "^asink://";
 
+//pub const HIDAMARI_MPD_PROXY_STREAM_NAME    : &str = "Proxy Stream";
+pub const HIDAMARI_MPD_PROXY_STREAM_PATH    : &str = "/stream";
+
 pub const IGNORE_CHECK_URL          : &str =  "^([at]source|alsa|mpdsink|asink)://";
 
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
@@ -74,6 +77,7 @@ pub struct Config
     pub config_dyn          : String
 ,       bind_addr           : String
 ,       mpd_addr            : String
+,   pub mpd_httpd_url       : String
 ,       self_url_for_mpd    : String
 ,   pub mpd_protolog        : bool
 ,   pub mpd_fifo            : String

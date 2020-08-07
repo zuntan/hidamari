@@ -17,6 +17,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{ AtomicUsize, Ordering };
 use std::sync::{ Arc, Weak, Mutex };
+use std::str::FromStr;
 
 use std::os::raw::{ c_int, c_uint };
 
@@ -24,6 +25,9 @@ use tokio::fs::File;
 use tokio::io::AsyncRead;
 use tokio::time::{ delay_for, Duration /*, Instant */ };
 use tokio::task;
+
+use hyper::{ Client, Uri, Response };
+use hyper::body::{ Body, HttpBody };
 
 use alsa::{ Direction, ValueOr };
 use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
@@ -1044,5 +1048,139 @@ impl AsyncRead for AlsaCaptureFlacEncode
 
             Poll::Ready( Ok( dp ) )
         }
+    }
+}
+
+///
+pub struct HttpRedirect
+{
+    resp        : Response< Body >
+,   buf         : VecDeque< u8 >
+,   sdf         : AmShutdownFlag
+}
+
+impl GetWakeShutdownFlag for HttpRedirect
+{
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
+    {
+        Arc::downgrade( &self.sdf )
+    }
+}
+
+impl HttpRedirect
+{
+    pub async fn new( url : &str ) -> io::Result< Self >
+    {
+        match Uri::from_str( url )
+        {
+            Ok( t_url ) =>
+            {
+                let client = Client::new();
+
+                match client.get( t_url ).await
+                {
+                    Ok( resp ) =>
+                    {
+                        Ok( HttpRedirect{ resp, buf : VecDeque::new(), sdf : new_sdf() } )
+                    }
+                ,   Err( x ) =>
+                    {
+                        Err( io::Error::new( io::ErrorKind::Other, format!( "{:?} {:?}", x, url ) ) )
+                    }
+                }
+            }
+        ,   Err( x ) =>
+            {
+                Err( io::Error::new( io::ErrorKind::Other, format!( "{:?} {:?}", x, url ) ) )
+            }
+        }
+    }
+
+    pub fn get_response( &self ) -> &Response< Body >
+    {
+        &self.resp
+    }
+}
+
+unsafe impl Send for HttpRedirect {}
+
+pub const HTTPD_PENDING_DELAY: u32 = 20;        // ms
+
+///
+impl AsyncRead for HttpRedirect
+{
+    fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
+        -> Poll< std::io::Result< usize > >
+    {
+        if let ShutdownFlag::Shutdown = *self.sdf.lock().unwrap()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        if !self.buf.is_empty()
+        {
+            let len = dst.len().min( self.buf.len() );
+
+            for i in 0..len
+            {
+                dst[ i ] = self.buf.pop_front().unwrap();
+            }
+
+            return Poll::Ready( Ok( len ) )
+        }
+        else
+        {
+            match Pin::new( &mut self.resp ).poll_data( cx )
+            {
+                Poll::Ready( x ) =>
+                {
+                    match x
+                    {
+                        Some( x ) =>
+                        {
+                            match x
+                            {
+                                Ok( mut data ) =>
+                                {
+                                    let len = dst.len().min( data.len() );
+
+                                    let tail = data.split_off( len );
+
+                                    for i in 0..len
+                                    {
+                                        dst[ i ] = data[ i ];
+                                    }
+
+                                    self.buf.extend( tail );
+
+                                    return Poll::Ready( Ok( len ) )
+                                }
+                            ,   Err( x ) =>
+                                {
+                                    log::error!( "HttpRedirect error {:?}", x );
+                                }
+                            }
+                        }
+                    ,   None => {}
+                    }
+                }
+            ,   Poll::Pending  =>
+                {
+                    let waker = cx.waker().clone();
+
+                    task::spawn(
+                        async
+                        {
+                            delay_for( Duration::from_millis( HTTPD_PENDING_DELAY.into() ) ).await;
+                            waker.wake()
+                        }
+                    );
+
+                    return Poll::Pending
+                }
+            }
+        }
+
+        Poll::Ready( Ok( 0 ) )
     }
 }

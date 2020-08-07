@@ -89,6 +89,43 @@ fn bad_request( t : &str ) -> Response
     r
 }
 
+async fn proxy_stream_response( arwlctx : context::ARWLContext, _headers: HeaderMap ) -> RespResult
+{
+    if !arwlctx.read().await.shutdown
+    {
+        let url = String::from( &arwlctx.read().await.config.mpd_httpd_url );
+
+        if url.as_str() != ""
+        {
+            match asyncread::HttpRedirect::new( &url ).await
+            {
+                Ok( hr ) =>
+                {
+                    arwlctx.write().await.sdf_add( hr.get_wake_shutdown_flag() );
+
+                    let status = hr.get_response().status();
+                    let headers = hr.get_response().headers().clone();
+
+                    let stream = FramedRead::new( hr, BytesCodec::new() );
+                    let body = Body::wrap_stream( stream );
+                    let mut resp = Response::new( body );
+
+                    *resp.status_mut() = status;
+                    resp.headers_mut().extend( headers );
+
+                    return Ok( resp );
+                }
+            ,   Err( x ) =>
+                {
+                    log::error!( "proxy_stream_response error. {:?}", x );
+                }
+            }
+        }
+    }
+
+    Err( warp::reject::not_found() )
+}
+
 ///
 #[derive(Debug, Deserialize, Clone)]
 struct AsoundParam
@@ -117,7 +154,7 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
         ,   lm_a_brate  : None
         };
 
-        let use_lame    = false;
+        let use_lame = false;
 
         if use_lame
         {
@@ -1181,6 +1218,17 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( make_route_getpost::< SetOutputParam >() )
         .and_then( set_output_response );
 
+    let r_proxy_stream  =
+        warp::path!( "stream" )
+        .and( arwlctx_clone_filter() )
+        .and( warp::get() )
+        .and( warp::header::headers_cloned() )
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap | async move
+            {
+                proxy_stream_response( arwlctx, headers ).await
+            }
+        );
+
     let routes =
         r_root
         .or( r_favicon )
@@ -1198,6 +1246,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_bt_reply )
         .or( r_io_list )
         .or( r_output )
+        .or( r_proxy_stream )
         .or( r_test )
         ;
 
