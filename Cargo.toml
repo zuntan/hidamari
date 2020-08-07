@@ -13,6 +13,10 @@ keywords = [ "mpd", "music" ]
 
 # categories = [ "command-line-interface" ]
 
+[features]
+
+default = []
+
 [dependencies]
 pretty_env_logger   = "0.4.0"
 rand                = "0.7.3"
@@ -42,7 +46,7 @@ url                 = "2.1.1"
 mp3-metadata        = "0.3.3"
 alsa                = "0.4.2"
 nix                 = "0.15.0"
-lame-sys            = "0.1.2"
+lame-sys            =  { version = "0.1.2", optional = true }
 flac-sys            = "0.1.0"
 dbus                = "0.8.4"
 dbus-tokio          = "0.5.2"

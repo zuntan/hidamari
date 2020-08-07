@@ -158,6 +158,7 @@ async fn asound_response( arwlctx : context::ARWLContext, _headers: HeaderMap, d
 
         if use_lame
         {
+            #[ cfg( feature = "lame-sys" ) ]
             match asyncread::AlsaCaptureLameEncode::new( dev, aclep )
             {
                 Ok( acle ) =>

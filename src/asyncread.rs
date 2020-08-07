@@ -19,7 +19,7 @@ use std::sync::atomic::{ AtomicUsize, Ordering };
 use std::sync::{ Arc, Weak, Mutex };
 use std::str::FromStr;
 
-use std::os::raw::{ c_int, c_uint };
+use std::os::raw::c_uint;
 
 use tokio::fs::File;
 use tokio::io::AsyncRead;
@@ -32,7 +32,13 @@ use hyper::body::{ Body, HttpBody };
 use alsa::{ Direction, ValueOr };
 use alsa::pcm::{ PCM, HwParams, Format, Access /*, State */ };
 
-use lame_sys;
+#[ cfg( feature = "lame-sys" ) ]
+use
+{
+    lame_sys
+,   std::os::raw::c_int
+};
+
 use flac_sys;
 
 #[derive(Debug)]
@@ -171,6 +177,8 @@ pub const DEFALUT_A_RATE        : u32 = 44100;
 pub const DEFALUT_A_CHANNELS    : u8 = 2;
 pub const DEFALUT_A_BUFFER_T    : u32 = 1_000_000 / 2;
 pub const DEFALUT_A_PERIOD_T    : u32 = 1_000_000 / 20;
+
+#[ cfg( feature = "lame-sys" ) ]
 pub const DEFALUT_LM_BRATE      : u32 = 192;
 
 pub const ALSA_PENDING_DELAY    : u32 = DEFALUT_A_PERIOD_T / 2;
@@ -202,6 +210,7 @@ unsafe fn slice<'a, T>( raw: *const T, len : usize ) -> &'a [T]
 static ALSA_CAPTURE_ENCODE_COUNTER : AtomicUsize = AtomicUsize::new( 0 );
 
 ///
+#[ cfg( feature = "lame-sys" ) ]
 pub struct AlsaCaptureLameEncode
 {
     id          : usize
@@ -220,6 +229,7 @@ pub struct AlsaCaptureLameEncode
 ,   sdf         : AmShutdownFlag
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 impl GetWakeShutdownFlag for AlsaCaptureLameEncode
 {
     fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
@@ -228,6 +238,7 @@ impl GetWakeShutdownFlag for AlsaCaptureLameEncode
     }
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 impl GetMimeType for AlsaCaptureLameEncode
 {
     fn get_mime_type( &self ) -> mime_guess::Mime
@@ -236,6 +247,7 @@ impl GetMimeType for AlsaCaptureLameEncode
     }
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 impl fmt::Debug for AlsaCaptureLameEncode
 {
     fn fmt( &self, f: &mut fmt::Formatter<'_> ) -> fmt::Result
@@ -244,6 +256,7 @@ impl fmt::Debug for AlsaCaptureLameEncode
     }
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 impl AlsaCaptureLameEncode
 {
     pub fn new( dev : String, mut param : AlsaCaptureEncodeParam ) -> io::Result< Self >
@@ -455,6 +468,7 @@ impl AlsaCaptureLameEncode
     }
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 impl Drop for AlsaCaptureLameEncode
 {
     fn drop( &mut self )
@@ -470,9 +484,11 @@ impl Drop for AlsaCaptureLameEncode
     }
 }
 
+#[ cfg( feature = "lame-sys" ) ]
 unsafe impl Send for AlsaCaptureLameEncode {}
 
 ///
+#[ cfg( feature = "lame-sys" ) ]
 impl AsyncRead for AlsaCaptureLameEncode
 {
     fn poll_read( mut self : Pin< &mut Self >, cx : &mut Context<'_> , dst: &mut [u8] )
