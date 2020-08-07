@@ -638,11 +638,11 @@ pub async fn mpdfifo_task(
                 fifo_stall_time = Some( Instant::now() );
             }
 
-            for _ in 0..( FIFO_STALL_SLEEP.as_secs_f32() * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize
-            {
-                s_buf.pop_front();
-                s_buf.push_back( 0 );
-            }
+            let len = ( FIFO_STALL_SLEEP.as_secs_f32() * ( SAMPLING_RATE * CHANNELS ) as f32 ) as usize;
+            let lend = s_buf.len().min( len );
+
+            s_buf.drain( 0..lend );
+            s_buf.extend( std::iter::repeat( 0 ).take( len ) );
 
             delay_for( FIFO_STALL_SLEEP ).await;
         }
@@ -883,9 +883,11 @@ pub async fn mpdfifo_task(
 
                                     if buffering
                                     {
-                                        while ao.buf.len() > F_BUF_SIZE / 2
+                                        if ao.buf.len() > F_BUF_SIZE / 2
                                         {
-                                            ao.buf.pop_front();
+                                            let len = ao.buf.len() - F_BUF_SIZE / 2;
+
+                                            ao.buf.drain( 0..len );
                                         }
 
                                         let samples = n / 2;
@@ -906,9 +908,11 @@ pub async fn mpdfifo_task(
 
                         if s_buf.len() > fft_buf_size * CHANNELS + s_buf_delay_size
                         {
-                            while s_buf.len() > fft_buf_size * CHANNELS + s_buf_delay_size
+                            if s_buf.len() > fft_buf_size * CHANNELS + s_buf_delay_size
                             {
-                                s_buf.pop_front();
+                                let len = s_buf.len() - fft_buf_size * CHANNELS + s_buf_delay_size;
+
+                                s_buf.drain( 0..len );
                             }
 
                             {
@@ -941,10 +945,7 @@ pub async fn mpdfifo_task(
                                 spd.peak_r = ( peak_r.sqrt().log10() * 20.0 * CORRECTION_3 ).min( 1000.0 ).max( 0.0 ) as u32;
                             }
 
-                            for _ in 0.. fft_buf_slide_size * CHANNELS
-                            {
-                                s_buf.pop_front();
-                            }
+                            s_buf.drain( 0..fft_buf_slide_size * CHANNELS );
 
                             let fft_o_l = fft_engine_chfft.forward( fft_i_l.as_slice() );
                             let fft_o_r = fft_engine_chfft.forward( fft_i_r.as_slice() );
