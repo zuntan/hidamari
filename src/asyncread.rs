@@ -641,16 +641,17 @@ impl AsyncRead for AlsaCaptureLameEncode
         }
         else
         {
-            let     dl = dst.len();
-            let mut dp = 0;
-
-            while dp < dl && !self.buf.is_empty()
+            unsafe
             {
-                dst[ dp ] = self.buf.pop_front().unwrap();
-                dp += 1;
-            }
+                let len = dst.len().min( (*self.buf_ptr).len() );
 
-            Poll::Ready( Ok( dp ) )
+                for ( i, x ) in (*self.buf_ptr).drain( ..len ).enumerate()
+                {
+                    dst[ i ] = x;
+                }
+
+                Poll::Ready( Ok( len ) )
+            }
         }
     }
 }
@@ -1049,20 +1050,17 @@ impl AsyncRead for AlsaCaptureFlacEncode
         }
         else
         {
-//          log::debug!( "buf:{:?}", unsafe{ (*self.buf_ptr).len() } );
-
-            let     dl = dst.len();
-            let mut dp = 0;
-
-            while dp < dl && ! unsafe{ (*self.buf_ptr).is_empty() }
+            unsafe
             {
-                dst[ dp ] = unsafe{ (*self.buf_ptr).pop_front().unwrap() };
-                dp += 1;
+                let len = dst.len().min( (*self.buf_ptr).len() );
+
+                for ( i, x ) in (*self.buf_ptr).drain( ..len ).enumerate()
+                {
+                    dst[ i ] = x;
+                }
+
+                Poll::Ready( Ok( len ) )
             }
-
-//          log::debug!( "buf:{:?}", unsafe{ (*self.buf_ptr).len() } );
-
-            Poll::Ready( Ok( dp ) )
         }
     }
 }
@@ -1137,9 +1135,9 @@ impl AsyncRead for HttpRedirect
         {
             let len = dst.len().min( self.buf.len() );
 
-            for i in 0..len
+            for ( i, x ) in self.buf.drain( ..len ).enumerate()
             {
-                dst[ i ] = self.buf.pop_front().unwrap();
+                dst[ i ] = x;
             }
 
             return Poll::Ready( Ok( len ) )
@@ -1162,10 +1160,7 @@ impl AsyncRead for HttpRedirect
 
                                     let tail = data.split_off( len );
 
-                                    for i in 0..len
-                                    {
-                                        dst[ i ] = data[ i ];
-                                    }
+                                    dst[..len].copy_from_slice( &data[..len] );
 
                                     self.buf.extend( tail );
 
