@@ -382,47 +382,49 @@ enum FileResponse
 ///
 async fn theme_file_response( arwlctx : context::ARWLContext, headers: HeaderMap, target_path : FileResponse ) -> RespResult
 {
-    let mut path_base = match target_path
-    {
-        FileResponse::Main | FileResponse::Favicon | FileResponse::Theme(_) =>
+    let mut path_base =
+        match target_path
         {
-            arwlctx.read().await.get_theme_path()
-        }
-    ,   FileResponse::Common(_) => { arwlctx.read().await.get_common_path() }
-    ,   FileResponse::Tsound(_) => { arwlctx.read().await.get_tsound_path()  }
-    };
+            FileResponse::Main | FileResponse::Favicon | FileResponse::Theme(_) =>
+            {
+                arwlctx.read().await.get_theme_path()
+            }
+        ,   FileResponse::Common(_) => { arwlctx.read().await.get_common_path() }
+        ,   FileResponse::Tsound(_) => { arwlctx.read().await.get_tsound_path()  }
+        };
 
-    let do_unshift = match target_path
-    {
-        FileResponse::Main | FileResponse::Favicon  => { false }
-    ,   _                                           => { true }
-    };
-
-
-    let path = match target_path
-    {
-        FileResponse::Main      => { String::from( context::THEME_MAIN ) }
-    ,   FileResponse::Favicon   => { String::from( context::THEME_FAVICON_ICO ) }
-    ,   FileResponse::Common(x) => { x }
-    ,   FileResponse::Theme(x)  => { x }
-    ,   FileResponse::Tsound(x) => { x }
-    };
+    let do_unshift =
+        match target_path
+        {
+            FileResponse::Main | FileResponse::Favicon  => { false }
+        ,   _                                           => { true }
+        };
 
     let path =
-    {
-        if do_unshift
+        match target_path
         {
-            path.split( '/' )
-                .skip( 2 )
-                .map( |x| x.to_string() )
-                .collect::< Vec< String > >()
-                .join( "/" )
-        }
-        else
+            FileResponse::Main      => { String::from( context::THEME_MAIN ) }
+        ,   FileResponse::Favicon   => { String::from( context::THEME_FAVICON_ICO ) }
+        ,   FileResponse::Common(x) => { x }
+        ,   FileResponse::Theme(x)  => { x }
+        ,   FileResponse::Tsound(x) => { x }
+        };
+
+    let path =
         {
-            path
-        }
-    };
+            if do_unshift
+            {
+                path.split( '/' )
+                    .skip( 2 )
+                    .map( |x| x.to_string() )
+                    .collect::< Vec< String > >()
+                    .join( "/" )
+            }
+            else
+            {
+                path
+            }
+        };
 
     match check_path( &path )
     {
@@ -466,6 +468,7 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+
             ,   "setmute" =>
                 {
                     if self.arg1.is_some()
@@ -477,6 +480,7 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+
             ,   "addurl" =>
                 {
                     if self.arg1.is_some()
@@ -500,6 +504,7 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+
             ,   "addauxin" =>
                 {
                     if self.arg1.is_some()
@@ -523,14 +528,17 @@ impl CmdParam
                         mpdcom::MpdComRequestType::Nop
                     }
                 }
+
             ,   "testsound" =>
                 {
                     mpdcom::MpdComRequestType::TestSound
                 }
+
             ,   "" =>
                 {
                     mpdcom::MpdComRequestType::Nop
                 }
+
             ,   _ =>
                 {
                     if self.arg1.is_some()
@@ -621,7 +629,7 @@ async fn spec_data_response( arwlctx : context::ARWLContext ) -> StrResult
 #[derive(Debug, Deserialize, Clone)]
 struct ConfigParam
 {
-    update : Option<String>
+    update : Option< String >
 }
 
 ///
@@ -643,7 +651,6 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
     }
 
     let ctx = arwlctx.read().await;
-
 
     Ok( json_response( &context::ConfigDynOutputResult::Ok( ctx.make_config_dyn_output() ) ) )
 }

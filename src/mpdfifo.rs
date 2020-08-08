@@ -885,8 +885,7 @@ pub async fn mpdfifo_task(
                                     {
                                         if ao.buf.len() > F_BUF_SIZE / 2
                                         {
-                                            let len = ao.buf.len() - F_BUF_SIZE / 2;
-
+                                            let len = ao.buf.len() - ( F_BUF_SIZE / 2 );
                                             ao.buf.drain( 0..len );
                                         }
 
@@ -908,12 +907,9 @@ pub async fn mpdfifo_task(
 
                         if s_buf.len() > fft_buf_size * CHANNELS + s_buf_delay_size
                         {
-                            if s_buf.len() > fft_buf_size * CHANNELS + s_buf_delay_size
-                            {
-                                let len = s_buf.len() - fft_buf_size * CHANNELS + s_buf_delay_size;
+                            let len = s_buf.len() - ( fft_buf_size * CHANNELS + s_buf_delay_size );
 
-                                s_buf.drain( 0..len );
-                            }
+                            s_buf.drain( 0..len );
 
                             {
                                 let mut s_buf_iter = s_buf.iter();
