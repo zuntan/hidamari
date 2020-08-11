@@ -49,6 +49,7 @@ mod asyncread;
 mod bt;
 mod btctrl;
 mod iolist;
+mod albumart;
 
 use crate::asyncread::GetWakeShutdownFlag;
 use crate::asyncread::GetMimeType;
@@ -87,6 +88,36 @@ fn bad_request( t : &str ) -> Response
     let mut r = Response::new( String::from( t ).into() );
     *r.status_mut() = StatusCode::BAD_REQUEST;
     r
+}
+
+async fn album_art_response( arwlctx : context::ARWLContext, headers: HeaderMap, path : String ) -> RespResult
+{
+    if !arwlctx.read().await.shutdown
+    {
+        let path =
+            path.split( '/' )
+                .skip( 2 )
+                .map( |x| x.to_string() )
+                .collect::< Vec< String > >()
+                .join( "/" )
+                ;
+
+        match albumart::get_albumart( arwlctx.clone(), &path ).await
+        {
+            albumart::AlbumartResult::BadRequest =>
+            {
+                return Ok( bad_request( "Invalid path" ) )
+            }
+
+        ,   albumart::AlbumartResult::Binary( mime, bytes ) =>
+            {
+            }
+
+        ,   _ => { /* nop */ }
+        };
+    }
+
+    Err( warp::reject::not_found() )
 }
 
 async fn proxy_stream_response( arwlctx : context::ARWLContext, _headers: HeaderMap ) -> RespResult
@@ -1237,6 +1268,18 @@ async fn make_route( arwlctx : context::ARWLContext )
             }
         );
 
+    let r_album_art  =
+        warp::path!( "album_art" / .. )
+        .and( arwlctx_clone_filter() )
+        .and( warp::get() )
+        .and( warp::header::headers_cloned() )
+        .and( warp::path::full() )
+        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
+            {
+                album_art_response( arwlctx, headers, String::from( path.as_str() ) ).await
+            }
+        );
+
     let routes =
         r_root
         .or( r_favicon )
@@ -1255,6 +1298,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_io_list )
         .or( r_output )
         .or( r_proxy_stream )
+        .or( r_album_art )
         .or( r_test )
         ;
 
