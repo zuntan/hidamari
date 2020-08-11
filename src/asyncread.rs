@@ -1195,3 +1195,55 @@ impl AsyncRead for HttpRedirect
         Poll::Ready( Ok( 0 ) )
     }
 }
+
+///
+pub struct Bytes
+{
+    bytes       : Arc< Vec< u8 > >
+,   pos         : usize
+,   sdf         : AmShutdownFlag
+}
+
+impl GetWakeShutdownFlag for Bytes
+{
+    fn get_wake_shutdown_flag( &self ) -> WmShutdownFlag
+    {
+        Arc::downgrade( &self.sdf )
+    }
+}
+
+impl Bytes
+{
+    pub fn new( bytes : Arc< Vec< u8 > > ) -> Self
+    {
+        Self{ bytes, pos : 0, sdf : new_sdf() }
+    }
+}
+
+unsafe impl Send for Bytes {}
+
+///
+impl AsyncRead for Bytes
+{
+    fn poll_read( mut self : Pin< &mut Self >, _cx : &mut Context<'_> , dst: &mut [u8] )
+        -> Poll< std::io::Result< usize > >
+    {
+        if let ShutdownFlag::Shutdown = *self.sdf.lock().unwrap()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        if self.pos >= self.bytes.len()
+        {
+            return Poll::Ready( Ok( 0 ) );
+        }
+
+        let len = dst.len().min( self.bytes.len() - self.pos );
+
+        dst[..len].copy_from_slice( &self.bytes[ self.pos..self.pos + len ] );
+
+        self.pos += len;
+
+        Poll::Ready( Ok( len ) )
+    }
+}

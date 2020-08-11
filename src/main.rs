@@ -34,6 +34,7 @@ use futures::{ StreamExt, SinkExt };
 use warp::{ Filter, http::HeaderMap, filters, reply::Reply, reply::Response, reject::Rejection, hyper::Body };
 
 use headers::HeaderMapExt;
+use headers::LastModified;
 
 use warp::http::header;
 use warp::http::StatusCode;
@@ -109,8 +110,19 @@ async fn album_art_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                 return Ok( bad_request( "Invalid path" ) )
             }
 
-        ,   albumart::AlbumartResult::Binary( mime, bytes ) =>
+        ,   albumart::AlbumartResult::Binary( mime_type, bytes, inst ) =>
             {
+                let b = asyncread::Bytes::new( bytes );
+
+                arwlctx.write().await.sdf_add( b.get_wake_shutdown_flag() );
+
+                let stream = FramedRead::new( b, BytesCodec::new() );
+                let body = Body::wrap_stream( stream );
+                let mut resp = Response::new( body );
+
+                resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+
+                return Ok( resp );
             }
 
         ,   _ => { /* nop */ }
