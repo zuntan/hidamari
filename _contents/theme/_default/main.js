@@ -186,14 +186,14 @@ function()
 								$( ".x_liblist_file_item_title_2", file_item ).text( kv[ '_title_2' ] );
 								$( ".x_liblist_file_item_time",    file_item ).text( kv[ '_time' ] );
 
-								$( ".x_liblist_file_item_add",  file_item ).click( f_add( file_item, kv[ '_name' ], false ) );
-								$( ".x_liblist_file_item_play", file_item ).click( f_add( file_item, kv[ '_name' ], true ) );
+								$( ".x_liblist_file_item_add",  file_item ).click( f_add( file_item, kv[ '_file' ], false ) );
+								$( ".x_liblist_file_item_play", file_item ).click( f_add( file_item, kv[ '_file' ], true ) );
 
 
 								var item_desc = $( ".x_liblist_file_item_desc", file_item );
 
-								item_desc.data( "x_name", kv[ '_name' ] );
-								item_desc.click( function() { show_description( $(this).data( "x_name" ), false ); } );
+								item_desc.data( "x_file", kv[ '_file' ] );
+								item_desc.click( function() { show_description( $(this).data( "x_file" ), false ); } );
 
 								items.push( file_item );
 
@@ -1080,6 +1080,7 @@ function()
 								tr.show();
 							}
 
+							/*
 							$.getJSON( "/cmd", { cmd : "readpicture", arg1 : _n, arg2 : 0 } )
 								.done( function( json )
 									{
@@ -1088,6 +1089,20 @@ function()
 										}
 									}
 								);
+							*/
+
+							var img = $( new Image() );
+
+							img.on( "load", function()
+								{
+									var src = $( this ).attr( "src" );
+									$( ".x_arbumart", m ).attr( "src", src  );
+									$( ".x_arbumart", m 		).removeClass( "d-none" );
+									$( ".x_arbumart_default", m ).addClass( "d-none" );
+								}
+							);
+
+							img.attr( 'src', "/albumart/" + kv[ '_file' ] );
 
 							$('#x_item_desc').modal();
 						}

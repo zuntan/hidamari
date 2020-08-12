@@ -34,7 +34,6 @@ use futures::{ StreamExt, SinkExt };
 use warp::{ Filter, http::HeaderMap, filters, reply::Reply, reply::Response, reject::Rejection, hyper::Body };
 
 use headers::HeaderMapExt;
-use headers::LastModified;
 
 use warp::http::header;
 use warp::http::StatusCode;
@@ -51,6 +50,7 @@ mod bt;
 mod btctrl;
 mod iolist;
 mod albumart;
+mod utils;
 
 use crate::asyncread::GetWakeShutdownFlag;
 use crate::asyncread::GetMimeType;
@@ -91,7 +91,15 @@ fn bad_request( t : &str ) -> Response
     r
 }
 
-async fn album_art_response( arwlctx : context::ARWLContext, headers: HeaderMap, path : String ) -> RespResult
+///
+fn not_modefied() -> Response
+{
+    let mut r = Response::new( "".into() );
+    *r.status_mut() = StatusCode::NOT_MODIFIED;
+    r
+}
+
+async fn albumart_response( arwlctx : context::ARWLContext, arwlaactx : albumart::ARWLAlbumartContext, headers: HeaderMap, path : String ) -> RespResult
 {
     if !arwlctx.read().await.shutdown
     {
@@ -103,15 +111,32 @@ async fn album_art_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                 .join( "/" )
                 ;
 
-        match albumart::get_albumart( arwlctx.clone(), &path ).await
+        log::debug!( "albumart request {:?}", path );
+
+        match albumart::get_albumart( arwlaactx, &path ).await
         {
             albumart::AlbumartResult::BadRequest =>
             {
+                log::debug!( "albumart response bad request" );
+
                 return Ok( bad_request( "Invalid path" ) )
             }
 
-        ,   albumart::AlbumartResult::Binary( mime_type, bytes, inst ) =>
+        ,   albumart::AlbumartResult::Binary( mime_type, utc, bytes ) =>
             {
+                log::debug!( "albumart response binary" );
+
+                if let Some( ims ) = headers.typed_get::< headers::IfModifiedSince >()
+                {
+                    let ts : std::time::SystemTime =  utc.into();
+
+                    if !ims.is_modified( ts )
+                    {
+                        return Ok( not_modefied() );
+                    }
+                }
+
+                let l = bytes.len();
                 let b = asyncread::Bytes::new( bytes );
 
                 arwlctx.write().await.sdf_add( b.get_wake_shutdown_flag() );
@@ -121,11 +146,18 @@ async fn album_art_response( arwlctx : context::ARWLContext, headers: HeaderMap,
                 let mut resp = Response::new( body );
 
                 resp.headers_mut().typed_insert( headers::ContentType::from( mime_type ) );
+                resp.headers_mut().typed_insert( headers::ContentLength( l as u64 ) );
+
+                let ts : std::time::SystemTime =  utc.into();
+                resp.headers_mut().typed_insert( headers::LastModified::from( ts ) );
 
                 return Ok( resp );
             }
 
-        ,   _ => { /* nop */ }
+        ,   _ =>
+            {
+                log::debug!( "albumart response nop" );
+            }
         };
     }
 
@@ -1108,7 +1140,7 @@ fn make_route_getpost< T : DeserializeOwned + Send + 'static >()
 }
 
 ///
-async fn make_route( arwlctx : context::ARWLContext )
+async fn make_route( arwlctx : context::ARWLContext, arwlaactx : albumart::ARWLAlbumartContext )
     -> filters::BoxedFilter< ( impl Reply, ) >
 {
     let product = String::from( &arwlctx.read().await.product );
@@ -1118,6 +1150,12 @@ async fn make_route( arwlctx : context::ARWLContext )
         {
             let x_arwlctx = arwlctx.clone();
             warp::any().map( move || x_arwlctx.clone() )
+        };
+
+    let arwlaactx_clone_filter = move ||
+        {
+            let x_arwlaactx = arwlaactx.clone();
+            warp::any().map( move || x_arwlaactx.clone() )
         };
 
     let r_root =
@@ -1150,7 +1188,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( warp::path::full() )
         .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, headers, FileResponse::Common( String::from( path.as_str() ) ) ).await
+                theme_file_response( arwlctx, headers, FileResponse::Common( utils::url_decode_utf8( path.as_str() ) ) ).await
             }
         );
 
@@ -1162,7 +1200,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( warp::path::full() )
         .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, headers, FileResponse::Theme( String::from( path.as_str() ) ) ).await
+                theme_file_response( arwlctx, headers, FileResponse::Theme( utils::url_decode_utf8( path.as_str() ) ) ).await
             }
         );
 
@@ -1174,7 +1212,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .and( warp::path::full() )
         .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                theme_file_response( arwlctx, headers, FileResponse::Tsound( String::from( path.as_str() ) ) ).await
+                theme_file_response( arwlctx, headers, FileResponse::Tsound( utils::url_decode_utf8( path.as_str() ) ) ).await
             }
         );
 
@@ -1280,15 +1318,16 @@ async fn make_route( arwlctx : context::ARWLContext )
             }
         );
 
-    let r_album_art  =
-        warp::path!( "album_art" / .. )
+    let r_albumart  =
+        warp::path!( "albumart" / .. )
         .and( arwlctx_clone_filter() )
+        .and( arwlaactx_clone_filter() )
         .and( warp::get() )
         .and( warp::header::headers_cloned() )
         .and( warp::path::full() )
-        .and_then( | arwlctx : context::ARWLContext, headers: HeaderMap, path : warp::path::FullPath | async move
+        .and_then( | arwlctx : context::ARWLContext, arwlaactx : albumart::ARWLAlbumartContext, headers: HeaderMap, path : warp::path::FullPath | async move
             {
-                album_art_response( arwlctx, headers, String::from( path.as_str() ) ).await
+                albumart_response( arwlctx, arwlaactx, headers, utils::url_decode_utf8( path.as_str() ) ).await
             }
         );
 
@@ -1310,7 +1349,7 @@ async fn make_route( arwlctx : context::ARWLContext )
         .or( r_io_list )
         .or( r_output )
         .or( r_proxy_stream )
-        .or( r_album_art )
+        .or( r_albumart )
         .or( r_test )
         ;
 
@@ -1368,6 +1407,13 @@ async fn main() -> std::io::Result< () >
     let ( btctrl_tx,        btctrl_rx )         = sync::mpsc::channel::< btctrl::BtctrlRequest      >( 128 );
     let ( bt_agent_io_tx,   bt_agent_io_rx )    = sync::mpsc::channel::< btctrl::BtctrlRepryType    >( 16 );
 
+    let arwlaactx =
+        Arc::new(
+            sync::RwLock::new(
+                albumart::AlbumartContext::new( config.albumart_upnp, &config.albumart_localdir )
+            )
+        );
+
     let arwlctx =
         Arc::new(
             sync::RwLock::new(
@@ -1393,12 +1439,17 @@ async fn main() -> std::io::Result< () >
     let arwlctx_c = arwlctx.clone();
     let h_iolist : task::JoinHandle< _ > = task::spawn( iolist::iolist_task( arwlctx_c, iolist_rx ) );
 
+    let ( mut albumart_tx,  albumart_rx ) = event::make_channel();
+
+    let arwlaactx_c = arwlaactx.clone();
+    let h_albumart : task::JoinHandle< _ > = task::spawn( albumart::albumart_task( arwlaactx_c, albumart_rx ) );
+
     log::debug!( "http server init." );
 
     let ( tx, rx ) = sync::oneshot::channel();
 
     let ( addr, server ) =
-        warp::serve( make_route( arwlctx.clone() ).await )
+        warp::serve( make_route( arwlctx.clone(), arwlaactx.clone() ).await )
         .bind_with_graceful_shutdown(
             bind_addr
         ,   async
@@ -1462,6 +1513,12 @@ async fn main() -> std::io::Result< () >
             let _ = ctx.bt_agent_io_tx.send( btctrl::BtctrlRepryType::Shutdown ).await;
         }
     }
+
+    let ( mut req, _ ) = event::new_request();
+    req.req = event::EventRequestType::Shutdown;
+    let _ = albumart_tx.send( req ).await;
+    let _ = join!( h_albumart );
+    log::info!( "albumart_task shutdown." );
 
     let ( mut req, _ ) = event::new_request();
     req.req = event::EventRequestType::Shutdown;

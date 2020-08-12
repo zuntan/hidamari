@@ -29,7 +29,6 @@ use crate::mpdcom;
 use crate::mpdfifo;
 use crate::asyncread;
 use crate::btctrl;
-use crate::albumart;
 
 pub const CONTENTS_DIR      : &str = "_contents";
 pub const THEME_DIR         : &str = "theme";
@@ -254,7 +253,6 @@ pub struct Context
 , pub   bt_agent_io_tx          : sync::mpsc::Sender< btctrl::BtctrlRepryType >
 
 , pub   io_list_json    : String
-, pub   albumart_ctx    : albumart::AlbumartContext
 , pub   sdf_list        : Vec< asyncread::WmShutdownFlag >
 , pub   shutdown        : bool
 , pub   rng             : StdRng
@@ -262,6 +260,9 @@ pub struct Context
 , pub   product         : String
 , pub   version         : String
 }
+
+///
+pub type ARWLContext = Arc< sync::RwLock< Context > >;
 
 pub type UrlTitleList = Vec< ( String, String ) >;
 
@@ -307,7 +308,6 @@ impl Context
         ,   bt_agent_io_tx
 
         ,   io_list_json    : String::new()
-        ,   albumart_ctx    : albumart::AlbumartContext::new()
         ,   sdf_list        : Vec::< asyncread::WmShutdownFlag >::new()
         ,   shutdown        : false
         ,   rng             : SeedableRng::from_rng( thread_rng() ).unwrap()
@@ -733,9 +733,6 @@ pub fn make_uniq_list( list : &Vec< String > ) -> Vec< String >
 
     ret
 }
-
-///
-pub type ARWLContext = Arc< sync::RwLock< Context > >;
 
 ///
 pub fn get_config() -> Option< Config >

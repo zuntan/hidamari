@@ -314,7 +314,7 @@ function()
 
 						kv[ '_pos'   ] = parseInt( kv[ 'Pos' ] );
 						kv[ '_id'    ] = kv[ 'Id' ];
-						kv[ '_name'  ] = v;
+						kv[ '_file'  ] = v;
 					}
 
 					kv[ '_path' ] = v;

@@ -1,3 +1,11 @@
+//  vim:set ts=4 sw=4 sts=0 fileencoding=utf-8:
+//  ----------------------------------------------------------------------------
+/*
+    @author     zuntan
+*/
+
+///
+///
 
 use std::io;
 
@@ -227,7 +235,7 @@ pub async fn iolist_task(
     arwlctx : context::ARWLContext
 ,   mut rx  : mpsc::Receiver< event::EventRequest >
 )
--> io::Result< ()  >
+-> io::Result< () >
 {
     log::debug!( "iolist start." );
 
@@ -235,7 +243,7 @@ pub async fn iolist_task(
 
     interval.tick().await;
 
-    let mut tm = Instant::now();
+    let mut tm = Instant::now() - EXEC_SPAN;
 
     loop
     {
@@ -244,7 +252,7 @@ pub async fn iolist_task(
             break;
         }
 
-        if tm.elapsed() > EXEC_SPAN
+        if tm.elapsed() >= EXEC_SPAN
         {
             if let Ok( x ) = serde_json::to_string( &io_list_result( arwlctx.clone() ).await )
             {

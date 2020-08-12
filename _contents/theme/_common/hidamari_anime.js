@@ -9,6 +9,24 @@ function()
 			var play	= false;
 			var title	= "";
 
+			var imgurl		= "";
+			var img 		= new Image();
+			var img_ok  	= false;
+			var img_w	  	= 0;
+			var img_h  		= 0;
+
+			var imgAlt 		= new Image();
+
+			imgAlt.src		= 'data:image/svg+xml,<svg class="bi bi-music-note" viewBox="0 0 16 16" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/><path fill-rule="evenodd" d="M9 3v10H8V3h1z"/><path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5V2.82z"/></svg>';
+
+			$( img ).on( "load", function()
+				{
+					img_ok = true;
+					img_w = img.naturalWidth;
+					img_h = img.naturalHeight;
+				}
+			);
+
 			ws.status_update(
 				function()
 				{
@@ -21,6 +39,23 @@ function()
 					{
 						var kv = df[ 1 ][ 2 ];
 						title = kv[ '_title_1' ]
+
+						var url = "/albumart/" + kv[ '_file' ];
+
+						if( imgurl != url )
+						{
+							imgurl	= url;
+							img_ok	= false;
+							img.src = imgurl;
+						}
+					}
+					else
+					{
+						title	= "";
+
+						imgurl	= "";
+						img_ok	= false;
+						img.src = imgurl;
 					}
 				}
 			);
@@ -42,15 +77,13 @@ function()
 					{
 						st = {};
 						st.pnow = null;
-						st.imgNoImage = new Image();
-						st.imgNoImage.src = 'data:image/svg+xml,<svg class="bi bi-music-note" viewBox="0 0 16 16" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2z"/><path fill-rule="evenodd" d="M9 3v10H8V3h1z"/><path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5V2.82z"/></svg>';
 					}
 
 					ctx.save();
 					ctx.translate( cw / 2 , ch / 2 );
 
 					var tw1 = 10000;
-					var tw2 = 2000;
+					var tw2 = 5000;
 					var tw3 = 250;
 
 					var pnow = performance.now();
@@ -139,13 +172,64 @@ function()
 					if( st.pnow != null )
 					{
 						var t = ( pnow - st.pnow ) % tw2 / tw2;
-						t = Math.cos( 2 * Math.PI * t ) * 3 / 360;
+						t = Math.cos( 2 * Math.PI * t ) * 6 / 360;
 						ctx.rotate( 2 * Math.PI * t );
 					}
 
-					ctx.drawImage( st.imgNoImage, w / -2, w / -2, w / 2, w / 2 );
+					ctx.drawImage( imgAlt, w / -2, w / -2, w / 2, w / 2 );
 
 					ctx.restore();
+
+					ctx.restore();
+
+					ctx.save();
+
+					if( img_ok && img_w > 0 && img_h > 0 )
+					{
+						var ww = w / 2;
+						var a = img_w / img_h;
+						var d =  ww / ( a > 0 ? img_w : img_h );
+
+						ctx.translate( cw / 2 + w / 2 - 10, ch - img_h * d / 2 - 30 );
+
+						if( st.pnow != null )
+						{
+							var t = ( pnow - st.pnow ) % tw2 / tw2;
+							t = Math.cos( 2 * Math.PI * t ) * 6 / 360;
+							ctx.rotate( 2 * Math.PI * t );
+						}
+
+						var dx = - img_w * d / 2;
+						var dy = - img_h * d / 2;
+						var dw = img_w * d;
+						var dh = img_h * d;
+
+						ctx.fillStyle = "#fff";
+
+						ctx.strokeStyle = "#fff";
+						ctx.lineWidth = 8;
+						ctx.lineCap = "round";
+						ctx.lineJoin = "round";
+
+						ctx.beginPath();
+						ctx.rect( dx, dy, dw, dh );
+						ctx.closePath();
+						ctx.fill();
+						ctx.stroke();
+
+						ctx.drawImage( img, 0, 0, img_w, img_h, dx, dy, dw, dh );
+					}
+
+					ctx.restore();
+
+					ctx.save();
+					ctx.translate( cw / 2 , ch / 2 );
+
+					if( st.pnow != null )
+					{
+						var t = ( pnow - st.pnow ) % tw1 / tw1;
+						ctx.rotate( 2 * Math.PI * t );
+					}
 
 					var fs = Math.round( w ) * 0.1;
 
