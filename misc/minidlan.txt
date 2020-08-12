@@ -1,0 +1,14 @@
+wget "https://downloads.sourceforge.net/project/minidlna/minidlna/1.2.1/minidlna-1.2.1.tar.gz?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fminidlna%2Ffiles%2Flatest%2Fdownload&ts=1597231653" -O minidlna-1.2.1.tar.gz
+tar xvzf minidlna-1.2.1.tar.gz
+cd minidlna-1.2.1/
+
+dnf install avahi-devel libuuid-devel ffmpeg-devel sqlite-devel libvorbis-devel flac-devel libid3tag-devel libjpeg-devel libexif-devel gettext systemd shadow-utils
+
+wget https://sourceforge.net/p/minidlna/patches/_discuss/thread/9da43f71/6de3/attachment/minidlna-v1_2_1-cover-resize.patch
+patch -p1 < minidlna-v1_2_1-cover-resize.patch
+
+mkdir build
+ln -s ../linux
+../configure  --prefix=/opt2/__local --disable-silent-rules --with-db-path=/var/cache/minidlna --with-log-path=/var/log/minidlna --enable-tivo
+
+minidlna.conf : resize_covers=600

@@ -1097,8 +1097,15 @@ function()
 								{
 									var src = $( this ).attr( "src" );
 									$( ".x_arbumart", m ).attr( "src", src  );
-									$( ".x_arbumart", m 		).removeClass( "d-none" );
-									$( ".x_arbumart_default", m ).addClass( "d-none" );
+									$( ".x_arbumart", m 		).toggleClass( "d-none", false );
+									$( ".x_arbumart_default", m ).toggleClass( "d-none", true );
+								}
+							);
+
+							img.on( "error", function()
+								{
+									$( ".x_arbumart", m 		).toggleClass( "d-none", true );
+									$( ".x_arbumart_default", m ).toggleClass( "d-none", false );
 								}
 							);
 

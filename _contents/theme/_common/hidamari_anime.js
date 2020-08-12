@@ -168,12 +168,11 @@ function()
 					{
 						ctx.save();
 
-
 						var ww = w / 2;
 						var a = img_w / img_h;
 						var d =  ww / ( a > 0 ? img_w : img_h );
 
-						ctx.translate( cw / 2 + w / 2 - 10, ch - img_h * d / 2 - 30 );
+						ctx.translate( cw / 2 + w / 2 - 20, ch - img_h * d / 2 - 40 );
 
 						if( st.pnow != null )
 						{
@@ -190,7 +189,7 @@ function()
 						ctx.fillStyle = "#fff";
 
 						ctx.strokeStyle = "#fff";
-						ctx.lineWidth = 8;
+						ctx.lineWidth = w * 0.02;
 						ctx.lineCap = "round";
 						ctx.lineJoin = "round";
 
