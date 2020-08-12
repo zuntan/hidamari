@@ -722,6 +722,10 @@ async fn config_response( arwlctx : context::ARWLContext, param : ConfigParam ) 
             {
                 return Ok( json_response( &context::ConfigDynOutputResult::Err( err ) ) )
             }
+            else
+            {
+                context::save_config_dyn( &ctx.config, &ctx.config_dyn );
+            }
         }
     }
 
@@ -1545,9 +1549,6 @@ async fn main() -> std::io::Result< () >
     log::info!( "mpdcom_task shutdown." );
 
     log::debug!( "ws count {}", arwlctx.read().await.ws_sessions.len() );
-
-    let ctx = arwlctx.read().await;
-    context::save_config_dyn( &ctx.config, &ctx.config_dyn );
 
     Ok(())
 }

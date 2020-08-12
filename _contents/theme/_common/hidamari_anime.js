@@ -162,30 +162,13 @@ function()
 
 					ctx.restore();
 
-					var dx = w / 2 * 1.1;
-					var dy = w / 2 * 1.1;
-
-					ctx.save();
-
-					ctx.translate( dx, dy );
-
-					if( st.pnow != null )
-					{
-						var t = ( pnow - st.pnow ) % tw2 / tw2;
-						t = Math.cos( 2 * Math.PI * t ) * 6 / 360;
-						ctx.rotate( 2 * Math.PI * t );
-					}
-
-					ctx.drawImage( imgAlt, w / -2, w / -2, w / 2, w / 2 );
-
 					ctx.restore();
-
-					ctx.restore();
-
-					ctx.save();
 
 					if( img_ok && img_w > 0 && img_h > 0 )
 					{
+						ctx.save();
+
+
 						var ww = w / 2;
 						var a = img_w / img_h;
 						var d =  ww / ( a > 0 ? img_w : img_h );
@@ -218,9 +201,9 @@ function()
 						ctx.stroke();
 
 						ctx.drawImage( img, 0, 0, img_w, img_h, dx, dy, dw, dh );
-					}
 
-					ctx.restore();
+						ctx.restore();
+					}
 
 					ctx.save();
 					ctx.translate( cw / 2 , ch / 2 );
@@ -230,6 +213,24 @@ function()
 						var t = ( pnow - st.pnow ) % tw1 / tw1;
 						ctx.rotate( 2 * Math.PI * t );
 					}
+
+					var dx = w / 2 * 1.1;
+					var dy = w / 2 * 1.1;
+
+					ctx.save();
+
+					ctx.translate( dx, dy );
+
+					if( st.pnow != null )
+					{
+						var t = ( pnow - st.pnow ) % tw2 / tw2;
+						t = Math.cos( 2 * Math.PI * t ) * 6 / 360;
+						ctx.rotate( 2 * Math.PI * t );
+					}
+
+					ctx.drawImage( imgAlt, w / -2, w / -2, w / 2, w / 2 );
+
+					ctx.restore();
 
 					var fs = Math.round( w ) * 0.1;
 
