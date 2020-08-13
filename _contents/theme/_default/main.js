@@ -184,7 +184,7 @@ function()
 
 								$( ".x_liblist_file_item_title_1", file_item ).text( kv[ '_title_1' ] );
 								$( ".x_liblist_file_item_title_2", file_item ).text( kv[ '_title_2' ] );
-								$( ".x_liblist_file_item_time",    file_item ).text( kv[ '_time' ] );
+								$( ".x_liblist_file_item_time",    file_item ).text( kv[ '_time' ] ? kv[ '_time' ] : "" );
 
 								$( ".x_liblist_file_item_add",  file_item ).click( f_add( file_item, kv[ '_file' ], false ) );
 								$( ".x_liblist_file_item_play", file_item ).click( f_add( file_item, kv[ '_file' ], true ) );
@@ -612,7 +612,7 @@ function()
 							$( ".x_playlist_item_pos", 	  item ).text( kv[ '_pos' ] + 1 + "." );
 							$( ".x_playlist_item_title_1", item ).text( kv[ '_title_1' ] );
 							$( ".x_playlist_item_title_2", item ).text( kv[ '_title_2' ] );
-							$( ".x_playlist_item_time",    item ).text( kv[ '_time' ] );
+							$( ".x_playlist_item_time",    item ).text( kv[ '_time' ] ? kv[ '_time' ] : "" );
 
 							var sel = sel_id[ kv[ '_id' ] ];
 

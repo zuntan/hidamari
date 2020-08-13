@@ -172,12 +172,12 @@ function()
 						var a = img_w / img_h;
 						var d =  ww / ( a > 0 ? img_w : img_h );
 
-						ctx.translate( cw / 2 + w / 2 - 20, ch - img_h * d / 2 - 40 );
+						ctx.translate( ( cw / 2 - w / 2 + 20 ) , ch - img_h * d / 2 - 40 );
 
 						if( st.pnow != null )
 						{
 							var t = ( pnow - st.pnow ) % tw2 / tw2;
-							t = Math.cos( 2 * Math.PI * t ) * 6 / 360;
+							t = ( Math.cos( 2 * Math.PI * t ) * 6 + 5 ) / 360;
 							ctx.rotate( 2 * Math.PI * t );
 						}
 

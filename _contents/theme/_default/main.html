@@ -31,6 +31,11 @@ a.carousel-control-prev, a.carousel-control-next
 
 .min-vh-90 { min-height:90vh!important }
 
+.x_break-word
+{
+    overflow-wrap: break-word;
+}
+
 .x_controler
 {
     width:85vw;
@@ -409,13 +414,13 @@ a.carousel-control-prev, a.carousel-control-next
                                     0.
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_playlist_item_title_1 x_playlist_item_desc">Title</div>
+                                    <div class="h6 m-0 x_break-word x_playlist_item_title_1 x_playlist_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
-                                        <div class="flex-grow-1 font-weight-light x_playlist_item_title_2">Title</div>
+                                        <div class="flex-grow-1 font-weight-light x_break-word x_playlist_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_playlist_item_time">00:00</div>
                                     </div>
                                 </div>
-                                <div class="ml-2 p-1 d-flex" >
+                                <div class="ml-2 p-1 d-flex w-auto" >
                                     <button class="btn btn-sm btn-primary shadow rounded-pill x_playlist_item_select" >
 <svg class="bi bi-check-circle-fill x_playlist_item_select_on"width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path fill-rule="evenodd" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
@@ -554,9 +559,6 @@ a.carousel-control-prev, a.carousel-control-next
                     </div>
                 </div>
 
-
-
-
                 <div class="carousel-item">
                     <div class="d-flex flex-column align-items-center min-vh-90">
 
@@ -589,8 +591,6 @@ a.carousel-control-prev, a.carousel-control-next
       <path fill-rule="evenodd" d="M13 2.5V6l-2-2V2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5z"/>
     </svg>
                                 </button>
-
-
 
                                 <button class="btn btn-sm btn-primary shadow rounded-pill ml-2 x_dir_refresh" >
     <svg class="bi bi-bootstrap-reboot" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -628,7 +628,7 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 x_liblist_folder_item_title_1">Title</div>
+                                    <div class="h6 x_break-word x_liblist_folder_item_title_1">Title</div>
                                 </div>
                             </div>
 
@@ -641,13 +641,13 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_liblist_file_item_title_1 x_liblist_file_item_desc">Title</div>
+                                    <div class="h6 m-0 x_break-word x_liblist_file_item_title_1 x_liblist_file_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
-                                        <div class="flex-grow-1 font-weight-light x_liblist_file_item_title_2">Title</div>
+                                        <div class="flex-grow-1 font-weight-light x_break-word x_liblist_file_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_liblist_file_item_time">00:00</div>
                                     </div>
                                 </div>
-                                <div class="ml-2 p-1 d-flex" >
+                                <div class="ml-2 p-1 d-flex w-auto" >
                                     <button class="btn btn-sm btn-primary shadow rounded-pill x_liblist_file_item_add">
 <svg class="bi bi-plus-circle" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path fill-rule="evenodd" d="M8 3.5a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-.5.5H4a.5.5 0 0 1 0-1h3.5V4a.5.5 0 0 1 .5-.5z"/>
