@@ -443,6 +443,186 @@ function()
 		}
 	);
 
+	var x_playlist_save_name_input = function()
+	{
+		var inp = $( ".x_playlist_save_name" ).val();
+
+		var ok =
+				( inp != "" )
+			&& 	( $.grep(
+						$( ".x_playlist_saved_load" )
+					,	function( n, i ){ return $( n ).data( "x_name" ) == inp; }
+					)
+				) == 0;
+
+		var t = $( ".x_playlist_save_save" );
+
+		if( ok )
+		{
+			t.removeAttr( "disabled" );
+		}
+		else
+		{
+			t.attr( "disabled", "disabled" );
+		}
+	}
+
+	$( ".x_playlist_save_name" ).on( 'input', x_playlist_save_name_input );
+
+	$( ".x_playlist_save_save" ).click(
+		function()
+		{
+			var inp = $( ".x_playlist_save_name" ).val();
+
+			$.getJSON( "/cmd", { cmd : "save", arg1 : inp } )
+				.done( function( json )
+					{
+						if( json.Ok )
+						{
+							playlist_save_dialog_init();
+						}
+					}
+				);
+
+		}
+	);
+
+	var playlist_saved_check_selection = function()
+	{
+		var s = $.grep( $( ".x_playlist_saved_select" ), function( n, i ){ return $( n ).data( "x_selected" ); } );
+
+		var t = $( ".x_playlist_saved_remove" );
+
+		if( s.length > 0 )
+		{
+			t.removeAttr( "disabled" );
+		}
+		else
+		{
+			t.attr( "disabled", "disabled" );
+		}
+	}
+
+	var update_playlist_save = function()
+	{
+		$( "tr.x_playlist_saved" ).remove();
+
+		var tr_base = $( "tr.x_playlist_saved_z" );
+
+		tr_base.hide();
+
+		$.getJSON( "/cmd", { cmd : "listplaylists" } )
+			.done( function( json )
+				{
+					if( json.Ok )
+					{
+						var list = $.grep( json.Ok.flds, function( n, i ){ return n[0] == 'playlist'; } );
+
+						for( var i = 0 ; i < list.length ; ++i )
+						{
+							var item = tr_base.clone();
+
+							item.removeClass( "x_playlist_saved_z" );
+							item.addClass( "x_playlist_saved" );
+
+							var n = list[ i ][ 1 ];
+
+							$( ".x_playlist_saved_name", item ).text( n );
+
+							var item_load = $( ".x_playlist_saved_load", item );
+
+							item_load.data( "x_name", n );
+							item_load.click(
+								function()
+								{
+									$.getJSON( "/cmd", { cmd : "load", arg1 : $(this).data( "x_name" ) } )
+										.done( function( json )
+											{
+												$( "#x_playlist_save" ).modal( 'hide' );
+											}
+										);
+								}
+							);
+
+							var item_sel = $( ".x_playlist_saved_select", item );
+
+							item_sel.click(
+								function( _it )
+								{
+									return function()
+									{
+										var sel = !( $(this).data( "x_selected" ) );
+										$(this).data( "x_selected", sel );
+
+										$( ".x_playlist_saved_select_on",  $(this) ).toggle( sel );
+										$( ".x_playlist_saved_select_off", $(this) ).toggle( !sel );
+
+										playlist_saved_check_selection();
+
+										return false;
+									}
+								}( item )
+							);
+
+							item_sel.data( "x_selected", true );
+							item_sel.data( "x_name", n );
+							item_sel.click();
+
+							item.show();
+
+							tr_base.before( item );
+						}
+					}
+
+					playlist_saved_check_selection();
+				}
+			);
+
+	}
+
+	$( ".x_playlist_saved_remove" ).click(
+		function()
+		{
+			var s = $.grep( $( ".x_playlist_saved_select" ), function( n, i ){ return $( n ).data( "x_selected" ); } );
+			var s = $.map( s, function( n, i ){ return $( n ).data( "x_name" ) } );
+
+			for( var i = 0 ; i < s.length ; ++i )
+			{
+				$.ajax(
+					{
+						dataType	: "json"
+					,	url			: "/cmd"
+					, 	data		: { cmd : "rm", arg1 : s[ i ] }
+					,	async		: true
+					}
+				)
+				.fail( function()
+					{
+						i = s.length;
+					}
+				);
+			}
+
+			playlist_save_dialog_init();
+		}
+	);
+
+	var playlist_save_dialog_init = function()
+	{
+		update_playlist_save();
+		$( ".x_playlist_save_name" ).val( "" );
+		x_playlist_save_name_input();
+		playlist_saved_check_selection();
+	}
+
+	$( ".x_playlist_save" ).click(
+		function()
+		{
+			playlist_save_dialog_init();
+			$( "#x_playlist_save_dialog" ).modal();
+		}
+	);
+
 	var current_songid 		= "";
 	var current_songid_prev	= "";
 

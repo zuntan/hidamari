@@ -375,6 +375,20 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                     Consume
                                 </a>
+
+                                <div class="dropdown-divider"></div>
+
+                                <a class="dropdown-item x_playlist_save" href="#">
+<svg class="bi bi-music-note-list" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 13c0 1.105-1.12 2-2.5 2S7 14.105 7 13s1.12-2 2.5-2 2.5.895 2.5 2z"/>
+  <path fill-rule="evenodd" d="M12 3v10h-1V3h1z"/>
+  <path d="M11 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 16 2.22V4l-5 1V2.82z"/>
+  <path fill-rule="evenodd" d="M0 11.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 7H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 3H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5z"/>
+</svg>
+
+                                    Playlist Save/Load
+                                </a>
+
                               </div>
                             </div>
 
@@ -414,9 +428,9 @@ a.carousel-control-prev, a.carousel-control-next
                                     0.
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_break-word x_playlist_item_title_1 x_playlist_item_desc">Title</div>
+                                    <div class="h6 m-0 text-wrap x_break-word x_playlist_item_title_1 x_playlist_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
-                                        <div class="flex-grow-1 font-weight-light x_break-word x_playlist_item_title_2">Title</div>
+                                        <div class="flex-grow-1 font-weight-light text-wrap x_break-word x_playlist_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_playlist_item_time">00:00</div>
                                     </div>
                                 </div>
@@ -628,7 +642,7 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 x_break-word x_liblist_folder_item_title_1">Title</div>
+                                    <div class="h6 text-wrap x_break-word x_liblist_folder_item_title_1">Title</div>
                                 </div>
                             </div>
 
@@ -641,9 +655,9 @@ a.carousel-control-prev, a.carousel-control-next
 </svg>
                                 </div>
                                 <div class="flex-grow-1 mx-1">
-                                    <div class="h6 m-0 x_break-word x_liblist_file_item_title_1 x_liblist_file_item_desc">Title</div>
+                                    <div class="h6 m-0 text-wrap x_break-word x_liblist_file_item_title_1 x_liblist_file_item_desc">Title</div>
                                     <div class="d-flex align-items-end">
-                                        <div class="flex-grow-1 font-weight-light x_break-word x_liblist_file_item_title_2">Title</div>
+                                        <div class="flex-grow-1 font-weight-light text-wrap x_break-word x_liblist_file_item_title_2">Title</div>
                                         <div class="h6 mx-2 text-monospace x_liblist_file_item_time">00:00</div>
                                     </div>
                                 </div>
@@ -706,6 +720,85 @@ a.carousel-control-prev, a.carousel-control-next
                   <td class="x_col_k text-right" >Artist</td>
                   <td >:</td>
                   <td class="x_col_v font-weight-bold" >Hoge</td>
+                </tr>
+            </tbody>
+            </table>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" tabindex="-1" role="dialog" id="x_playlist_save_dialog">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Playlist Save/Load</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <h6>Save playlist</h6>
+
+                 <div class="input-group input-group-sm my-2">
+
+                    <div class="input-group-prepend">
+                        <span class="input-group-text" >name:</span>
+                    </div>
+
+                    <input type="text" class="form-control x_playlist_save_name" >
+
+                    <div class="input-group-append">
+                        <button class="btn btn-primary x_playlist_save_save" type="button">Save</button>
+                    </div>
+                </div>
+
+            <div class="d-flex mt-4 mt-1 align-items-center justify-content-end">
+                <h6 >Saved playlists</h6>
+
+                <button class="btn btn-sm btn-primary shadow rounded-pill ml-auto mr-2 x_playlist_saved_remove" >
+                    <svg class="bi bi-trash-fill" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                      <path fill-rule="evenodd" d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5a.5.5 0 0 0-1 0v7a.5.5 0 0 0 1 0v-7z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <table class="table table-sm table-striped">
+            <tbody>
+                <tr class="x_playlist_saved_z">
+                  <td class="align-middle x_playlist_saved_icon" style="width:20px;" >
+<svg class="bi bi-music-note-list" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 13c0 1.105-1.12 2-2.5 2S7 14.105 7 13s1.12-2 2.5-2 2.5.895 2.5 2z"/>
+  <path fill-rule="evenodd" d="M12 3v10h-1V3h1z"/>
+  <path d="M11 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 16 2.22V4l-5 1V2.82z"/>
+  <path fill-rule="evenodd" d="M0 11.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 7H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 3H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5z"/>
+</svg>
+                  </td>
+                  <td class="align-middle x_playlist_saved_name " style="width:70%;">name</td>
+                  <td class="align-middle x_playlist_saved_btn text-right d-flex"  >
+                    <div class="flex-nowrap">
+                        <button class="btn btn-sm btn-primary shadow rounded-pill ml-2 x_playlist_saved_load" >
+
+<svg class="bi bi-collection-play" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M14.5 13.5h-13A.5.5 0 0 1 1 13V6a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5zm-13 1A1.5 1.5 0 0 1 0 13V6a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 16 6v7a1.5 1.5 0 0 1-1.5 1.5h-13zM2 3a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 0-1h-11A.5.5 0 0 0 2 3zm2-2a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7A.5.5 0 0 0 4 1z"/>
+  <path fill-rule="evenodd" d="M6.258 6.563a.5.5 0 0 1 .507.013l4 2.5a.5.5 0 0 1 0 .848l-4 2.5A.5.5 0 0 1 6 12V7a.5.5 0 0 1 .258-.437z"/>
+</svg>
+                        </button>
+
+                        <button class="btn btn-sm btn-primary shadow rounded-pill ml-2 x_playlist_saved_select" >
+<svg class="bi bi-check-circle-fill x_playlist_saved_select_on" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+</svg>
+
+<svg class="bi bi-circle x_playlist_saved_select_off" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+</svg>
+                        </button>
+                    </div>
+                  </td>
                 </tr>
             </tbody>
             </table>
