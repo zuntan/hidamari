@@ -365,7 +365,7 @@ function()
 			.done( function( json )
 				{
 					update_error( json, ".x_st_bt_cmd_err" );
-					update_ok( json, ".x_st_bt_cmd_ok" );
+					update_ok( json, cmd.match( /^dev_/ ) ? ".x_st_bt_cmd_dev_ok" : ".x_st_bt_cmd_ok" );
 				}
 			);
 	}

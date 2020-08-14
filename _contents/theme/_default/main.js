@@ -518,6 +518,8 @@ function()
 					{
 						var list = $.grep( json.Ok.flds, function( n, i ){ return n[0] == 'playlist'; } );
 
+						list.sort();
+
 						for( var i = 0 ; i < list.length ; ++i )
 						{
 							var item = tr_base.clone();

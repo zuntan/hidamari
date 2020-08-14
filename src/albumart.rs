@@ -665,7 +665,7 @@ pub async fn albumart_task(
 
             log::debug!( "albumart_task:service discovering end {:?}", services );
 
-            if log::log_enabled!( log::Level::Info )
+            if false /* log::log_enabled!( log::Level::Debug ) */
             {
                 lazy_static!
                 {
@@ -700,7 +700,24 @@ pub async fn albumart_task(
 
                     let uri = Uri::from_parts( parts );
 
-                    log::info!( "Found upnp media server. [{:?}] {:?}", k, uri );
+                    log::debug!( "Found upnp media server. [{:?}] {:?}", k, uri );
+                }
+            }
+
+            if log::log_enabled!( log::Level::Info )
+            {
+                let mut a : Vec< String > =
+                    arwlaactx.read().await.upnp_service_cache.keys().map( | x | String::from( x ) ).collect();
+
+                let mut b : Vec< String > =
+                    services.keys().map( | x | String::from( x ) ).collect();
+
+                a.sort();
+                b.sort();
+
+                if a != b
+                {
+                    log::info!( "Update upnp media server. {:?}", b );
                 }
             }
 

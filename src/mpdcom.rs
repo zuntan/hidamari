@@ -605,6 +605,8 @@ pub async fn mpdcom_task(
                             ,   _                   => false
                             };
 
+                        let ( url, name ) = context::split_url_with_name( &url );
+
                         match context::check_url( &url )
                         {
                             Ok(_) =>
@@ -619,6 +621,7 @@ pub async fn mpdcom_task(
                                     {
                                         if append
                                         {
+                                            let url = context::concat_url_with_name( &url, &name );
                                             arwlctx.write().await.append_url( &url );
                                         }
 

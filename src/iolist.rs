@@ -58,11 +58,13 @@ pub async fn io_list( arwlctx : context::ARWLContext ) -> Vec< IoItem >
 
     for ( no, url ) in arwlctx.write().await.aux_in().iter().enumerate()
     {
+        let ( url, name ) = context::split_url_with_name( &url );
+
         io_list.push(
             IoItem
             {
                 r#type  : IoItemType::AuxIn
-            ,   name    : format!( "AUX IN {}", no + 1 )
+            ,   name    : if name != "" { name } else { format!( "AUX IN {}", no + 1 ) }
             ,   url     : String::from( url )
             ,   link    : None
             ,   enable  : true

@@ -29,7 +29,8 @@ a.carousel-control-prev, a.carousel-control-next
     filter: invert(100%);
 }
 
-.min-vh-90 { min-height:90vh!important }
+.x_min-vh-90 { min-height:90vh!important }
+.x_vh-40 { height:40vh!important }
 
 .x_break-word
 {
@@ -331,7 +332,7 @@ a.carousel-control-prev, a.carousel-control-next
 
             <div class="carousel-inner" role="listbox">
                 <div class="carousel-item">
-                    <div class="d-flex flex-column align-items-center min-vh-90">
+                    <div class="d-flex flex-column align-items-center x_min-vh-90">
 
                         <div class="p-1 mt-1 bg-white rounded d-flex align-items-center justify-content-end x_controler">
 
@@ -457,7 +458,7 @@ a.carousel-control-prev, a.carousel-control-next
                 </div>
 
                 <div class="carousel-item active">
-                    <div class="d-flex flex-column align-items-center min-vh-90" >
+                    <div class="d-flex flex-column align-items-center x_min-vh-90" >
 
                         <div class="h3 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_1" ></div>
                         <div class="h5 overflow-hidden p-1 m-1 x_overflow-hidden x_player_title_2" ></div>
@@ -574,7 +575,7 @@ a.carousel-control-prev, a.carousel-control-next
                 </div>
 
                 <div class="carousel-item">
-                    <div class="d-flex flex-column align-items-center min-vh-90">
+                    <div class="d-flex flex-column align-items-center x_min-vh-90">
 
                         <div class="p-1 m-0 d-flex align-items-center justify-content-start x_controler">
 
@@ -740,23 +741,24 @@ a.carousel-control-prev, a.carousel-control-next
               <span aria-hidden="true">&times;</span>
             </button>
           </div>
-          <div class="modal-body">
+
+        <div class="modal-body">
             <h6>Save playlist</h6>
 
-                 <div class="input-group input-group-sm my-2">
+            <div class="input-group input-group-sm my-2">
 
-                    <div class="input-group-prepend">
-                        <span class="input-group-text" >name:</span>
-                    </div>
-
-                    <input type="text" class="form-control x_playlist_save_name" >
-
-                    <div class="input-group-append">
-                        <button class="btn btn-primary x_playlist_save_save" type="button">Save</button>
-                    </div>
+                <div class="input-group-prepend">
+                    <span class="input-group-text" >name:</span>
                 </div>
 
-            <div class="d-flex mt-4 mt-1 align-items-center justify-content-end">
+                <input type="text" class="form-control x_playlist_save_name" >
+
+                <div class="input-group-append">
+                    <button class="btn btn-primary x_playlist_save_save" type="button">Save</button>
+                </div>
+            </div>
+
+            <div class="d-flex mt-4  align-items-center justify-content-end">
                 <h6 >Saved playlists</h6>
 
                 <button class="btn btn-sm btn-primary shadow rounded-pill ml-auto mr-2 x_playlist_saved_remove" >
@@ -766,20 +768,20 @@ a.carousel-control-prev, a.carousel-control-next
                 </button>
             </div>
 
-            <table class="table table-sm table-striped">
-            <tbody>
-                <tr class="x_playlist_saved_z">
-                  <td class="align-middle x_playlist_saved_icon" style="width:20px;" >
+            <div class="mt-1 overflow-auto x_vh-40">
+                <table class="table table-sm table-striped w-100">
+                <tbody>
+                    <tr class="x_playlist_saved_z">
+                      <td class="align-middle x_playlist_saved_icon" style="width:20px;" >
 <svg class="bi bi-music-note-list" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 13c0 1.105-1.12 2-2.5 2S7 14.105 7 13s1.12-2 2.5-2 2.5.895 2.5 2z"/>
   <path fill-rule="evenodd" d="M12 3v10h-1V3h1z"/>
   <path d="M11 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 16 2.22V4l-5 1V2.82z"/>
   <path fill-rule="evenodd" d="M0 11.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 7H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5zm0-4A.5.5 0 0 1 .5 3H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5z"/>
 </svg>
-                  </td>
-                  <td class="align-middle x_playlist_saved_name " style="width:70%;">name</td>
-                  <td class="align-middle x_playlist_saved_btn text-right d-flex"  >
-                    <div class="flex-nowrap">
+                      </td>
+                      <td class="align-middle x_break-word x_playlist_saved_name" >name</td>
+                      <td class="align-middle text-right x_playlist_saved_btn" nowrap >
                         <button class="btn btn-sm btn-primary shadow rounded-pill ml-2 x_playlist_saved_load" >
 
 <svg class="bi bi-collection-play" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -797,12 +799,12 @@ a.carousel-control-prev, a.carousel-control-next
   <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
 </svg>
                         </button>
-                    </div>
-                  </td>
-                </tr>
-            </tbody>
-            </table>
-          </div>
+                      </td>
+                    </tr>
+                </tbody>
+                </table>
+            </div>
+        </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
           </div>

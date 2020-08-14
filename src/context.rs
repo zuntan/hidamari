@@ -56,6 +56,7 @@ pub const HIDAMARI_EXT_SINK_ALSA_PROTO  : &str = "^asink://";
 pub const HIDAMARI_MPD_PROXY_STREAM_PATH    : &str = "/stream";
 
 pub const IGNORE_CHECK_URL          : &str =  "^([at]source|alsa|mpdsink|asink)://";
+pub const URL_WITH_NAME             : &str =  r"^\s*\[([^\]]+)\]\s*";
 
 pub const MPD_USER_AGENT    : &str = r"Music Player Daemon (\d+.\d+.\d+)";
 
@@ -82,7 +83,6 @@ pub struct Config
 ,   pub mpd_protolog        : bool
 ,   pub mpd_fifo            : String
 ,   pub mpd_fifo_fftmode    : u32
-,   pub log_level           : String
 ,   pub contents_dir        : String
 ,   pub albumart_upnp       : bool
 ,   pub albumart_localdir   : String
@@ -462,6 +462,13 @@ impl Context
 
                 if let Some( x ) = nv.url_list
                 {
+                    let x : Vec< String > =
+                        x.iter()
+                        .map( | x | split_url_with_name( x ) )
+                        .map( | ( u, n ) | concat_url_with_name( &u, &n ) )
+                        .collect()
+                        ;
+
                     let x = make_uniq_list( &x );
                     log::debug!( "update dyn url_list {:?}", x );
                     self.config_dyn.url_list = x;
@@ -469,6 +476,13 @@ impl Context
 
                 if let Some( x ) = nv.aux_in
                 {
+                    let x : Vec< String > =
+                        x.iter()
+                        .map( | x | split_url_with_name( x ) )
+                        .map( | ( u, n ) | concat_url_with_name( &u, &n ) )
+                        .collect()
+                        ;
+
                     let x = make_uniq_list( &x );
                     log::debug!( "update dyn aux_in {:?}", x );
                     self.config_dyn.aux_in  = x;
@@ -682,8 +696,10 @@ impl Context
 
 pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
 {
-    for url in make_uniq_list( list ).iter()
+    for url in list.iter().map( | x | x.trim() ).filter( | x | *x != "" )
     {
+        let ( url, _ ) = split_url_with_name( &url );
+
         if let Err( x ) = check_url( &url )
         {
             return Some(
@@ -696,6 +712,42 @@ pub fn check_urls( list : &Vec< String > ) -> Option< ConfigDynOutputError >
     }
 
     None
+}
+
+pub fn split_url_with_name( url_with_name : &str ) -> ( String, String )
+{
+    lazy_static!
+    {
+        static ref RE : regex::Regex =
+            regex::Regex::new( URL_WITH_NAME ).unwrap();
+    }
+
+    match RE.captures( &url_with_name )
+    {
+        Some( cap ) =>
+        {
+            let tail = &url_with_name[ cap.get( 0 ).unwrap().end() .. ];
+            let name = cap.get( 1 ).unwrap().as_str();
+
+            ( String::from( tail.trim() ), String::from( name.trim() ) )
+        }
+    ,   None =>
+        {
+            ( String::from( url_with_name.trim() ), String::new() )
+        }
+    }
+}
+
+pub fn concat_url_with_name( url : &str, name : &str ) -> String
+{
+    if name == ""
+    {
+        String::from( url.trim() )
+    }
+    else
+    {
+        format!( "[{}] {}", name.trim(), url.trim() )
+    }
 }
 
 pub fn check_url( url : &str ) -> Result< (), url::ParseError >
@@ -847,7 +899,6 @@ pub fn get_config_dyn( config : &Config ) -> ConfigDyn
     log::info!( "config dyn load canceled." );
     ConfigDyn::new()
 }
-
 
 pub fn save_config_dyn( config : &Config, config_dyn : &ConfigDyn )
 {
