@@ -363,6 +363,13 @@ function()
 					var rms_l  = ws.ws_rms_l;
 					var rms_r  = ws.ws_rms_r;
 
+					var pnow = performance.now();
+
+					var clr = function( _a )
+					{
+						return 'hsla( ' + parseInt( 360 * ( pnow % 48000 ) / 48000 ) + ', 100%, 50%, ' + _a + ' )';
+					}
+
 					var f = function( isR, spec, rms, rmsS )
 					{
 						rmsS.push( rms );
@@ -380,8 +387,6 @@ function()
 						var r2a = r0 * 0.45;
 						var r3 = r0 * 0.4;
 						var r3a = r0 * 0.35;
-
-						var pnow = performance.now();
 
 						ctx.save();
 						ctx.translate( w , h );
@@ -405,11 +410,6 @@ function()
 						else
 						{
 							ctx.rotate( Math.PI )
-						}
-
-						var clr = function( _a )
-						{
-							return 'hsla( ' + parseInt( 360 * ( pnow % 48000 ) / 48000 ) + ', 100%, 50%, ' + _a + ' )';
 						}
 
 						ctx.rotate( 2 * Math.PI * ( pnow % 32000 ) / 32000 );
@@ -504,6 +504,163 @@ function()
 					f( 1, spec_r, rms_r, st.rmsR );
 				}
 			};
+		}
+
+	,	drawfunc_spec_jagged : function( ws )
+		{
+			var st = {};
+
+			return function( canv )
+			{
+				var ctx  = canv.getContext( "2d" );
+
+				if( !ctx ) { return; }
+
+				var cw = canv.width;
+				var ch = canv.height;
+
+				var w = cw / 2;
+				var h = ch / 2;
+
+				ctx.fillStyle = "#000";
+				ctx.fillRect( 0, 0, cw, ch );
+
+				if( ws.ws_spec_l && ws.ws_spec_r && ws.ws_spec_h )
+				{
+					var spec_l = ws.ws_spec_l.slice();
+					var spec_r = ws.ws_spec_r.slice();
+					var rms_l  = ws.ws_rms_l;
+					var rms_r  = ws.ws_rms_r;
+
+					var pnow = performance.now();
+
+					var clr = function( _a )
+					{
+						return 'hsla( ' + parseInt( 360 * ( pnow % 48000 ) / 48000 ) + ', 100%, 50%, ' + _a + ' )';
+					}
+
+					var f = function( isR, spec, rms )
+					{
+						ctx.save();
+						ctx.translate( w , h );
+						ctx.rotate( 2 * Math.PI * ( pnow % 16000 ) / 16000 );
+
+
+
+						if( isR == 0 )
+						{
+						}
+						else if( isR == 1 )
+						{
+							ctx.rotate( Math.PI * 2 / 3 )
+						}
+						else if( isR == 2 )
+						{
+							ctx.rotate( Math.PI * 4 / 3 )
+						}
+
+
+						rms /= 1000;
+						rms = Math.max( 0.25, rms );
+
+						var r0 = Math.max( w, h );
+
+						var m1 = 2 * Math.PI * ( pnow % 16000 ) / 16000;
+						var m2 = Math.sin( 2 * Math.PI * ( pnow % 32000 ) / 32000 );
+						ctx.translate( Math.cos( m1 ) * r0 * 0.1 * m2, Math.sin( m1 ) * r0 * 0.1 * m2 );
+
+						var r1 = r0 * 1.2;
+						var r2 = r0 * 0.07 * rms;
+						var rd = ( r1 - r2 ) / spec.length;
+
+						ctx.strokeStyle =  clr( 1 );
+						ctx.fillStyle   =  clr( rms * 0.35 );
+						ctx.lineWidth = 2;
+
+						ctx.beginPath();
+						ctx.moveTo( 0, 0 );
+						ctx.arc( 0, 0, r2, Math.PI * ( 0.5 + 1.2 * rms ), Math.PI * ( 0.5 - 1.2 * rms ), true );
+						ctx.closePath();
+						ctx.fill();
+						ctx.stroke();
+
+						var xx = Array( spec.length );
+						var yy = Array( spec.length );
+
+						for( var i = 0 ; i < spec.length ; ++i )
+						{
+							yy[ i ] = ( r2 + rd * ( i + 1 ) ) * -1;
+							xx[ i ] = r2 * 1.5 * spec[ i ] / 1000 * ( Math.random() * 3 - 1 );
+						}
+
+						ctx.strokeStyle =  clr( 1 );
+						ctx.lineWidth 	= 1;
+
+						ctx.beginPath();
+						ctx.moveTo( 0, r2 * -0.5 );
+
+						for( var i = 0 ; i < xx.length ; ++i )
+						{
+							ctx.lineTo( xx[ i ] * 0.3, yy[ i ] );
+						}
+
+						ctx.stroke();
+
+						ctx.beginPath();
+						ctx.moveTo( 0, r2 * -0.5 );
+
+						for( var i = 0 ; i < xx.length ; ++i )
+						{
+							ctx.lineTo( xx[ i ] * 0.6, yy[ i ] );
+						}
+
+						ctx.stroke();
+
+						ctx.strokeStyle =  clr( 1 );
+						ctx.lineWidth 	= 2;
+
+						ctx.beginPath();
+						ctx.moveTo( 0, r2 * -0.5 );
+
+						for( var i = 0 ; i < xx.length ; ++i )
+						{
+							ctx.lineTo( xx[ i ] , yy[ i ] );
+						}
+
+						ctx.stroke();
+
+						ctx.strokeStyle =  clr( 1 );
+						ctx.lineWidth 	= 1;
+
+						for( var i = 0 ; i < xx.length ; ++i )
+						{
+							if ( Math.random() < 0.01 )
+							{
+								var l = Math.random() * 3;
+
+								ctx.beginPath();
+								ctx.moveTo( xx[ i ] * 2, yy[ i ] )
+								ctx.lineTo( xx[ i ] * ( 2 + l ), yy[ i ] );
+								ctx.stroke();
+							}
+						}
+
+						ctx.restore();
+					}
+
+					f( 0, spec_l, rms_l );
+					f( 1, spec_r, rms_r );
+
+					var spec_lr = Array( spec_l.length );
+
+					for( var i = 0 ; i < spec_l.length ; ++i )
+					{
+						spec_lr[ i ] = ( spec_l[ i ] + spec_r[ i ] ) / 2;
+					}
+
+					f( 2, spec_lr, ( rms_l + rms_r ) / 2 );
+				}
+			}
 		}
 	}
 

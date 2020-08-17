@@ -1699,7 +1699,9 @@ function()
 	var canv0 = $( ".x_canvas_0" ).get( 0 );
 	var canv1 = $( ".x_canvas_1" ).get( 0 );
 	var canv2 = $( ".x_canvas_2" ).get( 0 );
-	var canvS = [ canv0, canv1, canv2 ];
+	var canv3 = $( ".x_canvas_3" ).get( 0 );
+
+	var canvS = [ canv0, canv1, canv2, canv3 ];
 
 	$.each( canvS,
 		function( i, v )
@@ -1719,6 +1721,7 @@ function()
 	var draw0 = $.hidamari.drawfunc_simple( ws );
 	var draw1 = $.hidamari.drawfunc_spec_analyzer( ws );
 	var draw2 = $.hidamari.drawfunc_spec_voice( ws );
+	var draw3 = $.hidamari.drawfunc_spec_jagged( ws );
 
 	var draw = function()
 	{
@@ -1769,6 +1772,8 @@ function()
 		draw0( canv0 );
 		draw1( canv1 );
 		draw2( canv2 );
+		draw3( canv3 );
+
 		requestAnimationFrame( draw );
 	}
 
