@@ -25,12 +25,16 @@ wget https://archive.raspbian.org/raspbian.public.key -O - | apt-key add -
 dpkg --add-architecture armhf
 dpkg --print-foreign-architectures
 
-### install libmp3lame-dev:armhf libasound2-dev:armhf libflac-dev:armhf libflac8:armhf
 
 apt-get update
 
-apt-get install libmp3lame-dev:armhf libasound2-dev:armhf libflac-dev:armhf libflac8:armhf libdbus-1-dev:armhf
-dpkg -L libmp3lame-dev:armhf
+### install libmp3lame-dev:armhf libmp3lame:armhf
+
+apt-get install libasound2-dev:armhf libflac-dev:armhf libflac8:armhf libogg-dev:armhf libogg0:armhf
+apt-get install libdbus-1-dev:armhf libdbus-1-3:armhf libsystemd-dev:armhf libsystemd0:armhf liblz4-dev:armhf liblz4-1:armhf liblzma-dev:armhf liblzma5:armhf libgcrypt20-dev:armhf libgcrypt20:armhf libgpg-error-dev:armhf libgpg-error0:armhf
+
+### dpkg -L libmp3lame-dev:armhf
+
 dpkg -L libasound2-dev:armhf
 dpkg -L libflac-dev:armhf
 dpkg -L libflac8:armhf
@@ -42,16 +46,18 @@ dpkg -L liblzma5:armhf
 dpkg -L libgcrypt20:armhf
 dpkg -L libgpg-error0:armhf
 
-### for libmp3lame
 
 cd /usr/lib/arm-linux-gnueabihf
-ln -s libmp3lame.so.0.0.0    libmp3lame.so
+
+### ln -s libmp3lame.so.0.0.0    libmp3lame.so
+
 ln -s libFLAC.so             libflac.so
-ln -s libsystemd.so.0.25.0   libsystemd.so
-ln -s liblz4.so.1.8.3        liblz4.so
-ln -s liblzma.so.5.2.4       liblzma.so
-ln -s libgcrypt.so.20.2.4    libgcrypt.so
-ln -s libgpg-error.so.0.26.1 libgpg-error.so
+
+### ln -s libsystemd.so.0.25.0   libsystemd.so
+### ln -s liblz4.so.1.8.3        liblz4.so
+### ln -s liblzma.so.5.2.4       liblzma.so
+### ln -s libgcrypt.so.20.2.4    libgcrypt.so
+### ln -s libgpg-error.so.0.26.1 libgpg-error.so
 
 ### for libasound2 ( crate pkg_config )
 
