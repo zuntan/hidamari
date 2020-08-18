@@ -512,9 +512,13 @@ function()
 
 			return function( canv )
 			{
+				$( canv ).css( "background", "#000" );
+
 				var ctx  = canv.getContext( "2d" );
 
 				if( !ctx ) { return; }
+
+				var pnow = performance.now();
 
 				var cw = canv.width;
 				var ch = canv.height;
@@ -522,8 +526,40 @@ function()
 				var w = cw / 2;
 				var h = ch / 2;
 
-				ctx.fillStyle = "#000";
-				ctx.fillRect( 0, 0, cw, ch );
+				if( st.ids && st.cw == cw && st.ch == ch )
+				{
+					var ids = st.ids;
+
+					var idd = ctx.createImageData( cw, ch );
+
+					var p = function( xx, yy )
+					{
+						return ( y * cw + x ) * 4;
+					}
+
+					var pp1 = Math.sin( 2 * Math.PI * ( pnow % 17000 ) / 17000 );
+					var pp2 = Math.sin( 2 * Math.PI * ( pnow % 29000 ) / 29000 );
+
+					for( var y = 1 ; y < ch - 1 ; ++y )
+					{
+						for( var x = 1 ; x < cw - 1 ; ++x )
+						{
+							var p0 = p( x, y );
+
+							var pt = p( x, y - 1 );
+							var pb = p( x, y + 1 );
+							var pl = p( x - 1, y );
+							var pr = p( x + 1, y );
+
+							idd.data[ p0     ] = ( ids.data[ pt     ] + ids.data[ pb     ] + ids.data[ pl     ] + ids.data[ pr     ] ) / 4.02 + 0.3 * pp1;
+							idd.data[ p0 + 1 ] = ( ids.data[ pt + 1 ] + ids.data[ pb + 1 ] + ids.data[ pl + 1 ] + ids.data[ pr + 1 ] ) / 4.02 + 0.3 * pp1;
+							idd.data[ p0 + 2 ] = ( ids.data[ pt + 2 ] + ids.data[ pb + 2 ] + ids.data[ pl + 2 ] + ids.data[ pr + 2 ] ) / 4.02 + 0.3 * pp1;
+							idd.data[ p0 + 3 ] = 128 + 128 * pp2;
+						}
+					}
+
+					ctx.putImageData( idd, 0, 0 );
+				}
 
 				if( ws.ws_spec_l && ws.ws_spec_r && ws.ws_spec_h )
 				{
@@ -531,8 +567,6 @@ function()
 					var spec_r = ws.ws_spec_r.slice();
 					var rms_l  = ws.ws_rms_l;
 					var rms_r  = ws.ws_rms_r;
-
-					var pnow = performance.now();
 
 					var clr = function( _a )
 					{
@@ -544,8 +578,6 @@ function()
 						ctx.save();
 						ctx.translate( w , h );
 						ctx.rotate( 2 * Math.PI * ( pnow % 16000 ) / 16000 );
-
-
 
 						if( isR == 0 )
 						{
@@ -559,15 +591,14 @@ function()
 							ctx.rotate( Math.PI * 4 / 3 )
 						}
 
-
 						rms /= 1000;
 						rms = Math.max( 0.25, rms );
 
 						var r0 = Math.max( w, h );
 
-						var m1 = 2 * Math.PI * ( pnow % 16000 ) / 16000;
-						var m2 = Math.sin( 2 * Math.PI * ( pnow % 32000 ) / 32000 );
-						ctx.translate( Math.cos( m1 ) * r0 * 0.1 * m2, Math.sin( m1 ) * r0 * 0.1 * m2 );
+						var m1 = 2 * Math.PI * ( pnow % 20000 ) / 20000;
+						var m2 = Math.sin( 2 * Math.PI * ( pnow % 30000 ) / 30000 );
+						ctx.translate( Math.cos( m1 ) * r0 * 0.15 * m2, Math.sin( m1 ) * r0 * 0.15 * m2 );
 
 						var r1 = r0 * 1.2;
 						var r2 = r0 * 0.07 * rms;
@@ -593,55 +624,51 @@ function()
 							xx[ i ] = r2 * 1.5 * spec[ i ] / 1000 * ( Math.random() * 3 - 1 );
 						}
 
-						ctx.strokeStyle =  clr( 1 );
-						ctx.lineWidth 	= 1;
-
-						ctx.beginPath();
-						ctx.moveTo( 0, r2 * -0.5 );
-
-						for( var i = 0 ; i < xx.length ; ++i )
+						for( var j = 0 ; j < ( rms > 0.25 ? 4 : 1 ) ; ++j )
 						{
-							ctx.lineTo( xx[ i ] * 0.3, yy[ i ] );
-						}
+							ctx.strokeStyle =  clr( rms > 0.5 ? 1 : 0.5 );
+							ctx.lineWidth 	= 1;
 
-						ctx.stroke();
+							ctx.beginPath();
+							ctx.moveTo( 0, r2 * -0.5 );
 
-						ctx.beginPath();
-						ctx.moveTo( 0, r2 * -0.5 );
-
-						for( var i = 0 ; i < xx.length ; ++i )
-						{
-							ctx.lineTo( xx[ i ] * 0.6, yy[ i ] );
-						}
-
-						ctx.stroke();
-
-						ctx.strokeStyle =  clr( 1 );
-						ctx.lineWidth 	= 2;
-
-						ctx.beginPath();
-						ctx.moveTo( 0, r2 * -0.5 );
-
-						for( var i = 0 ; i < xx.length ; ++i )
-						{
-							ctx.lineTo( xx[ i ] , yy[ i ] );
-						}
-
-						ctx.stroke();
-
-						ctx.strokeStyle =  clr( 1 );
-						ctx.lineWidth 	= 1;
-
-						for( var i = 0 ; i < xx.length ; ++i )
-						{
-							if ( Math.random() < 0.01 )
+							for( var i = 0 ; i < xx.length ; ++i )
 							{
-								var l = Math.random() * 3;
+								ctx.lineTo( xx[ i ] * 0.20 * ( j + 1 ), yy[ i ] );
+							}
 
-								ctx.beginPath();
-								ctx.moveTo( xx[ i ] * 2, yy[ i ] )
-								ctx.lineTo( xx[ i ] * ( 2 + l ), yy[ i ] );
-								ctx.stroke();
+							ctx.stroke();
+						}
+
+						if( rms > 0.25 )
+						{
+							ctx.strokeStyle =  clr( 1 );
+							ctx.lineWidth 	= 2;
+
+							ctx.beginPath();
+							ctx.moveTo( 0, r2 * -0.5 );
+
+							for( var i = 0 ; i < xx.length ; ++i )
+							{
+								ctx.lineTo( xx[ i ] , yy[ i ] );
+							}
+
+							ctx.stroke();
+
+							ctx.strokeStyle =  clr( 1 );
+							ctx.lineWidth 	= 1;
+
+							for( var i = 0 ; i < xx.length ; ++i )
+							{
+								if ( Math.random() < 0.01 )
+								{
+									var l = Math.random() * 3;
+
+									ctx.beginPath();
+									ctx.moveTo( xx[ i ] * 2, yy[ i ] )
+									ctx.lineTo( xx[ i ] * ( 2 + l ), yy[ i ] );
+									ctx.stroke();
+								}
 							}
 						}
 
@@ -659,6 +686,10 @@ function()
 					}
 
 					f( 2, spec_lr, ( rms_l + rms_r ) / 2 );
+
+					st.cw = cw;
+					st.ch = ch;
+					st.ids = ctx.getImageData( 0, 0, cw, ch );
 				}
 			}
 		}
