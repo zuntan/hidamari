@@ -1734,7 +1734,12 @@ function()
 			var w2 = parseInt( p.css( 'padding-right'), 10 );
 			var w = p.innerWidth() - w1 - w2 - 16;
 			$( v ).attr( 'width',  w );
-			$( v ).attr( 'height', w * 9 / 16 );
+
+			var h1 = parseInt( p.css( 'padding-top'), 10 );
+			var h2 = parseInt( p.css( 'padding-bottom'), 10 );
+			var h = p.innerHeight() - h1 - h2 - 16;
+
+			$( v ).attr( 'height', Math.max( h, w * 9 / 16 ) );
 		}
 		else
 		{
@@ -1769,10 +1774,27 @@ function()
 			);
 		}
 
-		draw0( canv0 );
-		draw1( canv1 );
-		draw2( canv2 );
-		draw3( canv3 );
+		var xci = $( ".x_canvas-item" );
+
+		if( xci.eq( 0 ).hasClass( "active" ) )
+		{
+			draw0( canv0 );
+		}
+
+		if( xci.eq( 1 ).hasClass( "active" ) )
+		{
+			draw1( canv1 );
+		}
+
+		if( xci.eq( 2 ).hasClass( "active" ) )
+		{
+			draw2( canv2 );
+		}
+
+		if( xci.eq( 3 ).hasClass( "active" ) )
+		{
+			draw3( canv3 );
+		}
 
 		requestAnimationFrame( draw );
 	}
