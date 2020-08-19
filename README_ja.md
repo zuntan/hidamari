@@ -97,11 +97,6 @@ $ systemctl restart bluealsa.service
 ```
 
  - ビルドに必要なライブラリをインストールします。
-```
-$ apt-get install libasound2-dev libflac-dev libflac8 libogg-dev libogg0
-$ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-dev liblz4-1 liblzma-dev liblzma5 libgcrypt20-dev libgcrypt20 libgpg-error-dev libgpg-error0
-```
-
     - 以下が必要なライブラリです。
     - libasound2-dev
     - libflac-dev libflac8
@@ -112,6 +107,10 @@ $ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-de
     - liblzma-dev liblzma5
     - libgcrypt20-dev libgcrypt20
     - libgpg-error-dev libgpg-error0
+```
+$ apt-get install libasound2-dev libflac-dev libflac8 libogg-dev libogg0
+$ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-dev liblz4-1 liblzma-dev liblzma5 libgcrypt20-dev libgcrypt20 libgpg-error-dev libgpg-error0
+```
 
  - libflac に関して、コンパイルエラーとならないように、以下を行います。
 ```
@@ -124,13 +123,12 @@ $ ln -s libFLAC.so libflac.so
 ```
 
  - ソースを取得し、コンパイルします。
+    - 可能な限り --release でコンパイルしてください。--debug でコンパイルするとCPU負荷が高く、実行速度も遅いです。
 ```
 $ git clone https://github.com/zuntan/hidamari.git
 $ cd hidamari
 $ cargo build --release
 ```
-
-    - 可能な限り --release でコンパイルしてください。--debug でコンパイルするとCPU負荷が高く、実行速度も遅いです。
 
  - 実行ユーザー（またはコンパイルユーザー）のグループに bluetooth グループを追加します。これを行わないと、HIDAMARI から bluetooth を操作することができません。
 ```
