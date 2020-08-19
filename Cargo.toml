@@ -10,6 +10,12 @@ repository = "https://github.com/zuntan/hidamari"
 license = "MIT OR Apache-2.0"
 keywords = [ "mpd", "music" ]
 
+exclude = [
+    "misc/*"
+,   "_contents/tsource/*.wav"
+,   "_contents/tsource/*.sh"
+]
+
 [features]
 
 default = []
