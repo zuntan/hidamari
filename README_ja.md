@@ -103,6 +103,7 @@ $ systemctl restart bluealsa.service
 $ apt-get install libasound2-dev libflac-dev libflac8 libogg-dev libogg0
 $ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-dev liblz4-1 liblzma-dev liblzma5 libgcrypt20-dev libgcrypt20 libgpg-error-dev libgpg-error0
 ```
+
     - 以下が必要なライブラリです。
     - libasound2-dev
     - libflac-dev libflac8
@@ -113,7 +114,6 @@ $ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-de
     - liblzma-dev liblzma5
     - libgcrypt20-dev libgcrypt20
     - libgpg-error-dev libgpg-error0
-
 
  - libflac に関して、コンパイルエラーとならないように、以下を行います。
 ```
@@ -132,7 +132,6 @@ $ cd hidamari
 $ cargo build --release
 ```
     - 可能な限り --release でコンパイルしてください。--debug でコンパイルするとCPU負荷が高く、実行速度も遅いです。
-
 
  - 実行ユーザー（またはコンパイルユーザー）のグループに bluetooth グループを追加します。これを行わないと、HIDAMARI から bluetooth を操作することができません。
 ```
@@ -194,6 +193,7 @@ $ cargo build --release --target armv7-unknown-linux-gnueabihf
 $ file target/armv7-unknown-linux-gnueabihf/release/hidamari
 target/armv7-unknown-linux-gnueabihf/release/hidamari: ELF 32-bit LSB shared object, ARM, EABI5 version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-armhf.so.3, for GNU/Linux 3.2.0, with debug_info, not stripped
 ```
+
  - 生成した実行ファイルを Raspberry Pi に転送したあと、Raspberry Pi で実行してください。
 
 # 実行に必要なファイル
