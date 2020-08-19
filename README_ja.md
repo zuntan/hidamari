@@ -2,7 +2,7 @@
 
 <img src="hidamari.png" >
 
-HIDAMARI は MPD( music player daemon) の コントローラーです。
+HIDAMARI は MPD ( music player daemon ) の コントローラーです。
 
 PCまたはFuturephoneブラウザからMPDを制御できます。
 

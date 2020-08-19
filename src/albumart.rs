@@ -88,9 +88,9 @@ impl AlbumartContext
         AlbumartContext
         {
             upnp
-        ,   localdir                    : String::from( localdir )
-        ,   cache                       : LruCache::new( ALBUMART_CACHE_MAX_ENTRY )
-        ,   upnp_service_cache          : UpnpServiceCache::new()
+        ,   localdir            : String::from( localdir )
+        ,   cache               : LruCache::new( ALBUMART_CACHE_MAX_ENTRY )
+        ,   upnp_service_cache  : UpnpServiceCache::new()
         }
     }
 }
@@ -391,23 +391,35 @@ async fn get_albumart_localdir( _arwlaactx : ARWLAlbumartContext, path : &str, b
 
     let mut fnames = Vec::< String >::new();
 
-    if let Some( x ) = target.file_name()
+    if let Some( px ) = target.file_name()
     {
-        if let Some( x ) = x.to_str()
+        if let Some( dname ) = px.to_str()
         {
-            fnames.push( String::from( x ) );
+            fnames.push( String::from( dname ) );
+
+            if let Some( pd ) = target.parent()
+            {
+                if let Some( ppx ) = pd.file_name()
+                {
+                    if let Some( pdname ) = ppx.to_str()
+                    {
+                        fnames.push( format!( "{} - {}", pdname, dname ) );
+                    }
+                }
+            }
         }
     }
 
-    fnames.push( String::from( "cover" ) );
-    fnames.push( String::from( "Folder" ) );
-    fnames.push( String::from( "AlbumArtSmall" ) );
+    for f in [ "Cover", "AlbumArtSmall", "AlbumArt", "Album", "Folder", "Thumb" ].iter()
+    {
+        fnames.push( String::from( *f ) );
+    }
 
     for fname in fnames
     {
         for ext in [ "jpg", "jpeg", "png" ].iter()
         {
-            let mut alt_image = PathBuf::from( base );
+            let mut alt_image = PathBuf::from( &target );
 
             alt_image.push( &format!( "{}.{}", fname, ext ) );
 
@@ -427,7 +439,7 @@ async fn get_albumart_localdir( _arwlaactx : ARWLAlbumartContext, path : &str, b
                                 {
                                     Ok( _ ) =>
                                     {
-                                        let mime = mime_guess::from_path( path ).first_or_octet_stream();
+                                        let mime = mime_guess::from_path( &alt_image ).first_or_octet_stream();
 
                                         log::debug!( "get_albumart_localdir alt_image {:?}", alt_image );
 

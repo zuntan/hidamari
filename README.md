@@ -2,7 +2,7 @@
 
 <img src="hidamari.png" >
 
-HIDAMARI is a controller for MPD( music player daemon).
+HIDAMARI is a controller for MPD ( music player daemon ).
 
 You can control MPD from your PC or Futurephone browser.
 
@@ -10,7 +10,7 @@ You can easily select songs from the library, manipulate the playlist and play/s
 
 Also, the visual animations will make you feel good while playing.
 
-Japanese document is [here](./README.md)
+Japanese document is [here](./README_ja.md)
 
 # Demo Movie
 
