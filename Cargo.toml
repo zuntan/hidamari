@@ -3,15 +3,12 @@ name = "hidamari"
 version = "0.1.0"
 authors = ["zuntan"]
 edition = "2018"
-
 description = "HIDAMARI mdp controler"
 readme = "README.md"
 homepage = "https://github.com/zuntan/hidamari"
 repository = "https://github.com/zuntan/hidamari"
 license = "MIT OR Apache-2.0"
 keywords = [ "mpd", "music" ]
-
-# categories = [ "command-line-interface" ]
 
 [features]
 
