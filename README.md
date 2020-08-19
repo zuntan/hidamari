@@ -33,7 +33,6 @@ It is under development.
  - <img src="screenshot/004.png" width="30%" >
  - <img src="screenshot/005.png" width="30%" >
 
-
  ## Player
 
  - <img src="screenshot/006.png" width="30%" >

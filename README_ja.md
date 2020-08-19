@@ -33,7 +33,6 @@ PCまたはFuturephoneブラウザからMPDを制御できます。
  - <img src="screenshot/004.png" width="30%" >
  - <img src="screenshot/005.png" width="30%" >
 
-
  ## Player
 
  - <img src="screenshot/006.png" width="30%" >
@@ -42,7 +41,6 @@ PCまたはFuturephoneブラウザからMPDを制御できます。
  - <img src="screenshot/009.png" width="30%" > spectrum visualize
  - <img src="screenshot/010.png" width="30%" > spectrum visualize
  - <img src="screenshot/011.png" width="30%" > spectrum visualize full screen mode
-
 
 # 特徴
 
@@ -131,6 +129,7 @@ $ git clone https://github.com/zuntan/hidamari.git
 $ cd hidamari
 $ cargo build --release
 ```
+
     - 可能な限り --release でコンパイルしてください。--debug でコンパイルするとCPU負荷が高く、実行速度も遅いです。
 
  - 実行ユーザー（またはコンパイルユーザー）のグループに bluetooth グループを追加します。これを行わないと、HIDAMARI から bluetooth を操作することができません。
