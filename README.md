@@ -97,11 +97,6 @@ $ systemctl restart bluealsa.service
 ```
 
  - Install the libraries needed for the build.
-```
-$ apt-get install libasound2-dev libflac-dev libflac8 libogg-dev libogg0
-$ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-dev liblz4-1 liblzma-dev liblzma5 libgcrypt20-dev libgcrypt20 libgpg-error-dev libgpg-error0
-```
-
     - You need the following libraries
     - libasound2-dev
     - libflac-dev libflac8
@@ -112,6 +107,10 @@ $ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-de
     - liblzma-dev liblzma5
     - libgcrypt20-dev libgcrypt20
     - libgpg-error-dev libgpg-error0
+```
+$ apt-get install libasound2-dev libflac-dev libflac8 libogg-dev libogg0
+$ apt-get install libdbus-1-dev libdbus-1-3 libsystemd-dev libsystemd0 liblz4-dev liblz4-1 liblzma-dev liblzma5 libgcrypt20-dev libgcrypt20 libgpg-error-dev libgpg-error0
+```
 
  - For libflac, do the following to avoid a compile error
 ```
@@ -124,13 +123,12 @@ $ ln -s libFLAC.so libflac.so
 ```
 
  - Get the source and compile it.
+    - If possible, compile with --release. If you compile with --debug, the CPU load is high and the execution is slow.
 ```
 $ git clone https://github.com/zuntan/hidamari.git
 $ cd hidamari
 $ cargo build --release
 ```
-
-    - If possible, compile with --release. If you compile with --debug, the CPU load is high and the execution is slow.
 
  - Add a bluetooth group to the group of executing (or compiling) users. Without this, you will not be able to control bluetooth from HIDAMARI.
 ```
